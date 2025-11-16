@@ -1084,10 +1084,10 @@ function renderWeeklyOverview() {
     }
 
     // Erstelle Heatmap
-    renderWeeklyHeatmap(actual_by_day_hour, predictions_by_day);
+    renderWeeklyHeatmap(actual_by_day_hour, predictions_by_day, accuracy_metrics, sufficient_data);
 }
 
-function renderWeeklyHeatmap(actualByDayHour, predictionsByDay) {
+function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics, sufficientData) {
     const weekdayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
     const container = document.getElementById('weekly-heatmap');
 
@@ -1184,21 +1184,20 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay) {
     html += '</div>';
 
     // Info-Box falls nicht genug Daten
-    if (!weeklyOverviewData.sufficient_data) {
+    if (!sufficientData) {
         html += `
             <div style="margin-top: 15px; padding: 15px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;">
                 <strong>⚠️ Nicht genug Daten</strong>
                 <p style="margin: 5px 0 0 0; font-size: 0.9em;">
                     Mindestens 3 Events benötigt für zuverlässige Vorhersagen.
-                    Aktuell: ${weeklyOverviewData.events_count} Events.
                 </p>
             </div>
         `;
-    } else if (accuracy_metrics) {
+    } else if (accuracyMetrics) {
         // Zeige Genauigkeitsnachricht
         html += `
             <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px; font-size: 0.9em;">
-                ${accuracy_metrics.message}
+                ${accuracyMetrics.message}
             </div>
         `;
     }
