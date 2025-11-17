@@ -6,87 +6,137 @@
 <div class="devices-page">
     <h2>Geräte-Übersicht</h2>
 
-    <!-- Statistiken -->
-    <div class="card">
-        <h3>📊 Geräte-Statistiken</h3>
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value" id="total-devices">0</div>
-                <div class="stat-label">Geräte gesamt</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="lights-count">0</div>
-                <div class="stat-label">💡 Lichter</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="switches-count">0</div>
-                <div class="stat-label">🔌 Schalter</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="climate-count">0</div>
-                <div class="stat-label">🌡️ Klima</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="sensors-count">0</div>
-                <div class="stat-label">📊 Sensoren</div>
-            </div>
-        </div>
+    <!-- Platform Tabs -->
+    <div class="platform-tabs">
+        <button class="platform-tab active" data-platform="homey">🏠 Homey</button>
+        <button class="platform-tab" data-platform="homeassistant">🏡 Home Assistant</button>
     </div>
 
-    <!-- Suche und Filter -->
-    <div class="card">
-        <h3>🔍 Suche & Filter</h3>
-        <div class="search-filter-section">
-            <input type="text" id="device-search" placeholder="Gerät suchen (Name, Raum, Typ)..." class="search-input">
-
-            <div class="filter-controls">
-                <label>Nach Typ filtern:</label>
-                <div class="filter-buttons">
-                    <button class="filter-btn active" data-filter="all">Alle</button>
-                    <button class="filter-btn" data-filter="light">💡 Licht</button>
-                    <button class="filter-btn" data-filter="climate">🌡️ Klima</button>
-                    <button class="filter-btn" data-filter="switch">🔌 Schalter</button>
-                    <button class="filter-btn" data-filter="sensor">📊 Sensoren</button>
+    <!-- Homey Tab Content -->
+    <div id="homey-content" class="platform-content active">
+        <!-- Statistiken -->
+        <div class="card">
+            <h3>📊 Geräte-Statistiken</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-devices">0</div>
+                    <div class="stat-label">Geräte gesamt</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="lights-count">0</div>
+                    <div class="stat-label">💡 Lichter</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="switches-count">0</div>
+                    <div class="stat-label">🔌 Schalter</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="climate-count">0</div>
+                    <div class="stat-label">🌡️ Klima</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="sensors-count">0</div>
+                    <div class="stat-label">📊 Sensoren</div>
                 </div>
             </div>
+        </div>
 
-            <div class="view-toggle">
-                <label>Ansicht:</label>
-                <button class="view-btn active" data-view="grid">
-                    <span>🔲 Kacheln</span>
-                </button>
-                <button class="view-btn" data-view="list">
-                    <span>📋 Liste</span>
-                </button>
-                <button class="view-btn" data-view="rooms">
-                    <span>🏠 Nach Räumen</span>
-                </button>
+        <!-- Suche und Filter -->
+        <div class="card">
+            <h3>🔍 Suche & Filter</h3>
+            <div class="search-filter-section">
+                <input type="text" id="device-search" placeholder="Gerät suchen (Name, Raum, Typ)..." class="search-input">
+
+                <div class="filter-controls">
+                    <label>Nach Typ filtern:</label>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="all">Alle</button>
+                        <button class="filter-btn" data-filter="light">💡 Licht</button>
+                        <button class="filter-btn" data-filter="climate">🌡️ Klima</button>
+                        <button class="filter-btn" data-filter="switch">🔌 Schalter</button>
+                        <button class="filter-btn" data-filter="sensor">📊 Sensoren</button>
+                    </div>
+                </div>
+
+                <div class="view-toggle">
+                    <label>Ansicht:</label>
+                    <button class="view-btn active" data-view="grid">
+                        <span>🔲 Kacheln</span>
+                    </button>
+                    <button class="view-btn" data-view="list">
+                        <span>📋 Liste</span>
+                    </button>
+                    <button class="view-btn" data-view="rooms">
+                        <span>🏠 Nach Räumen</span>
+                    </button>
+                </div>
             </div>
         </div>
+
+        <!-- Geräte-Anzeige -->
+        <div class="card">
+            <div class="card-header-with-actions">
+                <h3 id="devices-section-title">Alle Geräte</h3>
+                <button class="btn btn-small btn-secondary" id="refresh-devices">🔄 Aktualisieren</button>
+            </div>
+
+            <div id="devices-container" class="devices-display">
+                <!-- Geräte werden hier dynamisch geladen -->
+                <div class="loading">Lade Geräte...</div>
+            </div>
+        </div>
+
+        <!-- Schnellaktionen -->
+        <div class="card">
+            <h3>⚡ Schnellaktionen</h3>
+            <div class="quick-actions">
+                <button class="btn btn-primary" id="all-lights-on">💡 Alle Lichter Ein</button>
+                <button class="btn btn-secondary" id="all-lights-off">Alle Lichter Aus</button>
+                <button class="btn btn-secondary" id="all-switches-off">🔌 Alle Schalter Aus</button>
+            </div>
+            <div id="quick-action-result" class="action-result"></div>
+        </div>
     </div>
 
-    <!-- Geräte-Anzeige -->
-    <div class="card">
-        <div class="card-header-with-actions">
-            <h3 id="devices-section-title">Alle Geräte</h3>
-            <button class="btn btn-small btn-secondary" id="refresh-devices">🔄 Aktualisieren</button>
+    <!-- Home Assistant Tab Content -->
+    <div id="homeassistant-content" class="platform-content">
+        <div class="card">
+            <h3>🔍 Entity Abfrage</h3>
+            <p class="card-description">
+                Gib eine Home Assistant Entity-ID ein, um deren aktuellen Status abzurufen.
+            </p>
+
+            <div class="form-group">
+                <label for="ha-entity-input">Entity-ID:</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input 
+                        type="text" 
+                        id="ha-entity-input" 
+                        class="form-control" 
+                        placeholder="z.B. light.living_room, sensor.temperature"
+                        style="flex: 1;">
+                    <button class="btn btn-primary" id="query-ha-entity">Abfragen</button>
+                </div>
+                <small class="help-text">
+                    Beispiele: light.wohnzimmer, climate.heizung_bad, sensor.temperatur_kueche
+                </small>
+            </div>
+
+            <div id="ha-entity-result" style="margin-top: 20px; display: none;">
+                <h4>Entity Status:</h4>
+                <div class="entity-details">
+                    <!-- Details werden hier angezeigt -->
+                </div>
+            </div>
         </div>
 
-        <div id="devices-container" class="devices-display">
-            <!-- Geräte werden hier dynamisch geladen -->
-            <div class="loading">Lade Geräte...</div>
+        <!-- Zuletzt abgefragte Entities -->
+        <div class="card">
+            <h3>📋 Zuletzt abgefragte Entities</h3>
+            <div id="recent-entities" class="recent-entities-list">
+                <p style="color: #6b7280; font-style: italic;">Noch keine Entities abgefragt</p>
+            </div>
         </div>
-    </div>
-
-    <!-- Schnellaktionen -->
-    <div class="card">
-        <h3>⚡ Schnellaktionen</h3>
-        <div class="quick-actions">
-            <button class="btn btn-primary" id="all-lights-on">💡 Alle Lichter Ein</button>
-            <button class="btn btn-secondary" id="all-lights-off">Alle Lichter Aus</button>
-            <button class="btn btn-secondary" id="all-switches-off">🔌 Alle Schalter Aus</button>
-        </div>
-        <div id="quick-action-result" class="action-result"></div>
     </div>
 </div>
 
@@ -115,4 +165,133 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/devices.js') }}"></script>
+
+<style>
+/* Platform Tabs */
+.platform-tabs {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 25px;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.platform-tab {
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #6b7280;
+    transition: all 0.2s;
+    margin-bottom: -2px;
+}
+
+.platform-tab:hover {
+    color: #374151;
+    background: #f9fafb;
+}
+
+.platform-tab.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+
+.platform-content {
+    display: none;
+}
+
+.platform-content.active {
+    display: block;
+}
+
+/* Entity Details */
+.entity-details {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.entity-detail-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 15px;
+    padding: 12px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.entity-detail-row:last-child {
+    border-bottom: none;
+}
+
+.entity-detail-label {
+    font-weight: 600;
+    color: #374151;
+}
+
+.entity-detail-value {
+    color: #6b7280;
+    font-family: 'Courier New', monospace;
+}
+
+.entity-state-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.entity-state-badge.on {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.entity-state-badge.off {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.entity-state-badge.unavailable {
+    background: #e5e7eb;
+    color: #6b7280;
+}
+
+/* Recent Entities */
+.recent-entities-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.recent-entity-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.recent-entity-item:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.recent-entity-name {
+    font-weight: 600;
+    color: #374151;
+}
+
+.recent-entity-time {
+    font-size: 0.85em;
+    color: #9ca3af;
+}
+</style>
+
 {% endblock %}

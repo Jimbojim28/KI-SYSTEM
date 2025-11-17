@@ -33,6 +33,10 @@ class LightingDataCollector:
         self.thread = None
         self.last_states: Dict[str, Dict] = {}  # device_id -> last known state
         self.sensor_helper = SensorHelper(engine) if engine else None
+        self.last_collection_time = None
+        self.last_collection_success = None
+        self.last_error = None
+        self.total_events_collected = 0
         
         # Platform-spezifische Collector basierend auf platform.type
         self.collectors = []
@@ -88,9 +92,15 @@ class LightingDataCollector:
         """Hauptloop für Datensammlung"""
         while self.running:
             try:
+                self.last_collection_time = datetime.now()
                 self._collect_lighting_data()
+                self.last_collection_success = True
+                self.last_error = None
             except Exception as e:
-                logger.error(f"Error in lighting data collection: {e}")
+                error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                logger.error(f"Error in lighting data collection: {error_msg}")
+                self.last_collection_success = False
+                self.last_error = str(e).encode('ascii', 'ignore').decode('ascii') or str(e)[:100]
             
             time.sleep(self.interval)
     
@@ -160,11 +170,13 @@ class LightingDataCollector:
                         presence=presence,
                         motion_detected=motion_detected
                     )
+                    self.total_events_collected += 1
                     
                     logger.debug(f"Lighting event: {device_name} -> {state_str} (brightness: {brightness})")
                     
             except Exception as e:
-                logger.error(f"Error collecting from {platform_name}: {e}")
+                error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                logger.error(f"Error collecting from {platform_name}: {error_msg}")
     
     def _is_light_device(self, device: Dict) -> bool:
         """Prüft ob Gerät eine Lampe ist"""
@@ -213,7 +225,11 @@ class LightingDataCollector:
             'interval': self.interval,
             'collectors_count': len(self.collectors),
             'tracked_devices': len(self.last_states),
-            'total_events': self.db.get_lighting_events_count()
+            'total_events': self.db.get_lighting_events_count(),
+            'last_collection': self.last_collection_time.isoformat() if self.last_collection_time else None,
+            'last_success': self.last_collection_success,
+            'last_error': self.last_error,
+            'events_this_session': self.total_events_collected
         }
 
 

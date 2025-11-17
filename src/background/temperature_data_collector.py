@@ -34,6 +34,10 @@ class TemperatureDataCollector:
         self.running = False
         self.thread = None
         self.sensor_helper = SensorHelper(engine) if engine else None
+        self.last_collection_time = None
+        self.last_collection_success = None
+        self.last_error = None
+        self.total_measurements_collected = 0
         
         # Platform-spezifische Collector basierend auf platform.type
         self.collectors = []
@@ -61,7 +65,8 @@ class TemperatureDataCollector:
             else:
                 logger.warning(f"Unknown or missing platform type: {platform_type}")
         except Exception as e:
-            logger.error(f"Could not initialize platform collector for temperature data: {e}")
+            error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+            logger.error(f"Could not initialize platform collector for temperature data: {error_msg}")
     
     def start(self):
         """Startet Background-Collection"""
@@ -89,9 +94,15 @@ class TemperatureDataCollector:
         """Hauptloop für Datensammlung"""
         while self.running:
             try:
+                self.last_collection_time = datetime.now()
                 self._collect_temperature_data()
+                self.last_collection_success = True
+                self.last_error = None
             except Exception as e:
-                logger.error(f"Error in temperature data collection: {e}")
+                error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                logger.error(f"Error in temperature data collection: {error_msg}")
+                self.last_collection_success = False
+                self.last_error = str(e).encode('ascii', 'ignore').decode('ascii') or str(e)[:100]
             
             time.sleep(self.interval)
     
@@ -155,11 +166,13 @@ class TemperatureDataCollector:
                         window_open=window_open,
                         energy_price_level=energy_level
                     )
+                    self.total_measurements_collected += 1
                     
                     logger.debug(f"Temperature data: {device_name} - {current_temp}°C / {target_temp}°C (heating: {heating_active})")
                     
             except Exception as e:
-                logger.error(f"Error collecting from {platform_name}: {e}")
+                error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                logger.error(f"Error collecting from {platform_name}: {error_msg}")
     
     def _is_thermostat(self, device: Dict) -> bool:
         """Prüft ob Gerät ein Thermostat ist"""
@@ -259,7 +272,11 @@ class TemperatureDataCollector:
             'running': self.running,
             'interval': self.interval,
             'collectors_count': len(self.collectors),
-            'total_measurements': self.db.get_continuous_measurements_count()
+            'total_measurements': self.db.get_continuous_measurements_count(),
+            'last_collection': self.last_collection_time.isoformat() if self.last_collection_time else None,
+            'last_success': self.last_collection_success,
+            'last_error': self.last_error,
+            'measurements_this_session': self.total_measurements_collected
         }
 
 

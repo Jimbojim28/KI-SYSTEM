@@ -37,34 +37,79 @@ class DecisionEngine:
         db_path = self.config.get('database.path', 'data/ki_system.db')
         self.db = Database(db_path)
 
-        # Initialisiere Smart Home Collector (Home Assistant oder Homey)
-        platform_type = self.config.get('platform.type', 'homeassistant')
-
-        if platform_type.lower() in ['homey', 'homey_pro']:
-            platform_url = self.config.get('homey.url')
-            platform_token = self.config.get('homey.token')
+        # Initialisiere Smart Home Collector (Home Assistant und/oder Homey)
+        # Multi-Platform Support: Kann beide gleichzeitig nutzen
+        self.multi_platform_enabled = self.config.get('platforms.enable_multi_platform', False)
+        
+        if self.multi_platform_enabled:
+            # Beide Plattformen initialisieren
+            self.platforms = {}
+            
+            # Homey initialisieren
+            homey_url = self.config.get('homey.url')
+            homey_token = self.config.get('homey.token')
+            if homey_url and homey_token:
+                homey_collector = PlatformFactory.create_collector('homey', homey_url, homey_token)
+                if homey_collector:
+                    self.platforms['homey'] = homey_collector
+                    logger.info("Homey platform initialized")
+            
+            # Home Assistant initialisieren
+            ha_url = self.config.get('homeassistant.url')
+            ha_token = self.config.get('homeassistant.token')
+            if ha_url and ha_token:
+                ha_collector = PlatformFactory.create_collector('homeassistant', ha_url, ha_token)
+                if ha_collector:
+                    self.platforms['homeassistant'] = ha_collector
+                    logger.info("Home Assistant platform initialized")
+            
+            # Primary Platform für Legacy-Kompatibilität
+            primary = self.config.get('platforms.primary', 'homey')
+            self.platform = self.platforms.get(primary)
+            
+            if not self.platforms:
+                logger.warning("No platforms configured in multi-platform mode - engine will run without smart home access")
+                self.platform = None
+            else:
+                logger.info(f"Multi-Platform mode: {len(self.platforms)} platforms active (primary: {primary})")
         else:
-            platform_url = self.config.get('home_assistant.url')
-            platform_token = self.config.get('home_assistant.token')
+            # Single Platform Mode (bisheriges Verhalten)
+            platform_type = self.config.get('platform.type', 'homeassistant')
 
-        self.platform = PlatformFactory.create_collector(
-            platform_type,
-            platform_url,
-            platform_token
-        )
+            if platform_type.lower() in ['homey', 'homey_pro']:
+                platform_url = self.config.get('homey.url')
+                platform_token = self.config.get('homey.token')
+            else:
+                platform_url = self.config.get('homeassistant.url')
+                platform_token = self.config.get('homeassistant.token')
 
-        if not self.platform:
-            raise ValueError(f"Failed to initialize platform: {platform_type}")
+            self.platform = PlatformFactory.create_collector(
+                platform_type,
+                platform_url,
+                platform_token
+            )
 
-        logger.info(f"Using platform: {self.platform.get_platform_name()}")
+            if not self.platform:
+                raise ValueError(f"Failed to initialize platform: {platform_type}")
+
+            self.platforms = {platform_type: self.platform}
+            logger.info(f"Using platform: {self.platform.get_platform_name()}")
 
         # Alias für Backwards-Kompatibilität
         self.ha = self.platform
 
         # Initialisiere externe Datensammler
-        weather_key = self.config.get('external_data.weather.api_key')
-        weather_location = self.config.get('external_data.weather.location', 'Berlin, DE')
-        self.weather = WeatherCollector(weather_key, weather_location)
+        # Versuche zuerst platforms.weather, dann external_data.weather (backwards compat)
+        weather_key = self.config.get('platforms.weather.api_key') or self.config.get('external_data.weather.api_key')
+        weather_location = self.config.get('platforms.weather.location') or self.config.get('external_data.weather.location', 'Berlin, DE')
+        weather_enabled = self.config.get('platforms.weather.enabled', True)
+        
+        if weather_enabled and weather_key:
+            self.weather = WeatherCollector(weather_key, weather_location)
+            logger.info(f"Weather collector initialized: {weather_location}")
+        else:
+            self.weather = None
+            logger.info("Weather API integration disabled")
 
         # Energy Prices (optional)
         self.energy_prices_enabled = self.config.get('external_data.energy_prices.enabled', False)
@@ -364,24 +409,27 @@ class DecisionEngine:
         state['motion_detected'] = 0
 
         # Externe Daten (Wetter von Homey-Sensoren oder OpenWeatherMap)
-        weather = self.weather.get_weather_data(self.platform)
-        if weather:
-            # WICHTIG: Nur outdoor_temperature setzen, nicht current_temperature überschreiben!
-            state['outdoor_temperature'] = weather.get('temperature')
+        if self.weather:
+            weather = self.weather.get_weather_data(self.platform)
+            if weather:
+                # WICHTIG: Nur outdoor_temperature setzen, nicht current_temperature überschreiben!
+                state['outdoor_temperature'] = weather.get('temperature')
 
-            # Nur Humidity überschreiben wenn nicht schon von Indoor-Sensoren gesetzt
-            if 'humidity' not in state:
-                state['humidity'] = weather.get('humidity')
+                # Nur Humidity überschreiben wenn nicht schon von Indoor-Sensoren gesetzt
+                if 'humidity' not in state:
+                    state['humidity'] = weather.get('humidity')
 
-            state['weather_condition'] = weather.get('weather_condition', 'clear')
-            state['weather_description'] = weather.get('weather_description', '')
-            state['feels_like'] = weather.get('feels_like')
-            state['wind_speed'] = weather.get('wind_speed')
-            state['pressure'] = weather.get('pressure')
-            state['clouds'] = weather.get('clouds')
+                state['weather_condition'] = weather.get('weather_condition', 'clear')
+                state['weather_description'] = weather.get('weather_description', '')
+                state['feels_like'] = weather.get('feels_like')
+                state['wind_speed'] = weather.get('wind_speed')
+                state['pressure'] = weather.get('pressure')
+                state['clouds'] = weather.get('clouds')
 
-            # Speichere in DB
-            self.db.insert_external_data('weather', weather)
+                # Speichere in DB
+                self.db.insert_external_data('weather', weather)
+        else:
+            logger.debug("Weather collector not initialized - skipping external weather data")
 
         # Energiepreise (optional)
         if self.energy_prices_enabled and self.energy_prices:

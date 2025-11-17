@@ -425,9 +425,15 @@ class Database:
             self.connection = sqlite3.connect(
                 self.db_path,
                 detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
-                check_same_thread=False  # Erlaubt Multi-Threading für Flask
+                check_same_thread=False,  # Erlaubt Multi-Threading für Flask
+                timeout=30.0  # Erhöhtes Timeout für parallele Zugriffe
             )
             self.connection.row_factory = sqlite3.Row
+            
+            # Aktiviere Write-Ahead Logging (WAL) für bessere Parallelität
+            self.connection.execute('PRAGMA journal_mode=WAL')
+            self.connection.execute('PRAGMA synchronous=NORMAL')
+            self.connection.execute('PRAGMA busy_timeout=30000')
         return self.connection
 
     def execute(self, query: str, params: tuple = None) -> List[Dict]:
@@ -1379,8 +1385,8 @@ class Database:
 
         cursor.execute("""
             INSERT INTO heating_observations
-            (timestamp, device_id, room_name, current_temp, target_temp,
-             outdoor_temp, is_heating, humidity, power_percentage, hour_of_day, day_of_week)
+            (timestamp, device_id, room_name, current_temperature, target_temperature,
+             outdoor_temperature, is_heating, humidity, power_percentage, hour_of_day, day_of_week)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             now,
@@ -1510,10 +1516,10 @@ class Database:
                 timestamp,
                 device_id,
                 room_name,
-                current_temp,
-                target_temp,
+                current_temperature as current_temp,
+                target_temperature as target_temp,
                 is_heating,
-                outdoor_temp,
+                outdoor_temperature as outdoor_temp,
                 humidity,
                 hour_of_day,
                 day_of_week,
@@ -1550,9 +1556,9 @@ class Database:
             SELECT
                 COUNT(*) as total_observations,
                 SUM(CASE WHEN is_heating = 1 THEN 1 ELSE 0 END) as heating_count,
-                AVG(current_temp) as avg_temp,
-                AVG(target_temp) as avg_target,
-                AVG(outdoor_temp) as avg_outdoor
+                AVG(current_temperature) as avg_temp,
+                AVG(target_temperature) as avg_target,
+                AVG(outdoor_temperature) as avg_outdoor
             FROM heating_observations
             WHERE timestamp >= ?
         """, (start_time,))
@@ -1564,8 +1570,8 @@ class Database:
             SELECT
                 room_name,
                 COUNT(*) as observations,
-                AVG(current_temp) as avg_temp,
-                AVG(target_temp) as avg_target,
+                AVG(current_temperature) as avg_temp,
+                AVG(target_temperature) as avg_target,
                 SUM(CASE WHEN is_heating = 1 THEN 1 ELSE 0 END) as heating_count
             FROM heating_observations
             WHERE timestamp >= ? AND room_name IS NOT NULL

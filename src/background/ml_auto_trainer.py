@@ -159,27 +159,27 @@ class MLAutoTrainer:
 
         # Prüfe Lighting Model
         if self._should_train_lighting(status):
-            logger.info("📊 Sufficient data for Lighting Model - starting training...")
+            logger.info("[TRAIN] Sufficient data for Lighting Model - starting training...")
             success = self._train_lighting_model()
             if success:
                 status['lighting_last_trained'] = datetime.now().isoformat()
                 status['lighting_trained'] = True
-                logger.success("✅ Lighting Model trained successfully!")
+                logger.success("[OK] Lighting Model trained successfully!")
                 self._update_progress(status='completed')
             else:
-                logger.warning("❌ Lighting Model training failed")
+                logger.warning("[FAILED] Lighting Model training failed")
 
         # Prüfe Temperature Model
         if self._should_train_temperature(status):
-            logger.info("📊 Sufficient data for Temperature Model - starting training...")
+            logger.info("[TRAIN] Sufficient data for Temperature Model - starting training...")
             success = self._train_temperature_model()
             if success:
                 status['temperature_last_trained'] = datetime.now().isoformat()
                 status['temperature_trained'] = True
-                logger.success("✅ Temperature Model trained successfully!")
+                logger.success("[OK] Temperature Model trained successfully!")
                 self._update_progress(status='completed')
             else:
-                logger.warning("❌ Temperature Model training failed")
+                logger.warning("[FAILED] Temperature Model training failed")
 
         # Speichere Status
         self._save_status(status)

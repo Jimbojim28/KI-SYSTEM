@@ -14,32 +14,32 @@ class PlatformConfig(BaseModel):
 
 class HomeAssistantConfig(BaseModel):
     """Home Assistant connection configuration"""
-    url: str = Field(..., description="Home Assistant URL")
-    token: str = Field(..., description="Long-lived access token")
+    url: str = Field(default="", description="Home Assistant URL")
+    token: str = Field(default="", description="Long-lived access token")
 
     @field_validator('url')
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Validate URL format"""
-        if not v.startswith(('http://', 'https://')):
+        if v and not v.startswith(('http://', 'https://')):
             raise ValueError("URL must start with http:// or https://")
-        if v.endswith('/'):
+        if v and v.endswith('/'):
             v = v[:-1]  # Remove trailing slash
         return v
 
 
 class HomeyConfig(BaseModel):
     """Homey Pro connection configuration"""
-    url: str = Field(..., description="Homey API URL")
-    token: str = Field(..., description="Homey bearer token")
+    url: str = Field(default="", description="Homey API URL")
+    token: str = Field(default="", description="Homey bearer token")
 
     @field_validator('url')
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Validate URL format"""
-        if not v.startswith(('http://', 'https://')):
+        if v and not v.startswith(('http://', 'https://')):
             raise ValueError("URL must start with http:// or https://")
-        if v.endswith('/'):
+        if v and v.endswith('/'):
             v = v[:-1]  # Remove trailing slash
         return v
 

@@ -558,6 +558,223 @@ window.addEventListener('click', (e) => {
     }
 });
 
+// ============================================
+// HOME ASSISTANT TAB FUNCTIONALITY
+// ============================================
+
+// Switch Platform Tabs
+function setupPlatformTabs() {
+    const tabs = document.querySelectorAll('.platform-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active from all tabs and contents
+            document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.platform-content').forEach(c => c.classList.remove('active'));
+            
+            // Add active to clicked tab
+            tab.classList.add('active');
+            
+            // Show corresponding content
+            const platform = tab.dataset.platform;
+            const content = document.getElementById(`${platform}-content`);
+            if (content) {
+                content.classList.add('active');
+            }
+        });
+    });
+}
+
+// Query Home Assistant Entity
+async function queryHAEntity() {
+    const input = document.getElementById('ha-entity-input');
+    const resultDiv = document.getElementById('ha-entity-result');
+    const entityId = input.value.trim();
+    
+    if (!entityId) {
+        showNotification('Bitte geben Sie eine Entity-ID ein', 'error');
+        return;
+    }
+    
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div class="loading">Lade Entity-Daten...</div>';
+    
+    try {
+        const response = await fetch(`/api/ha/entity/${encodeURIComponent(entityId)}`);
+        const data = await response.json();
+        
+        if (data.success && data.entity) {
+            displayEntityDetails(data.entity);
+            addToRecentEntities(entityId, data.entity.friendly_name);
+        } else {
+            resultDiv.innerHTML = `<div class="error">Entity nicht gefunden: ${entityId}</div>`;
+        }
+    } catch (error) {
+        console.error('Error querying HA entity:', error);
+        resultDiv.innerHTML = '<div class="error">Fehler beim Abrufen der Entity-Daten</div>';
+    }
+}
+
+// Display Entity Details
+function displayEntityDetails(entity) {
+    const resultDiv = document.getElementById('ha-entity-result');
+    
+    // Determine state badge class
+    let stateBadgeClass = 'entity-state-badge';
+    if (entity.state === 'on' || entity.state === 'true') {
+        stateBadgeClass += ' on';
+    } else if (entity.state === 'off' || entity.state === 'false') {
+        stateBadgeClass += ' off';
+    } else if (entity.state === 'unavailable') {
+        stateBadgeClass += ' unavailable';
+    }
+    
+    // Build attributes HTML
+    let attributesHTML = '';
+    if (entity.attributes && Object.keys(entity.attributes).length > 0) {
+        attributesHTML = Object.entries(entity.attributes)
+            .map(([key, value]) => {
+                // Skip certain attributes
+                if (['friendly_name', 'icon', 'supported_features'].includes(key)) return '';
+                
+                let displayValue = value;
+                if (typeof value === 'object') {
+                    displayValue = JSON.stringify(value, null, 2);
+                }
+                
+                return `
+                    <div class="entity-detail-row">
+                        <div class="entity-detail-label">${key}:</div>
+                        <div class="entity-detail-value">${displayValue}</div>
+                    </div>
+                `;
+            })
+            .filter(html => html !== '')
+            .join('');
+    }
+    
+    resultDiv.innerHTML = `
+        <div class="entity-details">
+            <div class="entity-detail-row">
+                <div class="entity-detail-label">Entity ID:</div>
+                <div class="entity-detail-value">${entity.entity_id}</div>
+            </div>
+            <div class="entity-detail-row">
+                <div class="entity-detail-label">Name:</div>
+                <div class="entity-detail-value">${entity.friendly_name || entity.entity_id}</div>
+            </div>
+            <div class="entity-detail-row">
+                <div class="entity-detail-label">Status:</div>
+                <div class="entity-detail-value">
+                    <span class="${stateBadgeClass}">${entity.state}</span>
+                </div>
+            </div>
+            ${entity.last_changed ? `
+                <div class="entity-detail-row">
+                    <div class="entity-detail-label">Letzte Änderung:</div>
+                    <div class="entity-detail-value">${new Date(entity.last_changed).toLocaleString('de-DE')}</div>
+                </div>
+            ` : ''}
+            ${entity.last_updated ? `
+                <div class="entity-detail-row">
+                    <div class="entity-detail-label">Letzte Aktualisierung:</div>
+                    <div class="entity-detail-value">${new Date(entity.last_updated).toLocaleString('de-DE')}</div>
+                </div>
+            ` : ''}
+            ${attributesHTML}
+        </div>
+    `;
+}
+
+// Add to Recent Entities (localStorage)
+function addToRecentEntities(entityId, friendlyName) {
+    let recent = JSON.parse(localStorage.getItem('ha-recent-entities') || '[]');
+    
+    // Remove if already exists
+    recent = recent.filter(item => item.entity_id !== entityId);
+    
+    // Add to beginning
+    recent.unshift({
+        entity_id: entityId,
+        friendly_name: friendlyName || entityId,
+        timestamp: new Date().toISOString()
+    });
+    
+    // Keep only 10 most recent
+    recent = recent.slice(0, 10);
+    
+    localStorage.setItem('ha-recent-entities', JSON.stringify(recent));
+    loadRecentEntities();
+}
+
+// Load Recent Entities
+function loadRecentEntities() {
+    const recent = JSON.parse(localStorage.getItem('ha-recent-entities') || '[]');
+    const recentDiv = document.getElementById('recent-entities');
+    
+    if (recent.length === 0) {
+        recentDiv.innerHTML = '<p class="empty-state">Noch keine Abfragen</p>';
+        return;
+    }
+    
+    const html = `
+        <div class="recent-entities-list">
+            ${recent.map(item => {
+                const timeAgo = getTimeAgo(new Date(item.timestamp));
+                return `
+                    <div class="recent-entity-item" data-entity-id="${item.entity_id}">
+                        <div>
+                            <div class="recent-entity-name">${item.friendly_name}</div>
+                            <div style="font-size: 0.85em; color: #9ca3af;">${item.entity_id}</div>
+                        </div>
+                        <div class="recent-entity-time">${timeAgo}</div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+    
+    recentDiv.innerHTML = html;
+    
+    // Add click listeners
+    document.querySelectorAll('.recent-entity-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const entityId = item.dataset.entityId;
+            document.getElementById('ha-entity-input').value = entityId;
+            queryHAEntity();
+        });
+    });
+}
+
+// Get time ago string
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    
+    if (seconds < 60) return 'Gerade eben';
+    if (seconds < 3600) return `vor ${Math.floor(seconds / 60)} Min`;
+    if (seconds < 86400) return `vor ${Math.floor(seconds / 3600)} Std`;
+    return `vor ${Math.floor(seconds / 86400)} Tagen`;
+}
+
+// Setup HA Query Button
+function setupHAQuery() {
+    const queryBtn = document.getElementById('query-ha-entity');
+    const entityInput = document.getElementById('ha-entity-input');
+    
+    if (queryBtn) {
+        queryBtn.addEventListener('click', queryHAEntity);
+    }
+    
+    if (entityInput) {
+        entityInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                queryHAEntity();
+            }
+        });
+    }
+    
+    loadRecentEntities();
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     loadDevices();
@@ -565,7 +782,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setupViewToggle();
     setupSearch();
     setupQuickActions();
+    setupPlatformTabs();
+    setupHAQuery();
 
     // Auto-refresh alle 15 Sekunden
     setInterval(loadDevices, 15000);
 });
+

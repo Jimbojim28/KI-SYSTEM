@@ -164,6 +164,9 @@ class HomeAssistantCollector(SmartHomeCollector):
 
     def test_connection(self) -> bool:
         """Testet die Verbindung zu Home Assistant"""
+        logger.debug(f"Testing HA connection to {self.url}")
+        logger.debug(f"Token length: {len(self.token) if self.token else 0}")
+        
         result = self._make_request("")
 
         if result and 'message' in result:
@@ -189,3 +192,37 @@ class HomeAssistantCollector(SmartHomeCollector):
             entity_ids = [eid for eid in entity_ids if eid.startswith(f"{domain}.")]
 
         return entity_ids
+
+    def get_all_devices(self) -> List[Dict]:
+        """
+        Holt alle Entities mit ihren vollständigen Informationen
+        Kompatibilitätsmethode für Multi-Platform Support
+
+        Returns:
+            Liste von Entity-Dictionaries mit allen Informationen
+        """
+        all_states = self._make_request("states")
+
+        if not all_states:
+            return []
+
+        devices = []
+        for state in all_states:
+            device = {
+                'id': state.get('entity_id'),
+                'name': state.get('attributes', {}).get('friendly_name', state.get('entity_id')),
+                'zone': state.get('attributes', {}).get('area_id', 'Unknown'),
+                'class': state.get('entity_id').split('.')[0],  # domain as class
+                'virtualClass': None,
+                'capabilities': [state.get('entity_id').split('.')[0]],
+                'capabilitiesObj': {},
+                'available': state.get('state') not in ['unavailable', 'unknown'],
+                'state': state.get('state'),
+                'attributes': state.get('attributes', {}),
+                'last_changed': state.get('last_changed'),
+                'last_updated': state.get('last_updated')
+            }
+            devices.append(device)
+
+        logger.debug(f"Fetched {len(devices)} entities from Home Assistant")
+        return devices

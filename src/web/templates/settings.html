@@ -59,6 +59,7 @@
     <!-- Tab Navigation -->
     <div class="settings-tabs">
         <button class="tab-button active" data-tab="general">Allgemein</button>
+        <button class="tab-button" data-tab="connection">Verbindung</button>
         <button class="tab-button" data-tab="sensors">Sensoren</button>
         <button class="tab-button" data-tab="heating">Heizung</button>
         <button class="tab-button" data-tab="database">Datenbank</button>
@@ -144,6 +145,300 @@
         </div>
     </div>
     <!-- Ende Tab: Allgemein -->
+
+    <!-- Tab: Verbindung -->
+    <div class="tab-content" id="tab-connection">
+        <div class="settings-sections">
+        <!-- Platform Connection Settings -->
+        <div class="card settings-card">
+            <h3>🔌 Smart Home Verbindung</h3>
+            <p class="card-description">
+                Konfiguriere die Verbindung zu deinem Smart Home System (Homey oder Home Assistant).
+            </p>
+
+            <!-- Multi-Platform Option -->
+            <div class="form-group" style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 20px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600;">
+                    <input type="checkbox" id="enable-multi-platform" style="width: 18px; height: 18px; cursor: pointer; accent-color: #10b981;">
+                    <span>🔀 Multi-Platform Modus aktivieren</span>
+                </label>
+                <small class="help-text" style="margin-left: 28px; display: block; margin-top: 8px; color: #059669;">
+                    Aktiviere diese Option, um Homey und Home Assistant gleichzeitig zu nutzen. 
+                    Alle Geräte von beiden Plattformen werden kombiniert.
+                </small>
+                <div id="primary-platform-select" style="margin-left: 28px; margin-top: 12px; display: none;">
+                    <label for="primary-platform">Primäre Platform:</label>
+                    <select id="primary-platform" class="form-control" style="width: 200px; margin-top: 5px;">
+                        <option value="homey">Homey Pro</option>
+                        <option value="homeassistant">Home Assistant</option>
+                    </select>
+                    <small class="help-text">Die primäre Platform wird für allgemeine Anfragen bevorzugt</small>
+                </div>
+            </div>
+
+            <!-- Platform Selection (nur im Single-Mode sichtbar) -->
+            <div class="form-group" id="single-platform-select">
+                <label for="platform-select">
+                    <strong>Smart Home Platform:</strong>
+                </label>
+                <select id="platform-select" class="form-control" style="width: 100%; padding: 8px;">
+                    <option value="homey">Homey Pro</option>
+                    <option value="homeassistant">Home Assistant</option>
+                </select>
+            </div>
+
+            <!-- Homey Configuration -->
+            <div id="homey-config" class="platform-config" style="display: none;">
+                <h4 style="margin-top: 20px;">🏠 Homey Pro Konfiguration</h4>
+                
+                <div class="form-group">
+                    <label>Verbindungstyp:</label>
+                    <div style="display: flex; gap: 15px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="radio" name="homey-type" value="local" checked>
+                            <span>Lokal (empfohlen)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="radio" name="homey-type" value="cloud">
+                            <span>Cloud API</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="homey-local-config">
+                    <div class="form-group">
+                        <label for="homey-local-url">Lokale IP-Adresse:</label>
+                        <input type="text" id="homey-local-url" class="form-control" placeholder="http://192.168.1.100" style="width: 100%;">
+                        <small class="help-text">Die lokale IP-Adresse deines Homey Pro (z.B. http://192.168.1.100)</small>
+                    </div>
+                </div>
+
+                <div id="homey-cloud-config" style="display: none;">
+                    <div class="form-group">
+                        <label for="homey-cloud-id">Homey ID:</label>
+                        <input type="text" id="homey-cloud-id" class="form-control" placeholder="5f4e3d2c1b0a9876" style="width: 100%;">
+                        <small class="help-text">Findest du in der Homey App: Einstellungen → Allgemein → Homey ID</small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="homey-token">Bearer Token:</label>
+                    <input type="password" id="homey-token" class="form-control" placeholder="Homey API Token" style="width: 100%;">
+                    <small class="help-text">Erstelle einen Token in der Homey App: Einstellungen → API → Neuer Token</small>
+                </div>
+
+                <div class="form-group">
+                    <button class="btn btn-secondary" id="test-homey-connection">Verbindung testen</button>
+                    <div id="homey-test-result" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+
+            <!-- Home Assistant Configuration -->
+            <div id="ha-config" class="platform-config" style="display: none;">
+                <h4 style="margin-top: 20px;">🏡 Home Assistant Konfiguration</h4>
+                
+                <div class="form-group">
+                    <label for="ha-url">URL:</label>
+                    <input type="text" id="ha-url" class="form-control" placeholder="http://homeassistant.local:8123" style="width: 100%;">
+                    <small class="help-text">Die URL deiner Home Assistant Installation</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="ha-token">Long-Lived Access Token:</label>
+                    <input type="password" id="ha-token" class="form-control" placeholder="Home Assistant Token" style="width: 100%;">
+                    <small class="help-text">Erstelle einen Token in Home Assistant: Profil → Long-Lived Access Tokens</small>
+                </div>
+
+                <div class="form-group">
+                    <button class="btn btn-secondary" id="test-ha-connection">Verbindung testen</button>
+                    <div id="ha-test-result" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+
+            <!-- Connection Status -->
+            <div id="connection-status" style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0; display: flex; align-items: center; gap: 10px;">
+                    <span>📡 Aktueller Verbindungsstatus</span>
+                    <span id="connection-live-indicator" class="live-indicator" style="display: none;">●</span>
+                </h4>
+                <div id="connection-status-content">
+                    <div class="loading">Lade Status...</div>
+                </div>
+            </div>
+
+            <!-- Data Collection Configuration -->
+            <div id="data-collection-config" style="margin-top: 30px; padding: 20px; background: white; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <h4 style="margin: 0 0 15px 0; display: flex; align-items: center; gap: 10px;">
+                    <span>💾 Datensammlung Konfiguration</span>
+                </h4>
+                <p style="font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+                    Wähle aus, welche Datentypen gesammelt werden sollen.
+                    <span id="multi-platform-hint" style="display: none; color: #059669; font-weight: 600;">
+                        Im Multi-Platform Modus kannst du gezielt Geräte von der sekundären Plattform auswählen.
+                    </span>
+                </p>
+
+                <div style="display: grid; gap: 12px;">
+                    <!-- Lighting Events -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-lighting" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-lighting" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                💡 Licht Events (ML Training)
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt Licht An/Aus Events für Machine Learning Training
+                            </div>
+                            <button class="btn btn-sm btn-secondary device-mapping-btn" data-type="lighting" style="margin-top: 8px; display: none;">
+                                🔀 Geräte-Zuordnung bearbeiten
+                            </button>
+                            <div id="lighting-mapping-summary" style="margin-top: 8px; font-size: 12px; color: #059669; display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Temperature Data -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-temperature" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-temperature" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                🌡️ Temperatur Daten (ML Training)
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt Temperatur-Messungen für Machine Learning Training
+                            </div>
+                            <button class="btn btn-sm btn-secondary device-mapping-btn" data-type="temperature" style="margin-top: 8px; display: none;">
+                                🔀 Geräte-Zuordnung bearbeiten
+                            </button>
+                            <div id="temperature-mapping-summary" style="margin-top: 8px; font-size: 12px; color: #059669; display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Heating Observations -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-heating" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-heating" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                🔥 Heizungs-Beobachtungen
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt Heizungs-Daten (Ist/Soll-Temperatur, Außentemperatur)
+                            </div>
+                            <button class="btn btn-sm btn-secondary device-mapping-btn" data-type="heating" style="margin-top: 8px; display: none;">
+                                🔀 Geräte-Zuordnung bearbeiten
+                            </button>
+                            <div id="heating-mapping-summary" style="margin-top: 8px; font-size: 12px; color: #059669; display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Window States -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-windows" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-windows" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                🪟 Fenster Status
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt Fenster Auf/Zu Status für Heizungsoptimierung
+                            </div>
+                            <button class="btn btn-sm btn-secondary device-mapping-btn" data-type="windows" style="margin-top: 8px; display: none;">
+                                🔀 Geräte-Zuordnung bearbeiten
+                            </button>
+                            <div id="windows-mapping-summary" style="margin-top: 8px; font-size: 12px; color: #059669; display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Bathroom Data -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-bathroom" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-bathroom" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                🚿 Badezimmer Daten
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt Badezimmer Sensor-Daten (Luftfeuchtigkeit, Temperatur)
+                            </div>
+                            <button class="btn btn-sm btn-secondary device-mapping-btn" data-type="bathroom" style="margin-top: 8px; display: none;">
+                                🔀 Geräte-Zuordnung bearbeiten
+                            </button>
+                            <div id="bathroom-mapping-summary" style="margin-top: 8px; font-size: 12px; color: #059669; display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Sensor Raw Data -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-sensors" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-sensors" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                📊 Sensor Rohdaten
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt allgemeine Sensor-Daten für Analysen
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Weather Data -->
+                    <div style="display: flex; align-items: start; gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                        <input type="checkbox" id="collect-weather" checked style="margin-top: 3px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <label for="collect-weather" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
+                                ☁️ Wetter-Daten
+                            </label>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                Sammelt Wetter-Informationen von externen APIs
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons" style="margin-top: 20px;">
+                    <button class="btn btn-primary" id="save-data-collection-config">Datensammlung speichern</button>
+                </div>
+                <div id="data-collection-save-result" class="action-result"></div>
+            </div>
+
+            <!-- Weather API Configuration -->
+            <div class="card settings-card" style="margin-top: 20px;">
+                <h3>☁️ Wetter-API Konfiguration</h3>
+                <p class="card-description">
+                    Konfiguriere die externe Wetter-API für präzise Wettervorhersagen.
+                </p>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="weather-api-enabled" style="width: 18px; height: 18px; margin-right: 8px;">
+                        <strong>Wetter-API aktivieren</strong>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="weather-api-key">API Key:</label>
+                    <input type="text" id="weather-api-key" class="form-control" 
+                           placeholder="Dein Weather API Key">
+                    <small class="help-text">
+                        API Key von <a href="https://openweathermap.org/api" target="_blank">OpenWeatherMap</a> oder ähnlichem Service
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="weather-location">Standort:</label>
+                    <input type="text" id="weather-location" class="form-control" 
+                           placeholder="z.B. Berlin, DE oder 52.5200,13.4050">
+                    <small class="help-text">
+                        Stadt, Land (z.B. "Berlin, DE") oder Koordinaten (Lat,Lon)
+                    </small>
+                </div>
+            </div>
+
+            <!-- Save Button -->
+            <div class="action-buttons" style="margin-top: 20px;">
+                <button class="btn btn-primary" id="save-connection-config">Verbindungskonfiguration speichern</button>
+            </div>
+            <div id="connection-save-result" class="action-result"></div>
+        </div>
+        </div>
+    </div>
+    <!-- Ende Tab: Verbindung -->
 
     <!-- Tab: Sensoren -->
     <div class="tab-content" id="tab-sensors">
@@ -326,6 +621,7 @@
                     <div style="font-size: 13px; color: #6b7280;">
                         <div id="lighting-data-count">0 / 100 Events</div>
                         <div id="lighting-last-trained" style="margin-top: 4px;">Nie trainiert</div>
+                        <div id="lighting-collector-status" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;"></div>
                     </div>
                 </div>
 
@@ -339,6 +635,7 @@
                     <div style="font-size: 13px; color: #6b7280;">
                         <div id="temp-data-count">0 / 200 Readings</div>
                         <div id="temp-last-trained" style="margin-top: 4px;">Nie trainiert</div>
+                        <div id="temp-collector-status" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;"></div>
                     </div>
                 </div>
 
@@ -354,6 +651,12 @@
                         <div id="autotrainer-next-run" style="margin-top: 4px;">Nächster Run: Morgen</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Data Collection Status Info -->
+            <div id="data-collection-info" style="margin: 20px 0; padding: 12px; background: #f0f9ff; border-left: 4px solid #3b82f6; border-radius: 6px; display: none;">
+                <div style="font-weight: 600; color: #1e40af; margin-bottom: 8px;">💡 Hinweis zur Datensammlung</div>
+                <div id="data-collection-message" style="font-size: 13px; color: #1e3a8a;"></div>
             </div>
 
             <!-- Training Settings -->
@@ -492,6 +795,20 @@
 </div>
 
 <style>
+/* Checkbox Fix - Stelle sicher dass Checkboxen sichtbar sind */
+input[type="checkbox"] {
+    appearance: auto !important;
+    -webkit-appearance: checkbox !important;
+    -moz-appearance: checkbox !important;
+    opacity: 1 !important;
+    position: relative !important;
+    visibility: visible !important;
+}
+
+input[type="checkbox"]:checked {
+    background-color: #10b981 !important;
+}
+
 /* Tab Styling */
 .settings-tabs {
     display: flex;
@@ -572,7 +889,123 @@
     border-left: 4px solid #3b82f6;
     color: #1e40af;
 }
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.device-item {
+    padding: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.device-item:hover {
+    background: #f9fafb;
+    border-color: #3b82f6;
+}
+
+.device-item.selected {
+    background: #eff6ff;
+    border-color: #3b82f6;
+    border-width: 2px;
+}
+
+.device-item.replace-mode {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
+.device-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
 </style>
 
+<!-- Device Mapping Modal -->
+<div id="device-mapping-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 900px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; padding-bottom: 15px;">
+            <h3 id="modal-title" style="margin: 0;">🔀 Geräte-Zuordnung</h3>
+            <button class="modal-close" style="font-size: 24px; background: none; border: none; cursor: pointer; color: #6b7280;">&times;</button>
+        </div>
+
+        <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 20px;">
+            <div style="font-weight: 600; color: #065f46; margin-bottom: 8px;">ℹ️ Wie funktioniert die Geräte-Zuordnung?</div>
+            <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #047857;">
+                <li><strong>Standard:</strong> Alle Geräte von der Hauptplattform (<span id="primary-platform-name">Homey</span>)</li>
+                <li><strong>Ersetzen:</strong> Wähle Geräte von der sekundären Plattform, die stattdessen verwendet werden sollen</li>
+                <li><strong>Zusätzlich:</strong> Wähle "Zusätzlich verwenden" um Geräte zu beiden Plattformen hinzuzufügen</li>
+            </ul>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- Hauptplattform -->
+            <div>
+                <h4 style="margin: 0 0 15px 0; color: #374151; display: flex; align-items: center; gap: 8px;">
+                    <span style="width: 12px; height: 12px; background: #10b981; border-radius: 50%; display: inline-block;"></span>
+                    <span id="primary-devices-title">Hauptplattform (Homey)</span>
+                </h4>
+                <div id="primary-devices-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; background: white;">
+                    <div class="loading">Lade Geräte...</div>
+                </div>
+            </div>
+
+            <!-- Sekundäre Plattform -->
+            <div>
+                <h4 style="margin: 0 0 15px 0; color: #374151; display: flex; align-items: center; gap: 8px;">
+                    <span style="width: 12px; height: 12px; background: #3b82f6; border-radius: 50%; display: inline-block;"></span>
+                    <span id="secondary-devices-title">Sekundäre Plattform (Home Assistant)</span>
+                </h4>
+                <div style="margin-bottom: 10px;">
+                    <input type="text" id="secondary-device-search" placeholder="🔍 Geräte suchen..." style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px;">
+                </div>
+                <div id="secondary-devices-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; background: white;">
+                    <div class="loading">Lade Geräte...</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+            <div style="font-size: 13px; color: #6b7280;">
+                <span id="mapping-count">0 Geräte</span> von der sekundären Plattform ausgewählt
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button id="cancel-mapping" class="btn btn-secondary">Abbrechen</button>
+                <button id="save-mapping" class="btn btn-primary">Zuordnung speichern</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+<script src="{{ url_for('static', filename='js/device-mapping.js') }}"></script>
 {% endblock %}

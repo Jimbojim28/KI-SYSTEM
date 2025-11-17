@@ -17,7 +17,7 @@ class HomeyCollector(SmartHomeCollector):
     def __init__(self, url: str, token: str):
         """
         Args:
-            url: Homey Cloud API URL oder lokale IP (https://api.athom.com)
+            url: Homey Cloud API URL oder lokale IP (https://api.athom.com oder http://192.168.x.x)
             token: Bearer Token von Homey
         """
         self.url = url.rstrip('/')
@@ -26,6 +26,14 @@ class HomeyCollector(SmartHomeCollector):
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
+        
+        # Erkenne ob Cloud oder lokale API
+        self.is_cloud_api = 'api.athom.com' in self.url
+        
+        # Wenn Cloud API ohne delegation path, extrahiere Homey ID aus Token
+        if self.is_cloud_api and '/delegation/token/' not in self.url:
+            logger.warning("Cloud API URL should include /delegation/token/{HOMEY_ID}")
+            logger.info("Trying to use direct cloud API endpoints (may have limited functionality)")
 
         # Device-Cache für Performance
         self._device_cache = {}
@@ -35,7 +43,18 @@ class HomeyCollector(SmartHomeCollector):
                      data: Dict = None) -> Optional[Any]:
         """Macht einen API-Request zu Homey"""
         try:
-            url = f"{self.url}/{endpoint.lstrip('/')}"
+            # Für Cloud API: verwende die korrekte URL-Struktur
+            if self.is_cloud_api and '/delegation/token/' in self.url:
+                # URL ist bereits korrekt konfiguriert mit delegation path
+                url = f"{self.url}/{endpoint.lstrip('/')}"
+            elif self.is_cloud_api:
+                # Fallback für alte Cloud API Config - verwende direkten Endpunkt
+                # Dies funktioniert nur für einige Endpunkte
+                url = f"{self.url}/{endpoint.lstrip('/')}"
+                logger.debug(f"Using direct cloud API endpoint: {endpoint}")
+            else:
+                # Lokale API
+                url = f"{self.url}/{endpoint.lstrip('/')}"
 
             if method == "GET":
                 response = requests.get(url, headers=self.headers, timeout=10)
@@ -53,16 +72,24 @@ class HomeyCollector(SmartHomeCollector):
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Homey API error: {e}")
+            if self.is_cloud_api and '/delegation/token/' not in self.url:
+                logger.error("Hint: For Homey Cloud, configure URL as: https://api.athom.com/delegation/token/YOUR_HOMEY_ID")
             return None
 
     def _refresh_device_cache(self):
         """Aktualisiert den Device-Cache"""
-        devices = self._make_request("/api/manager/devices/device/")
+        devices = self._make_request("/api/manager/devices/device")
 
         if devices:
             self._device_cache = devices
             self._cache_timestamp = datetime.now()
             logger.debug(f"Device cache refreshed: {len(devices)} devices")
+        else:
+            logger.warning("No devices found")
+            if self.is_cloud_api and '/delegation/token/' not in self.url:
+                logger.warning("TIPP: Fuer Homey Cloud API, konfiguriere die URL so:")
+                logger.warning("   url: https://api.athom.com/delegation/token/DEINE_HOMEY_ID")
+                logger.warning("   (Homey ID findest du in der Homey App unter Einstellungen -> Allgemein)")
 
     def _get_device(self, device_id: str) -> Optional[Dict]:
         """Holt ein Device aus dem Cache oder API"""
@@ -106,7 +133,7 @@ class HomeyCollector(SmartHomeCollector):
 
         if not device:
             # Fallback: Direkt von API holen
-            device = self._make_request(f"/api/manager/devices/device/{entity_id}/")
+            device = self._make_request(f"/api/manager/devices/device/{entity_id}")
 
         if not device:
             return None
@@ -170,13 +197,13 @@ class HomeyCollector(SmartHomeCollector):
             # Homey nutzt 0-1, nicht 0-255
             brightness = kwargs['brightness'] / 255.0
             dim_result = self._make_request(
-                f"/api/manager/devices/device/{entity_id}/capability/dim/",
+                f"/api/manager/devices/device/{entity_id}/capability/dim",
                 method="PUT",
                 data={"value": brightness}
             )
 
         result = self._make_request(
-            f"/api/manager/devices/device/{entity_id}/capability/onoff/",
+            f"/api/manager/devices/device/{entity_id}/capability/onoff",
             method="PUT",
             data={"value": True}
         )
@@ -190,7 +217,7 @@ class HomeyCollector(SmartHomeCollector):
     def turn_off(self, entity_id: str) -> bool:
         """Schaltet ein Homey Device aus"""
         result = self._make_request(
-            f"/api/manager/devices/device/{entity_id}/capability/onoff/",
+            f"/api/manager/devices/device/{entity_id}/capability/onoff",
             method="PUT",
             data={"value": False}
         )
@@ -204,7 +231,7 @@ class HomeyCollector(SmartHomeCollector):
     def set_temperature(self, entity_id: str, temperature: float) -> bool:
         """Setzt Zieltemperatur für Homey Thermostat"""
         result = self._make_request(
-            f"/api/manager/devices/device/{entity_id}/capability/target_temperature/",
+            f"/api/manager/devices/device/{entity_id}/capability/target_temperature",
             method="PUT",
             data={"value": temperature}
         )
@@ -245,7 +272,7 @@ class HomeyCollector(SmartHomeCollector):
 
         if 'thermostat_mode' in capabilities:
             result = self._make_request(
-                f"/api/manager/devices/device/{entity_id}/capability/thermostat_mode/",
+                f"/api/manager/devices/device/{entity_id}/capability/thermostat_mode",
                 method="PUT",
                 data={"value": homey_mode}
             )
@@ -393,7 +420,7 @@ class HomeyCollector(SmartHomeCollector):
 
         try:
             # Hole alle Sensoren und Thermostate
-            devices = self._make_request("/api/manager/devices/device/")
+            devices = self._make_request("/api/manager/devices/device")
             if not devices:
                 return None
 
@@ -447,7 +474,8 @@ class HomeyCollector(SmartHomeCollector):
             return weather_data
 
         except Exception as e:
-            logger.error(f"Error getting weather data from Homey: {e}")
+            error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+            logger.error(f"Error getting weather data from Homey: {error_msg}")
             return None
 
     def get_presence_status(self) -> Dict:
@@ -464,7 +492,7 @@ class HomeyCollector(SmartHomeCollector):
             }
         """
         try:
-            users_data = self._make_request("/api/manager/users/user/")
+            users_data = self._make_request("/api/manager/users/user")
 
             if not users_data:
                 return {
@@ -502,7 +530,8 @@ class HomeyCollector(SmartHomeCollector):
             }
 
         except Exception as e:
-            logger.error(f"Error getting presence status: {e}")
+            error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+            logger.error(f"Error getting presence status: {error_msg}")
             return {
                 'anyone_home': False,
                 'users': [],
