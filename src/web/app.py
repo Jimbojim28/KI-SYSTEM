@@ -12,6 +12,7 @@ import sys
 import subprocess
 import os
 import json
+import yaml
 
 # Füge src zum Python-Path hinzu
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -2264,32 +2265,87 @@ class WebInterface:
                 # Hole Raum-Daten (ähnlich wie bei Mold Prevention)
                 if outdoor_temp is not None:
                     try:
+                        # Lade gespeicherte Sensor-Zuordnung
+                        sensor_mapping = {}
+                        config_file = Path('config/ventilation_sensors.yaml')
+                        if config_file.exists():
+                            try:
+                                with open(config_file, 'r') as f:
+                                    sensor_mapping = yaml.safe_load(f) or {}
+                            except:
+                                pass
+                        
                         states = self.engine.platform.get_states()
+                        devices = self.engine.platform.get_all_devices()
+                        zones = self.engine.platform.get_zones()
+                        
+                        # Erstelle Zone-ID zu Zone-Name Mapping
+                        zone_names = {}
+                        for zone_id, zone_data in zones.items():
+                            zone_name = zone_data.get('name', zone_id)
+                            zone_names[zone_id] = zone_name
+                        
+                        # Erstelle Device-ID zu Zone-ID Mapping
+                        device_zones = {}
+                        for device in devices:
+                            device_id = device.get('id')
+                            zone_id = device.get('zone') or device.get('zoneName') or device.get('attributes', {}).get('zone')
+                            if device_id and zone_id:
+                                device_zones[device_id] = zone_id
 
                         room_sensors = {}
-                        for device_id, state in states.items():
-                            if not state:
-                                continue
+                        
+                        # Wenn Sensor-Zuordnung existiert, verwende sie
+                        if sensor_mapping:
+                            for room_name, sensor_ids in sensor_mapping.items():
+                                temp_device_id = sensor_ids.get('temperature')
+                                humidity_device_id = sensor_ids.get('humidity')
+                                
+                                if temp_device_id and humidity_device_id:
+                                    temp_state = states.get(temp_device_id)
+                                    humidity_state = states.get(humidity_device_id)
+                                    
+                                    if temp_state and humidity_state:
+                                        temp_value = temp_state.get('attributes', {}).get('capabilities', {}).get('measure_temperature', {}).get('value')
+                                        humidity_value = humidity_state.get('attributes', {}).get('capabilities', {}).get('measure_humidity', {}).get('value')
+                                        
+                                        if temp_value is not None and humidity_value is not None:
+                                            room_sensors[room_name] = {
+                                                'temperature': temp_value,
+                                                'humidity': humidity_value,
+                                                'device_count': 2
+                                            }
+                        
+                        # Fallback: Automatische Erkennung (wie vorher)
+                        else:
+                            for device_id, state in states.items():
+                                if not state:
+                                    continue
 
-                            attrs = state.get('attributes', {})
-                            friendly_name = attrs.get('friendly_name', device_id)
+                                attrs = state.get('attributes', {})
+                                
+                                # Versuche Zone-ID aus verschiedenen Quellen zu holen
+                                zone_id = device_zones.get(device_id)  # Zuerst aus Devices-Mapping
+                                if not zone_id:
+                                    zone_id = attrs.get('zone')  # Dann aus State attributes
+                                if not zone_id:
+                                    zone_id = attrs.get('room')  # Alternative: room attribute
+                                if not zone_id:
+                                    continue  # Skip devices ohne Raum-Zuordnung
+                                
+                                # Konvertiere Zone-ID zu lesbarem Raumnamen
+                                room_name = zone_names.get(zone_id, zone_id)
 
-                            room_name = "Unknown"
-                            if 'room' in attrs:
-                                room_name = attrs['room']
-                            else:
-                                parts = friendly_name.split()
-                                if len(parts) > 1:
-                                    room_name = parts[-1]
+                                if room_name not in room_sensors:
+                                    room_sensors[room_name] = {'temperature': None, 'humidity': None, 'device_count': 0}
 
-                            if room_name not in room_sensors:
-                                room_sensors[room_name] = {'temperature': None, 'humidity': None}
-
-                            caps = attrs.get('capabilities', {})
-                            if 'measure_temperature' in caps:
-                                room_sensors[room_name]['temperature'] = caps['measure_temperature'].get('value')
-                            if 'measure_humidity' in caps:
-                                room_sensors[room_name]['humidity'] = caps['measure_humidity'].get('value')
+                                room_sensors[room_name]['device_count'] += 1
+                                
+                                caps = attrs.get('capabilities', {})
+                                if 'measure_temperature' in caps and caps['measure_temperature'].get('value') is not None:
+                                    room_sensors[room_name]['temperature'] = caps['measure_temperature'].get('value')
+                                if 'measure_humidity' in caps and caps['measure_humidity'].get('value') is not None:
+                                    room_sensors[room_name]['humidity'] = caps['measure_humidity'].get('value')
 
                         # Generiere Empfehlungen für jeden Raum
                         for room_name, sensors in room_sensors.items():
@@ -2327,6 +2383,170 @@ class WebInterface:
             except Exception as e:
                 logger.error(f"Error getting ventilation recommendations: {e}")
                 return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/ventilation/sensors', methods=['GET'])
+        def get_ventilation_sensors():
+            """
+            Holt alle verfügbaren Temperatur- und Feuchtigkeitssensoren von Homey und Home Assistant
+            """
+            try:
+                sensors = []
+                
+                # Homey Sensoren
+                if self.engine and self.engine.platform:
+                    states = self.engine.platform.get_states()
+                    devices = self.engine.platform.get_all_devices()
+                    zones = self.engine.platform.get_zones()
+                    
+                    # Zone-ID zu Name Mapping
+                    zone_names = {}
+                    for zone_id, zone_data in zones.items():
+                        zone_names[zone_id] = zone_data.get('name', zone_id)
+                    
+                    # Device-ID zu Zone Mapping
+                    device_zones = {}
+                    for device in devices:
+                        device_id = device.get('id')
+                        zone_id = device.get('zone')
+                        if device_id and zone_id:
+                            device_zones[device_id] = zone_id
+
+                    for device_id, state in states.items():
+                        if not state:
+                            continue
+                        
+                        attrs = state.get('attributes', {})
+                        caps = attrs.get('capabilities', {})
+                        friendly_name = attrs.get('friendly_name', device_id)
+                        
+                        # Hole Zone-ID und Namen
+                        zone_id = device_zones.get(device_id) or attrs.get('zone')
+                        if not zone_id:
+                            continue
+                        
+                        room_name = zone_names.get(zone_id, zone_id)
+                        
+                        # Temperatursensor
+                        if 'measure_temperature' in caps:
+                            sensors.append({
+                                'device_id': device_id,
+                                'name': friendly_name,
+                                'room': room_name,
+                                'type': 'temperature',
+                                'platform': 'homey',
+                                'current_value': caps['measure_temperature'].get('value')
+                            })
+                        
+                        # Feuchtigkeitssensor
+                        if 'measure_humidity' in caps:
+                            sensors.append({
+                                'device_id': device_id,
+                                'name': friendly_name,
+                                'room': room_name,
+                                'type': 'humidity',
+                                'platform': 'homey',
+                                'current_value': caps['measure_humidity'].get('value')
+                            })
+                
+                # Home Assistant Sensoren (wenn verfügbar)
+                if self.engine and hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                    try:
+                        ha_platform = self.engine.platforms['homeassistant']
+                        ha_states = ha_platform.get_states()
+                        
+                        for entity_id, state in ha_states.items():
+                            if not state:
+                                continue
+                            
+                            attrs = state.get('attributes', {})
+                            device_class = attrs.get('device_class', '')
+                            unit = attrs.get('unit_of_measurement', '')
+                            friendly_name = attrs.get('friendly_name', entity_id)
+                            area = attrs.get('area', 'Unbekannt')
+                            
+                            # Temperatursensor
+                            if device_class == 'temperature' or unit in ['°C', '°F', 'C', 'F']:
+                                try:
+                                    value = float(state.get('state', 0))
+                                    sensors.append({
+                                        'device_id': entity_id,
+                                        'name': friendly_name,
+                                        'room': area,
+                                        'type': 'temperature',
+                                        'platform': 'homeassistant',
+                                        'current_value': value
+                                    })
+                                except:
+                                    pass
+                            
+                            # Feuchtigkeitssensor
+                            elif device_class == 'humidity' or unit == '%':
+                                try:
+                                    value = float(state.get('state', 0))
+                                    sensors.append({
+                                        'device_id': entity_id,
+                                        'name': friendly_name,
+                                        'room': area,
+                                        'type': 'humidity',
+                                        'platform': 'homeassistant',
+                                        'current_value': value
+                                    })
+                                except:
+                                    pass
+                    except Exception as e:
+                        logger.warning(f"Could not load Home Assistant sensors: {e}")
+
+                return jsonify({
+                    'success': True,
+                    'sensors': sensors,
+                    'count': len(sensors)
+                })
+
+            except Exception as e:
+                logger.error(f"Error getting ventilation sensors: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/ventilation/sensor-mapping', methods=['GET', 'POST'])
+        def ventilation_sensor_mapping():
+            """
+            GET: Holt die gespeicherte Sensor-Zuordnung
+            POST: Speichert die Sensor-Zuordnung
+            """
+            config_file = Path('config/ventilation_sensors.yaml')
+            
+            if request.method == 'GET':
+                try:
+                    if config_file.exists():
+                        with open(config_file, 'r') as f:
+                            mapping = yaml.safe_load(f) or {}
+                    else:
+                        mapping = {}
+                    
+                    return jsonify({
+                        'success': True,
+                        'mapping': mapping
+                    })
+                except Exception as e:
+                    logger.error(f"Error loading sensor mapping: {e}")
+                    return jsonify({'error': str(e)}), 500
+            
+            elif request.method == 'POST':
+                try:
+                    data = request.json
+                    mapping = data.get('mapping', {})
+                    
+                    # Speichere Zuordnung
+                    config_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(config_file, 'w') as f:
+                        yaml.dump(mapping, f, default_flow_style=False)
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': 'Sensor-Zuordnung gespeichert'
+                    })
+                except Exception as e:
+                    logger.error(f"Error saving sensor mapping: {e}")
+                    return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/sensors/available', methods=['GET'])
         def api_get_available_sensors():

@@ -105,7 +105,7 @@ start_webapp() {
     echo ""
 
     # Starte im Hintergrund mit nohup
-    nohup python main.py web --host $HOST --port $PORT > "$LOG_FILE" 2>&1 &
+    nohup python3 main.py web --host $HOST --port $PORT > "$LOG_FILE" 2>&1 &
 
     # Speichere PID
     echo $! > "$PID_FILE"
@@ -147,7 +147,7 @@ start_webapp() {
         echo ""
         echo -e "${YELLOW}💡 Tipps zur Fehlersuche:${NC}"
         echo "   1. Prüfe Logs: tail -f $LOG_FILE"
-        echo "   2. Prüfe Python-Fehler: python main.py web"
+        echo "   2. Prüfe Python-Fehler: python3 main.py web"
         echo "   3. Prüfe Dependencies: pip install -r requirements.txt"
         echo "   4. Prüfe .env Datei: ls -la .env"
         echo ""

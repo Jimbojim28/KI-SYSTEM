@@ -6,20 +6,354 @@
     <p>Intelligente Lüftungsempfehlungen für optimales Raumklima</p>
 </div>
 
-<div id="rooms-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
-    <div class="loading">Lade Raum-Daten...</div>
+<!-- Tab Navigation -->
+<div class="tabs">
+    <button class="tab-button active" onclick="switchTab(event, 'recommendations')">📊 Empfehlungen</button>
+    <button class="tab-button" onclick="switchTab(event, 'settings')">⚙️ Sensor-Zuordnung</button>
+</div>
+
+<!-- Empfehlungen Tab -->
+<div id="recommendations-tab" class="tab-content active">
+    <div id="rooms-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+        <div class="loading">Lade Raum-Daten...</div>
+    </div>
+</div>
+
+<!-- Einstellungen Tab -->
+<div id="settings-tab" class="tab-content">
+    <div class="settings-container">
+        <div class="info-box">
+            <strong>ℹ️ Sensor-Zuordnung</strong>
+            <p>Ordnen Sie jedem Raum die richtigen Temperatur- und Feuchtigkeitssensoren zu. Sie können auch Home Assistant Entitäten manuell hinzufügen.</p>
+        </div>
+        
+        <!-- Home Assistant Entity hinzufügen -->
+        <div style="background: #f5f5f5; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+            <h3 style="margin-top: 0;">🏠 Home Assistant Entität hinzufügen</h3>
+            <div style="display: grid; grid-template-columns: 2fr 2fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+                <div>
+                    <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Entity ID</label>
+                    <input type="text" id="ha-entity-id" placeholder="z.B. sensor.wohnzimmer_temperature" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Raum</label>
+                    <input type="text" id="ha-room-name" placeholder="z.B. Wohnzimmer" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Typ</label>
+                    <select id="ha-sensor-type" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="temperature">🌡️ Temperatur</option>
+                        <option value="humidity">💧 Feuchtigkeit</option>
+                    </select>
+                </div>
+                <div>
+                    <button onclick="queryHAEntity()" class="btn" style="width: 100%; padding: 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">🔍 Prüfen</button>
+                </div>
+                <div>
+                    <button onclick="addHAEntity()" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">➕ Hinzufügen</button>
+                </div>
+            </div>
+            <div id="ha-entity-info" style="margin-top: 1rem; padding: 0.75rem; background: white; border-radius: 4px; display: none;"></div>
+        </div>
+        
+        <div id="room-sensor-mapping">
+            <div style="padding: 2rem; text-align: center; color: #666;">
+                Lade Sensoren...
+            </div>
+        </div>
+        <button onclick="saveSensorMapping()" class="btn btn-primary" style="margin-top: 1rem;">💾 Zuordnung speichern</button>
+    </div>
 </div>
 
 <style>
+.tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #e0e0e0; }
+.tab-button { padding: 1rem 1.5rem; border: none; background: none; cursor: pointer; font-size: 1em; color: #666; border-bottom: 3px solid transparent; transition: all 0.3s; }
+.tab-button:hover { color: #333; background: #f5f5f5; }
+.tab-button.active { color: #667eea; border-bottom-color: #667eea; font-weight: bold; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
 .room-card { background: white; border-radius: 8px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 .priority-badge { padding: 0.5rem 1rem; border-radius: 20px; font-weight: bold; display: inline-block; margin: 0.5rem 0; }
 .priority-HOCH { background: #FFEBEE; color: #C62828; }
 .priority-MITTEL { background: #FFF3E0; color: #E65100; }
 .priority-NIEDRIG { background: #E8F5E9; color: #2E7D32; }
 .action-icon { font-size: 2.5em; margin: 0.5rem 0; }
+.settings-container { max-width: 1200px; margin: 0 auto; }
+.info-box { background: #e3f2fd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #2196F3; }
+.sensor-room-card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+.sensor-select { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem; font-size: 1em; }
 </style>
 
 <script>
+let allSensors = [];
+let currentMapping = {};
+let sensorsLoaded = false;
+
+// Tab Switching
+function switchTab(evt, tabName) {
+    console.log('Switching to tab:', tabName);
+    console.log('sensorsLoaded:', sensorsLoaded);
+    
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    evt.target.classList.add('active');
+    document.getElementById(tabName + '-tab').classList.add('active');
+    
+    if (tabName === 'settings') {
+        console.log('Settings tab activated, loading sensors...');
+        if (!sensorsLoaded) {
+            console.log('Loading sensors for first time...');
+            loadSensorSettings();
+        } else {
+            console.log('Sensors already loaded, skipping');
+        }
+    }
+}
+
+// Lade Sensor-Einstellungen
+async function loadSensorSettings() {
+    console.log('Loading sensor settings...');
+    const container = document.getElementById('room-sensor-mapping');
+    
+    try {
+        container.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">⏳ Lade Sensoren...</div>';
+        
+        // Lade alle verfügbaren Sensoren
+        const sensorsResponse = await fetch('/api/ventilation/sensors');
+        console.log('Sensors response status:', sensorsResponse.status);
+        
+        const sensorsData = await sensorsResponse.json();
+        console.log('Sensors loaded:', sensorsData);
+        
+        if (sensorsData.success) {
+            allSensors = sensorsData.sensors;
+            console.log('Total sensors:', allSensors.length);
+            sensorsLoaded = true;
+            
+            // Lade gespeicherte Zuordnung
+            const mappingResponse = await fetch('/api/ventilation/sensor-mapping');
+            const mappingData = await mappingResponse.json();
+            
+            console.log('Mapping loaded:', mappingData);
+            
+            if (mappingData.success) {
+                currentMapping = mappingData.mapping || {};
+            }
+            
+            displaySensorMapping();
+        } else {
+            console.error('Failed to load sensors:', sensorsData);
+            container.innerHTML = '<div style="padding: 2rem; text-align: center; color: red;">❌ Fehler beim Laden der Sensoren</div>';
+        }
+    } catch (error) {
+        console.error('Fehler beim Laden der Sensor-Einstellungen:', error);
+        container.innerHTML = '<div style="padding: 2rem; text-align: center; color: red;">❌ Fehler: ' + error.message + '</div>';
+    }
+}
+
+// Zeige Sensor-Zuordnung
+function displaySensorMapping() {
+    console.log('Displaying sensor mapping...');
+    const container = document.getElementById('room-sensor-mapping');
+    
+    if (!container) {
+        console.error('Container room-sensor-mapping not found!');
+        return;
+    }
+    
+    // Gruppiere Sensoren nach Räumen
+    const rooms = {};
+    allSensors.forEach(sensor => {
+        if (!rooms[sensor.room]) {
+            rooms[sensor.room] = [];
+        }
+        rooms[sensor.room].push(sensor);
+    });
+    
+    console.log('Rooms found:', Object.keys(rooms).length);
+    console.log('Rooms:', Object.keys(rooms));
+    
+    if (Object.keys(rooms).length === 0) {
+        container.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">Keine Sensoren gefunden</div>';
+        return;
+    }
+    
+    const html = Object.keys(rooms).sort().map(roomName => {
+        const roomSensors = rooms[roomName];
+        const tempSensors = roomSensors.filter(s => s.type === 'temperature');
+        const humiditySensors = roomSensors.filter(s => s.type === 'humidity');
+        
+        console.log(`Room ${roomName}: ${tempSensors.length} temp, ${humiditySensors.length} humidity`);
+        
+        return `
+            <div class="sensor-room-card">
+                <h3 style="margin-top: 0;">🏠 ${roomName}</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">🌡️ Temperatursensor</label>
+                        <select class="sensor-select" data-room="${roomName}" data-type="temperature">
+                            <option value="">-- Bitte wählen --</option>
+                            ${tempSensors.map(s => {
+                                const platformIcon = s.platform === 'homeassistant' ? '🏠' : '🔷';
+                                return `<option value="${s.device_id}" ${currentMapping[roomName]?.temperature === s.device_id ? 'selected' : ''}>${platformIcon} ${s.name}</option>`;
+                            }).join('')}
+                        </select>
+                        <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+                            ${tempSensors.length} Sensor(en) verfügbar
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">💧 Feuchtigkeitssensor</label>
+                        <select class="sensor-select" data-room="${roomName}" data-type="humidity">
+                            <option value="">-- Bitte wählen --</option>
+                            ${humiditySensors.map(s => {
+                                const platformIcon = s.platform === 'homeassistant' ? '🏠' : '🔷';
+                                return `<option value="${s.device_id}" ${currentMapping[roomName]?.humidity === s.device_id ? 'selected' : ''}>${platformIcon} ${s.name}</option>`;
+                            }).join('')}
+                        </select>
+                        <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+                            ${humiditySensors.length} Sensor(en) verfügbar
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    console.log('Generated HTML length:', html.length);
+    container.innerHTML = html;
+    console.log('Container updated');
+}
+
+// Home Assistant Entity prüfen
+async function queryHAEntity() {
+    const entityId = document.getElementById('ha-entity-id').value.trim();
+    const infoDiv = document.getElementById('ha-entity-info');
+    
+    if (!entityId) {
+        alert('Bitte Entity ID eingeben');
+        return;
+    }
+    
+    try {
+        infoDiv.innerHTML = '<div style="text-align: center;">⏳ Prüfe Entity...</div>';
+        infoDiv.style.display = 'block';
+        
+        const response = await fetch(`/api/ha/entity/${entityId}`);
+        const data = await response.json();
+        
+        if (data.success && data.entity) {
+            const entity = data.entity;
+            const state = entity.state || 'Unbekannt';
+            const unit = entity.attributes?.unit_of_measurement || '';
+            const friendlyName = entity.attributes?.friendly_name || entityId;
+            
+            infoDiv.innerHTML = `
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1rem;">
+                    <strong>Name:</strong> <span>${friendlyName}</span>
+                    <strong>Aktueller Wert:</strong> <span>${state} ${unit}</span>
+                    <strong>Status:</strong> <span style="color: green;">✅ Verfügbar</span>
+                </div>
+            `;
+            infoDiv.style.display = 'block';
+        } else {
+            infoDiv.innerHTML = '<div style="color: red;">❌ Entity nicht gefunden oder nicht verfügbar</div>';
+            infoDiv.style.display = 'block';
+        }
+    } catch (error) {
+        infoDiv.innerHTML = '<div style="color: red;">❌ Fehler: ' + error.message + '</div>';
+        infoDiv.style.display = 'block';
+    }
+}
+
+// Home Assistant Entity hinzufügen
+async function addHAEntity() {
+    const entityId = document.getElementById('ha-entity-id').value.trim();
+    const roomName = document.getElementById('ha-room-name').value.trim();
+    const sensorType = document.getElementById('ha-sensor-type').value;
+    
+    if (!entityId || !roomName) {
+        alert('Bitte Entity ID und Raum eingeben');
+        return;
+    }
+    
+    try {
+        // Prüfe ob Entity existiert
+        const response = await fetch(`/api/ha/entity/${entityId}`);
+        const data = await response.json();
+        
+        if (!data.success || !data.entity) {
+            alert('❌ Entity nicht gefunden. Bitte erst mit "Prüfen" die Verfügbarkeit prüfen.');
+            return;
+        }
+        
+        const friendlyName = data.entity.attributes?.friendly_name || entityId;
+        const currentValue = parseFloat(data.entity.state) || null;
+        
+        // Füge zur Sensor-Liste hinzu
+        allSensors.push({
+            device_id: entityId,
+            name: friendlyName,
+            room: roomName,
+            type: sensorType,
+            platform: 'homeassistant',
+            current_value: currentValue
+        });
+        
+        // Aktualisiere Anzeige
+        displaySensorMapping();
+        
+        // Leere Felder
+        document.getElementById('ha-entity-id').value = '';
+        document.getElementById('ha-room-name').value = '';
+        document.getElementById('ha-entity-info').style.display = 'none';
+        
+        alert('✅ Sensor erfolgreich hinzugefügt!');
+        
+    } catch (error) {
+        alert('❌ Fehler beim Hinzufügen: ' + error.message);
+    }
+}
+
+// Speichere Sensor-Zuordnung
+async function saveSensorMapping() {
+    const mapping = {};
+    
+    document.querySelectorAll('.sensor-select').forEach(select => {
+        const room = select.dataset.room;
+        const type = select.dataset.type;
+        const deviceId = select.value;
+        
+        if (deviceId) {
+            if (!mapping[room]) {
+                mapping[room] = {};
+            }
+            mapping[room][type] = deviceId;
+        }
+    });
+    
+    try {
+        const response = await fetch('/api/ventilation/sensor-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mapping })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('✅ Sensor-Zuordnung erfolgreich gespeichert!');
+            currentMapping = mapping;
+        } else {
+            alert('❌ Fehler beim Speichern: ' + (data.error || 'Unbekannter Fehler'));
+        }
+    } catch (error) {
+        alert('❌ Fehler beim Speichern: ' + error.message);
+    }
+}
+
+// Empfehlungen laden
 async function loadRecommendations() {
     try {
         const response = await fetch('/api/ventilation/recommendations');
