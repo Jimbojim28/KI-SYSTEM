@@ -799,11 +799,23 @@ async function loadOptimizationData() {
 
         // Lade Statistiken
         const stats = await fetchJSON('/api/heating/statistics');
-        renderStatistics(stats);
+        console.log('Heating statistics loaded:', stats);
+        
+        if (stats.success) {
+            renderStatistics(stats);
+        } else {
+            console.warn('Heating statistics returned success=false');
+            renderStatistics({});
+        }
 
-        console.log('Optimization data loaded');
+        console.log('Optimization data loaded successfully');
     } catch (error) {
         console.error('Error loading optimization data:', error);
+        // Zeige Fehler-Status an
+        const observationsEl = document.getElementById('monitoring-observations-count');
+        if (observationsEl) observationsEl.textContent = 'Fehler';
+        const dataDaysEl = document.getElementById('monitoring-data-days');
+        if (dataDaysEl) dataDaysEl.textContent = 'Fehler';
     }
 }
 
@@ -863,34 +875,44 @@ function createInsightCard(insight) {
 
 // Rendere Statistiken
 function renderStatistics(stats) {
+    console.log('Rendering statistics:', stats);
+    
     // Update Temperatur-Stats wenn vorhanden
-    if (stats.temperatures) {
-        const avgIndoor = stats.temperatures.avg_indoor;
-        if (avgIndoor) {
-            document.getElementById('avg-temp').textContent = avgIndoor + '°C';
+    if (stats.avg_temp) {
+        const avgTemp = parseFloat(stats.avg_temp).toFixed(1);
+        const avgTempEl = document.getElementById('avg-temp');
+        if (avgTempEl) {
+            avgTempEl.textContent = avgTemp + '°C';
         }
     }
 
     // Update Heiz-Stats
-    if (stats.heating) {
-        const heatingPercent = stats.heating.heating_percent;
-        console.log('Heating active:', heatingPercent + '%');
+    if (stats.heating_percent !== undefined) {
+        console.log('Heating active:', stats.heating_percent + '%');
     }
 
-    // Update Monitoring-Status (immer anzeigen, Daten direkt aus stats)
+    // Update Monitoring-Status
     // Beobachtungen
     const observationsCount = stats.total_observations || 0;
     const observationsEl = document.getElementById('monitoring-observations-count');
     if (observationsEl) {
-        observationsEl.textContent = observationsCount;
+        observationsEl.textContent = observationsCount > 0 ? observationsCount.toLocaleString() : '--';
     }
 
-    // Daten-Zeitraum (berechne aus Datenbank)
-    // Wenn wir Beobachtungen haben, zeige mindestens den letzten Tag
-    const dataDays = stats.period_days || (observationsCount > 0 ? Math.ceil(observationsCount / 96) : 0);
+    // Daten-Zeitraum
+    const dataDays = stats.period_days || 0;
     const dataDaysEl = document.getElementById('monitoring-data-days');
     if (dataDaysEl) {
-        dataDaysEl.textContent = dataDays > 0 ? dataDays + ' Tage' : 'Keine Daten';
+        dataDaysEl.textContent = dataDays > 0 ? dataDays + ' Tage' : '-- Tage';
+    }
+    
+    // Auch avg_temp in stats.temperatures Format unterstützen (für Kompatibilität)
+    if (stats.temperatures && stats.temperatures.avg_indoor) {
+        const avgIndoor = stats.temperatures.avg_indoor;
+        const avgTempEl = document.getElementById('avg-temp');
+        if (avgTempEl) {
+            avgTempEl.textContent = avgIndoor + '°C';
+        }
     }
 }
 
