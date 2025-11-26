@@ -1083,15 +1083,36 @@ function renderWeeklyOverview() {
         analyzedEventsEl.textContent = accuracy_metrics.total_events || 0;
     }
 
-    // Erstelle Heatmap
-    renderWeeklyHeatmap(actual_by_day_hour, predictions_by_day, accuracy_metrics, sufficient_data);
+    // Erstelle Heatmap mit erweiterten Daten
+    renderWeeklyHeatmap(
+        actual_by_day_hour, 
+        predictions_by_day, 
+        accuracy_metrics, 
+        sufficient_data,
+        weeklyOverviewData.future_predictions || {},
+        weeklyOverviewData.current_weekday,
+        weeklyOverviewData.current_hour,
+        weeklyOverviewData.typical_times || [],
+        weeklyOverviewData.pattern_stability || {}
+    );
 }
 
-function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics, sufficientData) {
+function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics, sufficientData, 
+                              futurePredictions, currentWeekday, currentHour, typicalTimes, patternStability) {
     const weekdayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
     const container = document.getElementById('weekly-heatmap');
 
     if (!container) return;
+    
+    // Bestimme aktuellen Wochentag (falls nicht übergeben)
+    if (currentWeekday === undefined) {
+        currentWeekday = new Date().getDay();
+        // JavaScript: Sonntag=0, wir brauchen Montag=0
+        currentWeekday = currentWeekday === 0 ? 6 : currentWeekday - 1;
+    }
+    if (currentHour === undefined) {
+        currentHour = new Date().getHours();
+    }
 
     // Erstelle Heatmap-HTML
     let html = '<div style="display: grid; grid-template-columns: auto repeat(24, 1fr); gap: 2px; font-size: 0.8em;">';
@@ -1100,16 +1121,27 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
     html += '<div style="padding: 5px; font-weight: bold;"></div>'; // Ecke oben links
 
     for (let hour = 0; hour < 24; hour++) {
-        html += `<div style="padding: 5px; text-align: center; font-weight: bold; font-size: 0.75em; color: #6b7280;">
-            ${hour}
+        // Markiere aktuelle Stunde
+        const isCurrentHour = hour === currentHour;
+        html += `<div style="padding: 5px; text-align: center; font-weight: bold; font-size: 0.75em; 
+            color: ${isCurrentHour ? '#ef4444' : '#6b7280'}; 
+            ${isCurrentHour ? 'background: #fef2f2; border-radius: 4px;' : ''}">
+            ${hour}${isCurrentHour ? '⏰' : ''}
         </div>`;
     }
 
     // Zeilen für jeden Wochentag
     for (let day = 0; day < 7; day++) {
-        // Wochentagsname
-        html += `<div style="padding: 8px; font-weight: 600; color: #374151; display: flex; align-items: center;">
-            ${weekdayNames[day]}
+        const isToday = day === currentWeekday;
+        const isFuture = day > currentWeekday;
+        const futurePred = futurePredictions ? futurePredictions[day] : null;
+        
+        // Wochentagsname mit Markierung für heute
+        html += `<div style="padding: 8px; font-weight: 600; color: ${isToday ? '#ef4444' : '#374151'}; 
+            display: flex; align-items: center; gap: 6px;
+            ${isToday ? 'background: linear-gradient(90deg, #fef2f2, transparent); border-radius: 4px;' : ''}">
+            ${weekdayNames[day]}${isToday ? ' <span style="font-size: 0.75em; background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px;">Heute</span>' : ''}
+            ${isFuture && futurePred ? ' <span style="font-size: 0.7em; color: #8b5cf6;">🔮</span>' : ''}
         </div>`;
 
         // Stunden-Zellen
@@ -1117,13 +1149,27 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
             const key = `${day}_${hour}`;
             const hasActual = actualByDayHour[key] && actualByDayHour[key].length > 0;
             const prediction = predictionsByDay[day];
+            
+            // Prüfe ob diese Stunde in der Zukunft liegt
+            const isFutureHour = (day > currentWeekday) || (day === currentWeekday && hour > currentHour);
+            const isPastHour = (day < currentWeekday) || (day === currentWeekday && hour <= currentHour);
 
-            // Prüfe ob diese Stunde vorhergesagt wurde
+            // Prüfe ob diese Stunde vorhergesagt wurde (historisch)
             let hasPrediction = false;
+            let predictionProb = 0;
             if (prediction && prediction.predicted_times) {
-                hasPrediction = prediction.predicted_times.some(p =>
-                    Math.abs(p.hour - hour) <= 1  // ±1 Stunde Toleranz
-                );
+                const pred = prediction.predicted_times.find(p => Math.abs(p.hour - hour) <= 1);
+                hasPrediction = !!pred;
+                predictionProb = pred ? pred.probability : 0;
+            }
+            
+            // Prüfe Zukunftsvorhersage
+            let hasFuturePrediction = false;
+            let futurePredConf = 0;
+            if (isFutureHour && futurePred && futurePred.predictions) {
+                const fp = futurePred.predictions.find(p => Math.abs(p.hour - hour) <= 1);
+                hasFuturePrediction = !!fp;
+                futurePredConf = fp ? fp.confidence : 0;
             }
 
             // Farbe basierend auf Status
@@ -1131,6 +1177,7 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
             let borderColor = '#e5e7eb';
             let content = '';
             let tooltip = `${weekdayNames[day]} ${hour}:00`;
+            let animation = '';
 
             if (hasActual && hasPrediction) {
                 // Beide: Übereinstimmung (Grün)
@@ -1147,13 +1194,31 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
                 const events = actualByDayHour[key];
                 const avgDuration = events.reduce((sum, e) => sum + (e.duration || 0), 0) / events.length;
                 tooltip = `${weekdayNames[day]} ${hour}:00\nTatsächlich: ${events.length} Event(s)\nØ Dauer: ${Math.round(avgDuration)} min`;
-            } else if (hasPrediction) {
-                // Nur vorhergesagt (Gelb/Orange)
+            } else if (hasFuturePrediction) {
+                // Zukünftige Vorhersage (Lila mit Animation)
+                bgColor = 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)';
+                borderColor = '#7c3aed';
+                content = '🔮';
+                animation = 'animation: pulse 2s infinite;';
+                tooltip = `${weekdayNames[day]} ${hour}:00\n🔮 VORHERSAGE für die Zukunft\nKonfidenz: ${futurePredConf.toFixed(0)}%`;
+            } else if (hasPrediction && isPastHour) {
+                // Vergangene Vorhersage die nicht eingetroffen ist (Orange)
                 bgColor = '#fbbf24';
                 borderColor = '#f59e0b';
                 content = '?';
-                const predTime = prediction.predicted_times.find(p => Math.abs(p.hour - hour) <= 1);
-                tooltip = `${weekdayNames[day]} ${hour}:00\nVorhergesagt (${predTime ? predTime.probability : 0}% Wahrscheinlichkeit)`;
+                tooltip = `${weekdayNames[day]} ${hour}:00\nVorhergesagt aber nicht eingetroffen\n(${predictionProb}% Wahrscheinlichkeit)`;
+            } else if (hasPrediction && isFutureHour) {
+                // Zukünftige Stunde mit historischem Muster (helles Lila)
+                bgColor = '#ddd6fe';
+                borderColor = '#c4b5fd';
+                content = '◊';
+                tooltip = `${weekdayNames[day]} ${hour}:00\nHistorisches Muster (${predictionProb}%)\nMöglicherweise Dusche erwartet`;
+            }
+            
+            // Markiere aktuelle Stunde/Tag besonders
+            let currentMarker = '';
+            if (day === currentWeekday && hour === currentHour) {
+                currentMarker = 'box-shadow: 0 0 0 3px #ef4444;';
             }
 
             html += `
@@ -1166,10 +1231,12 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        color: ${hasActual || hasPrediction ? 'white' : '#9ca3af'};
+                        color: ${hasActual || hasPrediction || hasFuturePrediction ? 'white' : '#9ca3af'};
                         font-weight: bold;
                         cursor: pointer;
                         transition: transform 0.1s ease;
+                        ${currentMarker}
+                        ${animation}
                     "
                     title="${tooltip}"
                     onmouseover="this.style.transform='scale(1.1)'; this.style.zIndex='10';"
@@ -1182,6 +1249,40 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
     }
 
     html += '</div>';
+    
+    // CSS für Pulse-Animation hinzufügen
+    html += `
+        <style>
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.7; }
+            }
+        </style>
+    `;
+    
+    // Zeige nächste vorhergesagte Dusche
+    if (typicalTimes && typicalTimes.length > 0 && sufficientData) {
+        const nextPrediction = findNextPredictedShower(typicalTimes, currentWeekday, currentHour, weekdayNames);
+        if (nextPrediction) {
+            html += `
+                <div style="margin-top: 15px; padding: 15px; background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); 
+                    border-left: 4px solid #8b5cf6; border-radius: 6px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.5em;">🔮</span>
+                        <div>
+                            <strong style="color: #5b21b6;">Nächste vorhergesagte Dusche</strong>
+                            <div style="font-size: 1.1em; margin-top: 4px; color: #374151;">
+                                ${nextPrediction.dayName} um <strong>${nextPrediction.timeString}</strong>
+                                <span style="color: #6b7280; font-size: 0.9em;">(${nextPrediction.label}, ${(nextPrediction.confidence * 100).toFixed(0)}% Konfidenz)</span>
+                            </div>
+                            ${nextPrediction.isToday ? '<div style="margin-top: 4px; color: #059669; font-size: 0.9em;">⏰ Das ist heute!</div>' : ''}
+                            ${nextPrediction.isTomorrow ? '<div style="margin-top: 4px; color: #2563eb; font-size: 0.9em;">📅 Das ist morgen!</div>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
 
     // Info-Box falls nicht genug Daten
     if (!sufficientData) {
@@ -1201,8 +1302,74 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay, accuracyMetrics,
             </div>
         `;
     }
+    
+    // Muster-Stabilität anzeigen
+    if (patternStability && patternStability.score !== undefined) {
+        const stabilityScore = patternStability.score;
+        const stabilityDesc = patternStability.description || '';
+        const stabilityColor = stabilityScore >= 0.7 ? '#10b981' : stabilityScore >= 0.4 ? '#f59e0b' : '#ef4444';
+        
+        html += `
+            <div style="margin-top: 10px; padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 0.85em; color: #6b7280;">
+                <strong>📊 Muster-Stabilität:</strong> 
+                <span style="color: ${stabilityColor}; font-weight: 600;">${stabilityDesc}</span>
+                <span style="margin-left: 5px;">(${(stabilityScore * 100).toFixed(0)}%)</span>
+                ${patternStability.mean_interval_hours ? ` • Ø Intervall: ${patternStability.mean_interval_hours}h` : ''}
+            </div>
+        `;
+    }
 
     container.innerHTML = html;
+}
+
+/**
+ * Findet die nächste vorhergesagte Dusche
+ */
+function findNextPredictedShower(typicalTimes, currentWeekday, currentHour, weekdayNames) {
+    if (!typicalTimes || typicalTimes.length === 0) return null;
+    
+    const now = new Date();
+    let bestPrediction = null;
+    let minTimeDiff = Infinity;
+    
+    // Suche in den nächsten 7 Tagen
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+        const checkDate = new Date(now);
+        checkDate.setDate(checkDate.getDate() + dayOffset);
+        const checkWeekday = checkDate.getDay() === 0 ? 6 : checkDate.getDay() - 1; // Konvertiere zu Mo=0
+        
+        for (const time of typicalTimes) {
+            const hour = time.hour;
+            const minute = time.minute || 0;
+            
+            // Für heute: nur zukünftige Zeiten
+            if (dayOffset === 0 && (hour < currentHour || (hour === currentHour && minute <= now.getMinutes()))) {
+                continue;
+            }
+            
+            // Berechne Zeit bis zu dieser Vorhersage
+            const predDate = new Date(checkDate);
+            predDate.setHours(hour, minute, 0, 0);
+            const timeDiff = predDate - now;
+            
+            if (timeDiff > 0 && timeDiff < minTimeDiff && time.confidence >= 0.3) {
+                minTimeDiff = timeDiff;
+                bestPrediction = {
+                    dayName: weekdayNames[checkWeekday],
+                    hour: hour,
+                    minute: minute,
+                    timeString: time.time_string || `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`,
+                    confidence: time.confidence,
+                    label: time.label || '',
+                    isToday: dayOffset === 0,
+                    isTomorrow: dayOffset === 1,
+                    timeDiff: timeDiff
+                };
+            }
+        }
+    }
+    
+    return bestPrediction;
 }
 
 // Init

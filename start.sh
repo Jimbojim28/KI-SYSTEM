@@ -5,7 +5,8 @@
 set -e
 
 # Konfiguration
-DEFAULT_PORT=5000
+# Port 8080 statt 5000 wegen macOS AirPlay/AirTunes Konflikt
+DEFAULT_PORT=8080
 DEFAULT_HOST="0.0.0.0"
 LOG_FILE="logs/webapp.log"
 PID_FILE="data/webapp.pid"
@@ -110,8 +111,8 @@ start_webapp() {
     # Speichere PID
     echo $! > "$PID_FILE"
 
-    # Warte kurz damit Server starten kann
-    sleep 3
+    # Warte länger damit Server starten kann (App braucht Zeit für Initialisierung)
+    sleep 10
 
     # Prüfe ob erfolgreich gestartet
     if check_port $PORT; then

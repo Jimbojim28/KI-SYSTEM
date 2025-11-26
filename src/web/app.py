@@ -17,6 +17,13 @@ import yaml
 # Füge src zum Python-Path hinzu
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+# Import Blueprints
+from src.web.blueprints import (
+    config_bp, init_config_blueprint,
+    ml_bp, init_ml_blueprint,
+    ventilation_bp, init_ventilation_blueprint
+)
+
 import src  # Für Zugriff auf __version__
 from src.decision_engine.engine import DecisionEngine
 from src.data_collector.background_collector import BackgroundDataCollector
@@ -161,6 +168,9 @@ class WebInterface:
 
         # Registriere Routen
         self._register_routes()
+        
+        # Registriere Blueprints (modularisierte API-Endpunkte)
+        self._register_blueprints()
 
         # Registriere Context Processor für globale Template-Variablen
         @self.app.context_processor
@@ -268,6 +278,23 @@ class WebInterface:
         except Exception as e:
             logger.error(f"Error getting mold prevention status: {e}")
             return None
+
+    def _register_blueprints(self):
+        """Registriere alle Flask Blueprints (modularisierte API-Endpunkte)"""
+        try:
+            # Initialisiere Blueprints mit Engine, Database und Config
+            init_config_blueprint(self.engine, self.db, self.config)
+            init_ml_blueprint(self.engine, self.db)  # model_path ist optional
+            init_ventilation_blueprint(self.engine, self.db, self.config)
+            
+            # Registriere Blueprints bei der Flask App
+            self.app.register_blueprint(config_bp)
+            self.app.register_blueprint(ml_bp)
+            self.app.register_blueprint(ventilation_bp)
+            
+            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp")
+        except Exception as e:
+            logger.error(f"Failed to register blueprints: {e}")
 
     def _register_routes(self):
         """Registriere alle Flask-Routen"""
@@ -4324,18 +4351,28 @@ class WebInterface:
             """API: Wochenübersicht mit tatsächlichen und vorhergesagten Duschzeiten"""
             try:
                 from src.decision_engine.bathroom_analyzer import BathroomAnalyzer
+                from src.decision_engine.shower_predictor import ShowerPredictor
                 from datetime import datetime, timedelta
 
                 analyzer = BathroomAnalyzer(db=self.db)
+                predictor = ShowerPredictor(db=self.db)
 
                 # Hole tatsächliche Events der letzten 7 Tage
                 actual_events = self.db.get_bathroom_events(days_back=7)
 
                 # Analysiere Muster für Vorhersagen (nutze längeren Zeitraum für bessere Genauigkeit)
                 patterns = analyzer.analyze_patterns(days_back=30)
+                
+                # Hole erweiterte Vorhersage-Muster vom ShowerPredictor
+                shower_patterns = predictor.analyze_shower_patterns(days_back=30)
 
                 # Generiere Vorhersagen für jeden Tag der Woche
                 predictions_by_day = {}
+                
+                # Aktueller Wochentag und aktuelle Stunde
+                now = datetime.now()
+                current_weekday = now.weekday()
+                current_hour = now.hour
 
                 if patterns.get('sufficient_data'):
                     hourly_dist = patterns['hourly_pattern']['distribution']
@@ -4392,6 +4429,51 @@ class WebInterface:
                             'duration': event.get('duration_minutes'),
                             'peak_humidity': event.get('peak_humidity')
                         })
+                
+                # Erstelle zukünftige Vorhersagen für diese Woche
+                future_predictions = {}
+                if shower_patterns.get('sufficient_data'):
+                    typical_times = shower_patterns.get('typical_times', [])
+                    weekday_pattern = shower_patterns.get('weekday_pattern', {})
+                    
+                    # Für jeden zukünftigen Tag in dieser Woche
+                    for day_offset in range(7):  # 0 = heute, 1 = morgen, etc.
+                        future_date = now + timedelta(days=day_offset)
+                        future_weekday = future_date.weekday()
+                        
+                        # Für heute: nur zukünftige Stunden
+                        start_hour = current_hour + 1 if day_offset == 0 else 0
+                        
+                        # Finde Vorhersagen für diesen Wochentag
+                        day_predictions = []
+                        for time_slot in typical_times:
+                            hour = time_slot['hour']
+                            confidence = time_slot['confidence']
+                            
+                            # Nur zukünftige Stunden für heute
+                            if day_offset == 0 and hour <= current_hour:
+                                continue
+                                
+                            # Prüfe ob dieser Wochentag typisch ist
+                            weekday_counts = weekday_pattern.get('weekday_counts', {})
+                            day_count = weekday_counts.get(future_weekday, 0)
+                            
+                            if day_count > 0 and confidence >= 0.3:
+                                day_predictions.append({
+                                    'hour': hour,
+                                    'minute': time_slot.get('minute', 0),
+                                    'confidence': round(confidence * 100, 1),
+                                    'label': time_slot.get('label', ''),
+                                    'time_string': time_slot.get('time_string', f'{hour:02d}:00')
+                                })
+                        
+                        if day_predictions:
+                            future_predictions[future_weekday] = {
+                                'date': future_date.strftime('%Y-%m-%d'),
+                                'is_today': day_offset == 0,
+                                'is_tomorrow': day_offset == 1,
+                                'predictions': sorted(day_predictions, key=lambda x: x['hour'])
+                            }
 
                 # Berechne Genauigkeit der Vorhersagen
                 accuracy_metrics = self._calculate_prediction_accuracy(
@@ -4407,7 +4489,13 @@ class WebInterface:
                     'accuracy_metrics': accuracy_metrics,
                     'sufficient_data': patterns.get('sufficient_data', False),
                     'events_count': len(actual_events),
-                    'period_days': 7
+                    'period_days': 7,
+                    # Neue Felder für verbesserte Heatmap
+                    'future_predictions': future_predictions,
+                    'current_weekday': current_weekday,
+                    'current_hour': current_hour,
+                    'pattern_stability': shower_patterns.get('pattern_stability', {}),
+                    'typical_times': shower_patterns.get('typical_times', [])
                 })
 
             except Exception as e:
