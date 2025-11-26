@@ -3713,15 +3713,25 @@ class WebInterface:
 
         @self.app.route('/api/luftentfeuchten/events')
         def api_bathroom_events():
-            """API: Badezimmer Events (Historie)"""
+            """API: Badezimmer Events (Historie) mit Event-Typ-Klassifikation"""
             try:
                 from src.utils.database import Database
+                from src.decision_engine.bathroom_analyzer import BathroomAnalyzer
 
                 db = Database()
+                analyzer = BathroomAnalyzer(db=db)
                 days_back = int(request.args.get('days', 30))
                 limit = int(request.args.get('limit', 100))
 
                 events = db.get_bathroom_events(days_back=days_back, limit=limit)
+                
+                # Klassifiziere jeden Event
+                for event in events:
+                    event_type = analyzer.classify_event_type(event)
+                    event['event_type'] = event_type['type']
+                    event['event_icon'] = event_type['icon']
+                    event['event_label'] = event_type['label']
+                    event['event_description'] = event_type['description']
 
                 return jsonify({
                     'events': events,

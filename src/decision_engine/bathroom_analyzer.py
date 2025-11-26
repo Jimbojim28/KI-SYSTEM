@@ -19,10 +19,79 @@ class BathroomAnalyzer:
     - Optimierung von Schwellwerten
     - Anomalie-Erkennung
     - Vorhersagen
+    - Unterscheidung Dusche/Bad
     """
 
     def __init__(self, db: Database = None):
         self.db = db or Database()
+
+    def classify_event_type(self, event: Dict) -> Dict:
+        """
+        Klassifiziert ein Event als Dusche, Bad oder anderes
+        
+        Heuristiken:
+        - Dusche: 5-20 Min, starker Feuchtigkeitsanstieg (>20%)
+        - Bad: 20-90 Min, moderater Feuchtigkeitsanstieg
+        - Langes Bad: >45 Min mit moderatem Anstieg
+        - Händewaschen/kurz: <5 Min
+        
+        Returns:
+            Dict mit type, confidence, description
+        """
+        duration = event.get('duration_minutes', 0)
+        peak_humidity = event.get('peak_humidity', 0)
+        start_humidity = event.get('start_humidity', 0)
+        humidity_rise = peak_humidity - start_humidity if start_humidity else 0
+        
+        # Klassifikation basierend auf Dauer und Feuchtigkeitsanstieg
+        if duration < 5:
+            return {
+                'type': 'kurz',
+                'icon': '🚰',
+                'label': 'Kurze Nutzung',
+                'description': 'Händewaschen oder kurze Nutzung',
+                'confidence': 0.8
+            }
+        elif duration <= 15 and humidity_rise > 15:
+            return {
+                'type': 'dusche',
+                'icon': '🚿',
+                'label': 'Dusche',
+                'description': f'Typische Dusche ({duration:.0f} Min)',
+                'confidence': 0.9
+            }
+        elif duration <= 25 and humidity_rise > 10:
+            return {
+                'type': 'dusche',
+                'icon': '🚿',
+                'label': 'Längere Dusche',
+                'description': f'Längere Dusche ({duration:.0f} Min)',
+                'confidence': 0.7
+            }
+        elif 20 <= duration <= 60:
+            return {
+                'type': 'bad',
+                'icon': '🛁',
+                'label': 'Bad',
+                'description': f'Wahrscheinlich Baden ({duration:.0f} Min)',
+                'confidence': 0.75
+            }
+        elif duration > 60:
+            return {
+                'type': 'langes_bad',
+                'icon': '🛁',
+                'label': 'Ausgedehntes Bad',
+                'description': f'Langes Bad oder Entspannung ({duration:.0f} Min)',
+                'confidence': 0.7
+            }
+        else:
+            return {
+                'type': 'unbekannt',
+                'icon': '❓',
+                'label': 'Badezimmer-Nutzung',
+                'description': f'Unklare Nutzung ({duration:.0f} Min)',
+                'confidence': 0.5
+            }
 
     def analyze_patterns(self, days_back: int = 30) -> Dict:
         """
@@ -401,29 +470,54 @@ class BathroomAnalyzer:
                 })
 
         # 2. Luftfeuchtigkeit wird nicht reduziert
+        # Nur Events mit Luftentfeuchter-Laufzeit prüfen (sonst ist es normal dass nichts reduziert wird)
         ineffective_events = [e for e in events if e.get('peak_humidity') and e.get('end_humidity')
+                             and e.get('dehumidifier_runtime_minutes', 0) > 10  # Min. 10 Min gelaufen
                              and (e['peak_humidity'] - e['end_humidity']) < 5]
         if len(ineffective_events) >= 3:
             alerts.append({
                 'severity': 'medium',
                 'type': 'ineffective_dehumidification',
                 'title': '⚠️ Entfeuchtung nicht effektiv',
-                'message': f'{len(ineffective_events)} Events mit wenig Verbesserung. Luftfeuchtigkeit wird kaum reduziert.',
+                'message': f'{len(ineffective_events)} Events bei denen der Luftentfeuchter lief, aber die Feuchtigkeit kaum sank. Filter prüfen oder Fenster zu?',
                 'timestamp': datetime.now().isoformat()
             })
 
-        # 3. Ungewöhnlich lange Duschen
-        long_showers = [e for e in events[:10] if e.get('duration_minutes', 0) > 45]
-        if long_showers:
-            for event in long_showers:
-                alerts.append({
-                    'severity': 'low',
-                    'type': 'long_shower',
-                    'title': 'ℹ️ Ungewöhnlich lange Dusche',
-                    'message': f'Dusche dauerte {event["duration_minutes"]} Minuten am {event["start_time"]}. Tür offen gelassen?',
-                    'timestamp': event['start_time'],
-                    'event_id': event['id']
-                })
+        # 3. Ungewöhnlich lange Events (unterscheide zwischen Duschen und Baden)
+        for event in events[:10]:
+            duration = event.get('duration_minutes', 0)
+            peak_humidity = event.get('peak_humidity', 0)
+            
+            if duration > 30:  # Längere Events analysieren
+                # Baden erkennen: längere Dauer + moderater Feuchtigkeitsanstieg
+                # Duschen: kürzere Dauer + starker Feuchtigkeitsanstieg
+                is_likely_bath = duration >= 30 and peak_humidity < 85
+                is_very_long = duration > 60
+                
+                if is_very_long and is_likely_bath:
+                    # Wahrscheinlich ausgedehntes Bad - kein Alert, nur Info wenn > 90 Min
+                    if duration > 90:
+                        alerts.append({
+                            'severity': 'low',
+                            'type': 'long_bath_session',
+                            'title': '🛁 Ausgedehntes Bad erkannt',
+                            'message': f'Bad dauerte {duration:.0f} Minuten am {event["start_time"][:10]}. Das ist normal und kein Problem.',
+                            'timestamp': event['start_time'],
+                            'event_id': event['id']
+                        })
+                elif is_very_long and not is_likely_bath:
+                    # Lange hohe Feuchtigkeit - möglicherweise Tür offen
+                    alerts.append({
+                        'severity': 'low',
+                        'type': 'long_humidity_event',
+                        'title': 'ℹ️ Lange hohe Luftfeuchtigkeit',
+                        'message': f'Feuchtigkeit war {duration:.0f} Minuten erhöht (Peak: {peak_humidity:.0f}%). Tür/Fenster geöffnet lassen für bessere Belüftung?',
+                        'timestamp': event['start_time'],
+                        'event_id': event['id']
+                    })
+                elif 30 <= duration <= 60 and is_likely_bath:
+                    # Normales Bad - kein Alert
+                    pass
 
         # 4. Sehr hohe Luftfeuchtigkeit erreicht
         extreme_humidity_events = [e for e in events[:10] if e.get('peak_humidity', 0) > 90]
