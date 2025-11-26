@@ -26,11 +26,17 @@ if git diff --quiet HEAD -- '*.py' '*.html' '*.css' '*.js' '*.sh' '*.md' 'requir
     echo "✓ Keine Code-Änderungen gefunden"
 else
     echo "⚠️  Warnung: Ungespeicherte Code-Änderungen gefunden!"
-    echo "Diese werden überschrieben. Fortfahren? (j/n)"
-    read -r response
-    if [[ ! "$response" =~ ^[Jj]$ ]]; then
-        echo "Update abgebrochen."
-        exit 0
+    # Wenn nicht interaktiv (z.B. von Web-Interface), automatisch überschreiben
+    if [ ! -t 0 ]; then
+        echo "  ℹ️  Nicht-interaktiver Modus: Änderungen werden überschrieben"
+        git checkout -- '*.py' '*.html' '*.css' '*.js' '*.sh' 2>/dev/null || true
+    else
+        echo "Diese werden überschrieben. Fortfahren? (j/n)"
+        read -r response
+        if [[ ! "$response" =~ ^[Jj]$ ]]; then
+            echo "Update abgebrochen."
+            exit 0
+        fi
     fi
 fi
 

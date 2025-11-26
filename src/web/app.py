@@ -5264,21 +5264,31 @@ class WebInterface:
                         'error': 'Update-Script nicht gefunden'
                     })
 
+                # Erstelle Log-Verzeichnis falls nicht vorhanden
+                log_dir = project_root / 'logs'
+                log_dir.mkdir(exist_ok=True)
+                update_log = log_dir / 'update.log'
+
                 # Starte Update-Script im Hintergrund
                 logger.info("Starting system update...")
 
-                # Führe Update-Script aus (läuft im Hintergrund und startet Server neu)
+                # Führe Update-Script aus mit Ausgabe in Log-Datei
+                with open(update_log, 'w') as log_file:
+                    log_file.write(f"=== Update gestartet: {datetime.now().isoformat()} ===\n\n")
+                
                 subprocess.Popen(
                     ['bash', str(update_script)],
                     cwd=str(project_root),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=open(update_log, 'a'),
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,  # Wichtig: Kein interaktiver Input
                     start_new_session=True
                 )
 
                 return jsonify({
                     'success': True,
-                    'message': 'Update wird durchgeführt. System startet in wenigen Sekunden neu...'
+                    'message': 'Update wird durchgeführt. System startet in wenigen Sekunden neu...',
+                    'log_file': str(update_log)
                 })
 
             except Exception as e:
