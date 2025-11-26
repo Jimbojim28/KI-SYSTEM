@@ -4683,6 +4683,34 @@ class WebInterface:
             try:
                 days_back = int(request.args.get('days', 30))
                 stats = self.db.get_heating_statistics(days_back=days_back)
+                
+                # Berechne Daten-Zeitraum aus Beobachtungen
+                period_days = 0
+                if stats.get('total_observations', 0) > 0:
+                    conn = self.db._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT 
+                            MIN(timestamp) as first_observation,
+                            MAX(timestamp) as last_observation
+                        FROM heating_observations
+                    """)
+                    row = cursor.fetchone()
+                    if row and row['first_observation'] and row['last_observation']:
+                        first = datetime.fromisoformat(str(row['first_observation']))
+                        last = datetime.fromisoformat(str(row['last_observation']))
+                        period_days = max(1, (last - first).days)
+                
+                # Füge berechnete Felder hinzu
+                stats['period_days'] = period_days
+                
+                # Berechne Heizungs-Prozent
+                total = stats.get('total_observations', 0)
+                heating = stats.get('heating_count', 0)
+                if total > 0:
+                    stats['heating_percent'] = round((heating / total) * 100, 1)
+                else:
+                    stats['heating_percent'] = 0
 
                 return jsonify({
                     'success': True,
