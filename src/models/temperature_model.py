@@ -229,8 +229,8 @@ class TemperatureModel:
 
         df = pd.DataFrame(measurements)
 
-        # Timestamp konvertieren
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        # Timestamp konvertieren - unterstütze verschiedene Formate
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed')
 
         # Normalisiere Spaltennamen - DB kann verschiedene Namen haben
         # value vs current_temperature

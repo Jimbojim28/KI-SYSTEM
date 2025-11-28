@@ -205,8 +205,8 @@ class LightingModel:
             
         df = pd.DataFrame(light_events)
         
-        # Timestamp konvertieren
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        # Timestamp konvertieren - unterstütze verschiedene Formate
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed')
         
         # Sortieren
         df = df.sort_values('timestamp')
