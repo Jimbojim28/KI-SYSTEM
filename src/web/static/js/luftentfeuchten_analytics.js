@@ -1002,11 +1002,11 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay) {
                 </p>
             </div>
         `;
-    } else {
+    } else if (weeklyOverviewData.accuracy_metrics && weeklyOverviewData.accuracy_metrics.message) {
         // Zeige Genauigkeitsnachricht
         html += `
             <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px; font-size: 0.9em;">
-                ${accuracy_metrics.message}
+                ${weeklyOverviewData.accuracy_metrics.message}
             </div>
         `;
     }
