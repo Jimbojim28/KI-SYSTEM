@@ -169,6 +169,9 @@ class TemperatureDataCollector:
                     self.total_measurements_collected += 1
                     
                     logger.debug(f"Temperature data: {device_name} - {current_temp}°C / {target_temp}°C (heating: {heating_active})")
+                
+                # CO2-Sensoren separat sammeln
+                self._collect_co2_data(devices, platform_name)
                     
             except Exception as e:
                 error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
@@ -278,6 +281,56 @@ class TemperatureDataCollector:
             'last_error': self.last_error,
             'measurements_this_session': self.total_measurements_collected
         }
+    
+    def _collect_co2_data(self, devices: list, platform_name: str):
+        """Sammelt CO2-Daten von allen Geräten mit measure_co2 Capability"""
+        collected_count = 0
+        
+        for device in devices:
+            try:
+                caps = device.get('capabilitiesObj', {})
+                co2_cap = caps.get('measure_co2', {})
+                co2_value = co2_cap.get('value')
+                
+                if co2_value is None:
+                    continue
+                
+                device_id = device.get('id', '')
+                device_name = device.get('name', 'Unknown')
+                
+                # Room aus zone holen
+                zone = device.get('zone')
+                if isinstance(zone, dict):
+                    room_name = zone.get('name', 'Unknown')
+                elif isinstance(zone, str):
+                    room_name = zone
+                else:
+                    room_name = 'Unknown'
+                
+                # CO2-Daten in sensor_data speichern (metadata als dict, nicht json)
+                metadata = {
+                    'device_name': device_name,
+                    'room': room_name,
+                    'platform': platform_name
+                }
+                
+                self.db.insert_sensor_data(
+                    sensor_id=device_id,
+                    sensor_type='co2',
+                    value=float(co2_value),
+                    unit='ppm',
+                    metadata=metadata
+                )
+                
+                collected_count += 1
+                logger.debug(f"CO2 data: {device_name} ({room_name}) - {co2_value} ppm")
+                
+            except Exception as e:
+                error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                logger.error(f"Error collecting CO2 from {device.get('name', 'unknown')}: {error_msg}")
+        
+        if collected_count > 0:
+            logger.info(f"Collected CO2 data from {collected_count} sensor(s)")
 
 
 def start_temperature_collector(config: dict | None = None):

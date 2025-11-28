@@ -2572,7 +2572,7 @@ class WebInterface:
                     WHERE device_name LIKE ?
                     AND datetime(timestamp) >= datetime(?)
                     ORDER BY timestamp ASC
-                    LIMIT 500
+                    LIMIT 2000
                 """, (f"%{room_name}%", cutoff_str))
                 
                 if temp_rows:
@@ -2584,27 +2584,31 @@ class WebInterface:
                             data['humidity'].append({'x': ts, 'y': round(row['humidity'], 1)})
                 
                 # Hole CO2-Daten aus sensor_data (falls vorhanden)
+                # Device-Name enthält oft den Raumnamen (z.B. "Temperatur-Wohnzimmer")
                 try:
                     co2_rows = self.db.execute("""
-                        SELECT timestamp, value FROM sensor_data
+                        SELECT timestamp, value, metadata FROM sensor_data
                         WHERE sensor_type = 'co2' 
-                        AND metadata LIKE ?
-                        AND timestamp >= ?
+                        AND (metadata LIKE ? OR metadata LIKE ?)
+                        AND datetime(timestamp) >= datetime(?)
                         ORDER BY timestamp ASC
-                        LIMIT 500
-                    """, (f"%{room_name}%", cutoff_str))
+                        LIMIT 2000
+                    """, (f'%"device_name": "%{room_name}%"%', f'%"room": "%{room_name}%"%', cutoff_str))
                     
                     if co2_rows:
                         for row in co2_rows:
                             if row['value'] is not None:
                                 data['co2'].append({'x': row['timestamp'], 'y': round(row['value'])})
-                except:
+                except Exception as e:
+                    logger.debug(f"No CO2 data for {room_name}: {e}")
                     pass  # CO2-Daten sind optional
                 
-                # Aggregiere Daten (max 100 Punkte pro Typ für Performance)
+                # Intelligente Aggregation basierend auf Zeitraum
+                # 24h: max 200 Punkte, 48h: max 300 Punkte
+                max_points = 200 if hours == 24 else 300
                 for key in data:
-                    if len(data[key]) > 100:
-                        step = len(data[key]) // 100
+                    if len(data[key]) > max_points:
+                        step = len(data[key]) // max_points
                         data[key] = data[key][::step]
                 
                 return jsonify({
