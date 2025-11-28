@@ -458,7 +458,7 @@ class BathroomAnalyzer:
 
         # 1. Luftentfeuchter läuft ungewöhnlich lange
         for event in events[:5]:  # Letzte 5 Events prüfen
-            runtime = event.get('dehumidifier_runtime_minutes', 0)
+            runtime = event.get('dehumidifier_runtime_minutes') or 0
             if runtime > 240:  # > 4 Stunden
                 alerts.append({
                     'severity': 'high',
@@ -471,9 +471,11 @@ class BathroomAnalyzer:
 
         # 2. Luftfeuchtigkeit wird nicht reduziert
         # Nur Events mit Luftentfeuchter-Laufzeit prüfen (sonst ist es normal dass nichts reduziert wird)
-        ineffective_events = [e for e in events if e.get('peak_humidity') and e.get('end_humidity')
-                             and e.get('dehumidifier_runtime_minutes', 0) > 10  # Min. 10 Min gelaufen
-                             and (e['peak_humidity'] - e['end_humidity']) < 5]
+        ineffective_events = [e for e in events 
+                             if (e.get('peak_humidity') or 0) > 0 
+                             and (e.get('end_humidity') or 0) > 0
+                             and (e.get('dehumidifier_runtime_minutes') or 0) > 10  # Min. 10 Min gelaufen
+                             and ((e.get('peak_humidity') or 0) - (e.get('end_humidity') or 0)) < 5]
         if len(ineffective_events) >= 3:
             alerts.append({
                 'severity': 'medium',
@@ -485,8 +487,8 @@ class BathroomAnalyzer:
 
         # 3. Ungewöhnlich lange Events (unterscheide zwischen Duschen und Baden)
         for event in events[:10]:
-            duration = event.get('duration_minutes', 0)
-            peak_humidity = event.get('peak_humidity', 0)
+            duration = event.get('duration_minutes') or 0
+            peak_humidity = event.get('peak_humidity') or 0
             
             if duration > 30:  # Längere Events analysieren
                 # Baden erkennen: längere Dauer + moderater Feuchtigkeitsanstieg
@@ -520,22 +522,29 @@ class BathroomAnalyzer:
                     pass
 
         # 4. Sehr hohe Luftfeuchtigkeit erreicht
-        extreme_humidity_events = [e for e in events[:10] if e.get('peak_humidity', 0) > 90]
+        extreme_humidity_events = [e for e in events[:10] if (e.get('peak_humidity') or 0) > 90]
         if extreme_humidity_events:
             for event in extreme_humidity_events:
                 alerts.append({
                     'severity': 'medium',
                     'type': 'extreme_humidity',
                     'title': '⚠️ Sehr hohe Luftfeuchtigkeit',
-                    'message': f'Luftfeuchtigkeit erreichte {event["peak_humidity"]}% (Kondenswasser-Risiko)',
+                    'message': f'Luftfeuchtigkeit erreichte {event.get("peak_humidity", 0)}% (Kondenswasser-Risiko)',
                     'timestamp': event['start_time'],
                     'event_id': event['id']
                 })
 
         # 5. Keine Events seit längerer Zeit (mögliches Problem mit Sensoren)
         if events:
-            last_event_time = datetime.fromisoformat(events[0]['start_time'])
-            days_since_last = (datetime.now() - last_event_time).days
+            try:
+                start_time_str = str(events[0].get('start_time', '')).replace('Z', '+00:00')
+                last_event_time = datetime.fromisoformat(start_time_str)
+                # Entferne Timezone für konsistente Berechnung
+                if last_event_time.tzinfo is not None:
+                    last_event_time = last_event_time.replace(tzinfo=None)
+                days_since_last = (datetime.now() - last_event_time).days
+            except (ValueError, TypeError):
+                days_since_last = 0
             if days_since_last > 7:
                 alerts.append({
                     'severity': 'medium',
@@ -546,7 +555,7 @@ class BathroomAnalyzer:
                 })
 
         # 6. Dehumidifier läuft nie (möglicherweise nicht verbunden)
-        no_dehumidifier_events = [e for e in events[:10] if e.get('dehumidifier_runtime_minutes', 0) == 0]
+        no_dehumidifier_events = [e for e in events[:10] if (e.get('dehumidifier_runtime_minutes') or 0) == 0]
         if len(no_dehumidifier_events) >= 5:
             alerts.append({
                 'severity': 'high',

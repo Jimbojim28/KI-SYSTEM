@@ -188,8 +188,13 @@ class ShowerPredictor:
         # Berechne Intervalle (in Stunden)
         intervals = []
         for i in range(len(times) - 1):
-            t1 = datetime.fromisoformat(times[i])
-            t2 = datetime.fromisoformat(times[i + 1])
+            t1 = datetime.fromisoformat(str(times[i]).replace('Z', '+00:00'))
+            t2 = datetime.fromisoformat(str(times[i + 1]).replace('Z', '+00:00'))
+            # Entferne Timezone-Info für konsistente Berechnung
+            if t1.tzinfo is not None:
+                t1 = t1.replace(tzinfo=None)
+            if t2.tzinfo is not None:
+                t2 = t2.replace(tzinfo=None)
             interval_hours = (t2 - t1).total_seconds() / 3600
             intervals.append(interval_hours)
 
