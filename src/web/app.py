@@ -4363,9 +4363,15 @@ class WebInterface:
                 from src.decision_engine.bathroom_analyzer import BathroomAnalyzer
                 from src.decision_engine.shower_predictor import ShowerPredictor
                 from datetime import datetime, timedelta
+                import traceback
 
+                logger.debug("Weekly overview: Starting API call")
+                
                 analyzer = BathroomAnalyzer(db=self.db)
+                logger.debug("Weekly overview: BathroomAnalyzer created")
+                
                 predictor = ShowerPredictor(db=self.db)
+                logger.debug("Weekly overview: ShowerPredictor created")
 
                 # Hole tatsächliche Events der letzten 7 Tage
                 actual_events = self.db.get_bathroom_events(days_back=7)
@@ -4509,8 +4515,13 @@ class WebInterface:
                 })
 
             except Exception as e:
-                logger.error(f"Error fetching weekly overview: {e}")
-                return jsonify({'error': str(e)}), 500
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(f"Error fetching weekly overview: {e}\n{error_details}")
+                return jsonify({
+                    'error': str(e),
+                    'details': error_details
+                }), 500
 
         # ===== Heizungs-Optimierungs-Endpoints =====
 
