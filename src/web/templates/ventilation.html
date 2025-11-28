@@ -74,6 +74,36 @@
     </div>
 </div>
 
+<!-- Room History Modal -->
+<div id="room-history-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h3 id="modal-room-title">📊 Raumhistorie</h3>
+            <button class="modal-close" onclick="closeRoomModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="time-selector">
+                <button class="time-btn active" onclick="loadRoomHistory(currentRoom, 24)">24 Stunden</button>
+                <button class="time-btn" onclick="loadRoomHistory(currentRoom, 48)">48 Stunden</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="room-chart"></canvas>
+            </div>
+            <div id="chart-loading" class="chart-loading">
+                <div class="spinner"></div>
+                <p>Lade Daten...</p>
+            </div>
+            <div id="chart-no-data" class="chart-no-data" style="display: none;">
+                <p>📭 Keine historischen Daten für diesen Raum verfügbar.</p>
+                <p class="hint">Daten werden automatisch gesammelt, sobald Sensoren aktiv sind.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
 <style>
 /* Tabs */
 .tabs {
@@ -258,6 +288,107 @@
 .room-recommendation.good { background: #e8f5e9; color: #2e7d32; }
 .room-recommendation.warning { background: #fff3e0; color: #e65100; }
 .room-recommendation.critical { background: #ffebee; color: #c62828; }
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 90%;
+    max-height: 90%;
+    overflow: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.modal-large {
+    width: 900px;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #eee;
+}
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.3em;
+}
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    cursor: pointer;
+    color: #666;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+.modal-close:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+.modal-body {
+    padding: 1.5rem;
+}
+.time-selector {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.time-btn {
+    padding: 0.5rem 1.25rem;
+    border: 1px solid #ddd;
+    background: #f8f9fa;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.95em;
+    transition: all 0.2s;
+}
+.time-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+}
+.time-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+.chart-container {
+    position: relative;
+    height: 400px;
+}
+.chart-loading {
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+}
+.chart-no-data {
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+}
+.chart-no-data .hint {
+    font-size: 0.9em;
+    color: #999;
+    margin-top: 0.5rem;
+}
+.room-tile {
+    cursor: pointer;
+}
+.room-tile:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
 
 /* Loading State */
 .loading-state {
@@ -593,7 +724,7 @@ function displayRooms() {
         ` : '';
         
         return `
-            <div class="room-tile ${status.class}">
+            <div class="room-tile ${status.class}" onclick="openRoomModal('${roomName.replace(/'/g, "\\'")}')">
                 <div class="room-tile-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${roomName}</span>
@@ -868,6 +999,216 @@ function showToast(message, type = 'info') {
 function showError(message) {
     document.getElementById('rooms-grid').innerHTML = 
         `<div class="loading-state" style="color: #c62828;">❌ ${message}</div>`;
+}
+
+// ========== Room History Modal ==========
+let currentRoom = null;
+let roomChart = null;
+
+function openRoomModal(roomName) {
+    currentRoom = roomName;
+    const icon = getRoomIcon(roomName);
+    document.getElementById('modal-room-title').textContent = `📊 ${icon} ${roomName} - Historie`;
+    document.getElementById('room-history-modal').style.display = 'flex';
+    
+    // Reset time buttons
+    document.querySelectorAll('.time-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector('.time-btn').classList.add('active');
+    
+    loadRoomHistory(roomName, 24);
+}
+
+function closeRoomModal() {
+    document.getElementById('room-history-modal').style.display = 'none';
+    if (roomChart) {
+        roomChart.destroy();
+        roomChart = null;
+    }
+}
+
+// Schließen bei Klick außerhalb
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('room-history-modal');
+    if (e.target === modal) {
+        closeRoomModal();
+    }
+});
+
+// Schließen mit Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeRoomModal();
+    }
+});
+
+async function loadRoomHistory(roomName, hours) {
+    // Update active button
+    document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.includes(hours));
+    });
+    
+    // Show loading
+    document.getElementById('chart-loading').style.display = 'block';
+    document.getElementById('chart-no-data').style.display = 'none';
+    document.querySelector('.chart-container').style.display = 'none';
+    
+    try {
+        const response = await fetch(`/api/ventilation/room-history/${encodeURIComponent(roomName)}?hours=${hours}`);
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Fehler beim Laden');
+        }
+        
+        const data = result.data;
+        const hasData = data.temperature.length > 0 || data.humidity.length > 0 || data.co2.length > 0;
+        
+        document.getElementById('chart-loading').style.display = 'none';
+        
+        if (!hasData) {
+            document.getElementById('chart-no-data').style.display = 'block';
+            return;
+        }
+        
+        document.querySelector('.chart-container').style.display = 'block';
+        renderChart(data, hours);
+        
+    } catch (error) {
+        console.error('Error loading room history:', error);
+        document.getElementById('chart-loading').style.display = 'none';
+        document.getElementById('chart-no-data').style.display = 'block';
+        document.querySelector('.chart-no-data p').textContent = `❌ Fehler: ${error.message}`;
+    }
+}
+
+function renderChart(data, hours) {
+    const ctx = document.getElementById('room-chart').getContext('2d');
+    
+    if (roomChart) {
+        roomChart.destroy();
+    }
+    
+    const datasets = [];
+    
+    if (data.temperature.length > 0) {
+        datasets.push({
+            label: '🌡️ Temperatur (°C)',
+            data: data.temperature,
+            borderColor: '#e74c3c',
+            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y'
+        });
+    }
+    
+    if (data.humidity.length > 0) {
+        datasets.push({
+            label: '💧 Feuchtigkeit (%)',
+            data: data.humidity,
+            borderColor: '#3498db',
+            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y1'
+        });
+    }
+    
+    if (data.co2.length > 0) {
+        datasets.push({
+            label: '💨 CO₂ (ppm)',
+            data: data.co2,
+            borderColor: '#9b59b6',
+            backgroundColor: 'rgba(155, 89, 182, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y2'
+        });
+    }
+    
+    roomChart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        title: function(items) {
+                            const date = new Date(items[0].raw.x);
+                            return date.toLocaleString('de-DE');
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: hours <= 24 ? 'hour' : 'day',
+                        displayFormats: {
+                            hour: 'HH:mm',
+                            day: 'dd.MM HH:mm'
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Zeit'
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: data.temperature.length > 0,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Temperatur (°C)',
+                        color: '#e74c3c'
+                    },
+                    ticks: { color: '#e74c3c' },
+                    grid: { drawOnChartArea: true }
+                },
+                y1: {
+                    type: 'linear',
+                    display: data.humidity.length > 0,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Feuchtigkeit (%)',
+                        color: '#3498db'
+                    },
+                    ticks: { color: '#3498db' },
+                    grid: { drawOnChartArea: false },
+                    min: 0,
+                    max: 100
+                },
+                y2: {
+                    type: 'linear',
+                    display: data.co2.length > 0,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'CO₂ (ppm)',
+                        color: '#9b59b6'
+                    },
+                    ticks: { color: '#9b59b6' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
 }
 
 // Init

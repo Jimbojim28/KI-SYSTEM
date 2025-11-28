@@ -2544,6 +2544,81 @@ class WebInterface:
                 logger.error(f"Error getting ventilation sensors: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/ventilation/room-history/<room_name>', methods=['GET'])
+        def get_room_history(room_name):
+            """
+            API: Historische Sensordaten für einen Raum (24h oder 48h)
+            """
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                if hours not in [24, 48]:
+                    hours = 24
+                
+                from datetime import datetime, timedelta
+                cutoff = datetime.now() - timedelta(hours=hours)
+                cutoff_str = cutoff.strftime('%Y-%m-%d %H:%M:%S')
+                
+                data = {
+                    'temperature': [],
+                    'humidity': [],
+                    'co2': []
+                }
+                
+                # Hole Temperaturdaten aus continuous_measurements 
+                # Raumname ist im device_name enthalten (z.B. "Wohnzimmer Heizung")
+                temp_rows = self.db.execute("""
+                    SELECT timestamp, current_temperature, humidity
+                    FROM continuous_measurements
+                    WHERE device_name LIKE ?
+                    AND datetime(timestamp) >= datetime(?)
+                    ORDER BY timestamp ASC
+                    LIMIT 500
+                """, (f"%{room_name}%", cutoff_str))
+                
+                if temp_rows:
+                    for row in temp_rows:
+                        ts = row['timestamp']
+                        if row['current_temperature'] is not None:
+                            data['temperature'].append({'x': ts, 'y': round(row['current_temperature'], 1)})
+                        if row['humidity'] is not None:
+                            data['humidity'].append({'x': ts, 'y': round(row['humidity'], 1)})
+                
+                # Hole CO2-Daten aus sensor_data (falls vorhanden)
+                try:
+                    co2_rows = self.db.execute("""
+                        SELECT timestamp, value FROM sensor_data
+                        WHERE sensor_type = 'co2' 
+                        AND metadata LIKE ?
+                        AND timestamp >= ?
+                        ORDER BY timestamp ASC
+                        LIMIT 500
+                    """, (f"%{room_name}%", cutoff_str))
+                    
+                    if co2_rows:
+                        for row in co2_rows:
+                            if row['value'] is not None:
+                                data['co2'].append({'x': row['timestamp'], 'y': round(row['value'])})
+                except:
+                    pass  # CO2-Daten sind optional
+                
+                # Aggregiere Daten (max 100 Punkte pro Typ für Performance)
+                for key in data:
+                    if len(data[key]) > 100:
+                        step = len(data[key]) // 100
+                        data[key] = data[key][::step]
+                
+                return jsonify({
+                    'success': True,
+                    'room': room_name,
+                    'hours': hours,
+                    'data': data,
+                    'points': {k: len(v) for k, v in data.items()}
+                })
+                    
+            except Exception as e:
+                logger.error(f"Error getting room history for {room_name}: {e}")
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/ventilation/sensor-mapping', methods=['GET', 'POST'])
         def ventilation_sensor_mapping():
             """
