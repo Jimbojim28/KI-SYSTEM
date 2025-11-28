@@ -443,9 +443,13 @@ class BathroomAnalyzer:
             'most_likely': next_predictions[0] if next_predictions else None
         }
 
-    def check_system_health(self, days_back: int = 7) -> List[Dict]:
+    def check_system_health(self, days_back: int = 7, config: dict = None) -> List[Dict]:
         """
         Prüft System-Gesundheit und erkennt potenzielle Probleme
+
+        Args:
+            days_back: Tage zurück für Event-Analyse
+            config: Optionale Konfiguration für intelligentere Prüfungen
 
         Returns:
             List von Alerts/Warnungen
@@ -455,6 +459,25 @@ class BathroomAnalyzer:
 
         if not events or len(events) < 2:
             return alerts
+        
+        # Lade Konfiguration falls nicht übergeben
+        if config is None:
+            try:
+                import json
+                from pathlib import Path
+                config_file = Path('data/luftentfeuchten_config.json')
+                if config_file.exists():
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                else:
+                    config = {}
+            except Exception:
+                config = {}
+        
+        # Prüfe ob Automation aktiviert und Luftentfeuchter konfiguriert
+        automation_enabled = config.get('enabled', False)
+        dehumidifier_configured = bool(config.get('dehumidifier_id'))
+        humidity_threshold_high = config.get('humidity_threshold_high', 65)
 
         # 1. Luftentfeuchter läuft ungewöhnlich lange
         for event in events[:5]:  # Letzte 5 Events prüfen
@@ -554,15 +577,53 @@ class BathroomAnalyzer:
                     'timestamp': datetime.now().isoformat()
                 })
 
-        # 6. Dehumidifier läuft nie (möglicherweise nicht verbunden)
+        # 6. Dehumidifier läuft nie - NUR warnen wenn sinnvoll
+        # Prüfe ob es Events gab wo der Luftentfeuchter hätte laufen SOLLEN
         no_dehumidifier_events = [e for e in events[:10] if (e.get('dehumidifier_runtime_minutes') or 0) == 0]
+        
         if len(no_dehumidifier_events) >= 5:
-            alerts.append({
-                'severity': 'high',
-                'type': 'dehumidifier_never_runs',
-                'title': '⚠️ Luftentfeuchter läuft nie',
-                'message': f'{len(no_dehumidifier_events)} Events ohne Luftentfeuchter-Aktivität. Gerät angeschlossen?',
-                'timestamp': datetime.now().isoformat()
-            })
+            # Prüfe ob diese Events hohe Luftfeuchtigkeit hatten (über Schwellwert)
+            high_humidity_events = [
+                e for e in no_dehumidifier_events 
+                if (e.get('peak_humidity') or 0) > humidity_threshold_high
+            ]
+            
+            # Nur warnen wenn:
+            # 1. Automation aktiviert UND Luftentfeuchter konfiguriert
+            # 2. ODER es gab Events mit hoher Luftfeuchtigkeit (hätte laufen sollen)
+            should_warn = False
+            warning_reason = ""
+            
+            if automation_enabled and dehumidifier_configured and len(high_humidity_events) >= 3:
+                # Automation ist an, Gerät konfiguriert, aber läuft nie trotz hoher Feuchtigkeit
+                should_warn = True
+                warning_reason = f'{len(high_humidity_events)} Events mit Luftfeuchtigkeit über {humidity_threshold_high}% - aber Luftentfeuchter lief nie. Gerät erreichbar?'
+            elif not automation_enabled and len(high_humidity_events) >= 3:
+                # Automation aus, aber hohe Luftfeuchtigkeit erkannt - Hinweis geben
+                alerts.append({
+                    'severity': 'low',
+                    'type': 'automation_disabled_high_humidity',
+                    'title': 'ℹ️ Hohe Luftfeuchtigkeit erkannt',
+                    'message': f'{len(high_humidity_events)} Events mit Luftfeuchtigkeit über {humidity_threshold_high}%. Tipp: Automation aktivieren für automatische Entfeuchtung.',
+                    'timestamp': datetime.now().isoformat()
+                })
+            elif not dehumidifier_configured and automation_enabled:
+                # Automation an, aber kein Luftentfeuchter konfiguriert
+                alerts.append({
+                    'severity': 'medium',
+                    'type': 'dehumidifier_not_configured',
+                    'title': '⚠️ Kein Luftentfeuchter konfiguriert',
+                    'message': 'Automation ist aktiviert, aber kein Luftentfeuchter wurde zugewiesen. Bitte in den Einstellungen konfigurieren.',
+                    'timestamp': datetime.now().isoformat()
+                })
+            
+            if should_warn:
+                alerts.append({
+                    'severity': 'high',
+                    'type': 'dehumidifier_never_runs',
+                    'title': '⚠️ Luftentfeuchter läuft nie',
+                    'message': warning_reason,
+                    'timestamp': datetime.now().isoformat()
+                })
 
         return alerts
