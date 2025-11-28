@@ -2474,6 +2474,17 @@ class WebInterface:
                                 'platform': 'homey',
                                 'current_value': caps['measure_humidity'].get('value')
                             })
+                        
+                        # CO2-Sensor
+                        if 'measure_co2' in caps:
+                            sensors.append({
+                                'device_id': device_id,
+                                'name': friendly_name,
+                                'room': room_name,
+                                'type': 'co2',
+                                'platform': 'homey',
+                                'current_value': caps['measure_co2'].get('value')
+                            })
                 
                 # Home Assistant Sensoren (wenn verfügbar)
                 if self.engine and hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:

@@ -1,335 +1,836 @@
 {% extends "base.html" %}
-{% block title %}Lüftungsempfehlungen - KI Smart Home{% endblock %}
+
+{% block title %}Lüftungsübersicht{% endblock %}
+
 {% block content %}
 <div class="page-header">
-    <h2>💨 Lüftungsempfehlungen</h2>
-    <p>Intelligente Lüftungsempfehlungen für optimales Raumklima</p>
+    <h2>💨 Lüftungsübersicht</h2>
+    <p>Raumklima-Monitoring mit automatischer Sensor-Zuordnung aus Homey</p>
 </div>
 
 <!-- Tab Navigation -->
 <div class="tabs">
-    <button class="tab-button active" onclick="switchTab(event, 'recommendations')">📊 Empfehlungen</button>
-    <button class="tab-button" onclick="switchTab(event, 'settings')">⚙️ Sensor-Zuordnung</button>
+    <button class="tab-button active" onclick="switchTab('overview')">🏠 Übersicht</button>
+    <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
 </div>
 
-<!-- Empfehlungen Tab -->
-<div id="recommendations-tab" class="tab-content active">
-    <div id="rooms-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
-        <div class="loading">Lade Raum-Daten...</div>
+<!-- Übersicht Tab -->
+<div id="overview-tab" class="tab-content active">
+    <!-- Außenbedingungen Header -->
+    <div id="outdoor-header" class="outdoor-header">
+        <div class="outdoor-loading">🌤️ Lade Außenbedingungen...</div>
+    </div>
+    
+    <!-- Raum-Kacheln -->
+    <div id="rooms-grid" class="rooms-grid">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Raumdaten aus Homey...</p>
+        </div>
     </div>
 </div>
 
 <!-- Einstellungen Tab -->
 <div id="settings-tab" class="tab-content">
-    <div class="settings-container">
-        <div class="info-box">
-            <strong>ℹ️ Sensor-Zuordnung</strong>
-            <p>Ordnen Sie jedem Raum die richtigen Temperatur- und Feuchtigkeitssensoren zu. Sie können auch Home Assistant Entitäten manuell hinzufügen.</p>
-        </div>
+    <div class="settings-section">
+        <h3>🌡️ Außensensor-Konfiguration</h3>
+        <p class="info-text">Wählen Sie die Sensoren für die Außentemperatur und Außen-Luftfeuchtigkeit.</p>
         
-        <!-- Home Assistant Entity hinzufügen -->
-        <div style="background: #f5f5f5; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
-            <h3 style="margin-top: 0;">🏠 Home Assistant Entität hinzufügen</h3>
-            <div style="display: grid; grid-template-columns: 2fr 2fr 1fr 1fr auto; gap: 1rem; align-items: end;">
-                <div>
-                    <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Entity ID</label>
-                    <input type="text" id="ha-entity-id" placeholder="z.B. sensor.wohnzimmer_temperature" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px;">
-                </div>
-                <div>
-                    <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Raum</label>
-                    <input type="text" id="ha-room-name" placeholder="z.B. Wohnzimmer" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px;">
-                </div>
-                <div>
-                    <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Typ</label>
-                    <select id="ha-sensor-type" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px;">
-                        <option value="temperature">🌡️ Temperatur</option>
-                        <option value="humidity">💧 Feuchtigkeit</option>
-                    </select>
-                </div>
-                <div>
-                    <button onclick="queryHAEntity()" class="btn" style="width: 100%; padding: 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">🔍 Prüfen</button>
-                </div>
-                <div>
-                    <button onclick="addHAEntity()" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">➕ Hinzufügen</button>
-                </div>
+        <div class="outdoor-sensor-grid">
+            <div class="sensor-config-card">
+                <label>🌡️ Außentemperatur</label>
+                <select id="outdoor-temp-sensor" onchange="saveOutdoorConfig()">
+                    <option value="">-- Wählen --</option>
+                </select>
+                <div id="outdoor-temp-preview" class="sensor-preview"></div>
             </div>
-            <div id="ha-entity-info" style="margin-top: 1rem; padding: 0.75rem; background: white; border-radius: 4px; display: none;"></div>
-        </div>
-        
-        <div id="room-sensor-mapping">
-            <div style="padding: 2rem; text-align: center; color: #666;">
-                Lade Sensoren...
+            <div class="sensor-config-card">
+                <label>💧 Außen-Luftfeuchtigkeit</label>
+                <select id="outdoor-humidity-sensor" onchange="saveOutdoorConfig()">
+                    <option value="">-- Wählen --</option>
+                </select>
+                <div id="outdoor-humidity-preview" class="sensor-preview"></div>
             </div>
         </div>
-        <button onclick="saveSensorMapping()" class="btn btn-primary" style="margin-top: 1rem;">💾 Zuordnung speichern</button>
+    </div>
+    
+    <div class="settings-section">
+        <h3>🙈 Ausgeblendete Räume</h3>
+        <p class="info-text">Diese Räume werden in der Übersicht nicht angezeigt.</p>
+        <div id="hidden-rooms-list" class="hidden-rooms-list">
+            <span class="no-hidden">Keine Räume ausgeblendet</span>
+        </div>
+    </div>
+    
+    <div class="settings-section">
+        <h3>🏠 Raum-Sensor-Zuordnung</h3>
+        <p class="info-text">Die Sensoren werden automatisch den Homey-Räumen zugeordnet. Hier können Sie die bevorzugten Sensoren pro Raum auswählen, falls mehrere verfügbar sind.</p>
+        
+        <div id="room-settings" class="room-settings-grid">
+            <div class="loading-state">Lade Räume...</div>
+        </div>
+        
+        <button onclick="saveRoomConfig()" class="btn-save">💾 Einstellungen speichern</button>
     </div>
 </div>
 
 <style>
-.tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #e0e0e0; }
-.tab-button { padding: 1rem 1.5rem; border: none; background: none; cursor: pointer; font-size: 1em; color: #666; border-bottom: 3px solid transparent; transition: all 0.3s; }
-.tab-button:hover { color: #333; background: #f5f5f5; }
-.tab-button.active { color: #667eea; border-bottom-color: #667eea; font-weight: bold; }
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+.tab-button {
+    padding: 1rem 2rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1.1em;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.3s;
+}
+.tab-button:hover { color: #333; background: #f8f9fa; }
+.tab-button.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    font-weight: 600;
+}
 .tab-content { display: none; }
 .tab-content.active { display: block; }
-.room-card { background: white; border-radius: 8px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.priority-badge { padding: 0.5rem 1rem; border-radius: 20px; font-weight: bold; display: inline-block; margin: 0.5rem 0; }
-.priority-HOCH { background: #FFEBEE; color: #C62828; }
-.priority-MITTEL { background: #FFF3E0; color: #E65100; }
-.priority-NIEDRIG { background: #E8F5E9; color: #2E7D32; }
-.action-icon { font-size: 2.5em; margin: 0.5rem 0; }
-.settings-container { max-width: 1200px; margin: 0 auto; }
-.info-box { background: #e3f2fd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #2196F3; }
-.sensor-room-card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 1rem; }
-.sensor-select { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem; font-size: 1em; }
+
+/* Außenbedingungen Header */
+.outdoor-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+.outdoor-header h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.2em;
+    color: white;
+}
+.outdoor-info {
+    display: flex;
+    gap: 3rem;
+    flex-wrap: wrap;
+    font-size: 1.1em;
+}
+.outdoor-info .value {
+    font-size: 1.4em;
+    font-weight: bold;
+}
+.outdoor-loading {
+    text-align: center;
+    padding: 1rem;
+    opacity: 0.9;
+}
+
+/* Raum-Grid */
+.rooms-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.25rem;
+}
+
+/* Raum-Kacheln */
+.room-tile {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-left: 4px solid #667eea;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.room-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.12);
+}
+.room-tile.status-good { border-left-color: #4CAF50; }
+.room-tile.status-warning { border-left-color: #FF9800; }
+.room-tile.status-critical { border-left-color: #f44336; }
+
+.room-tile-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+.room-icon {
+    font-size: 1.5em;
+}
+.room-name {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: #333;
+}
+
+.room-values {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+.room-value {
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+.room-value-label {
+    font-size: 0.75em;
+    color: #666;
+    margin-bottom: 0.15rem;
+}
+.room-value-number {
+    font-size: 1.25em;
+    font-weight: bold;
+}
+.room-value-number.temp { color: #e74c3c; }
+.room-value-number.humidity { color: #3498db; }
+.room-value-number.co2 { color: #9b59b6; }
+.room-value-number.co2-good { color: #27ae60; }
+.room-value-number.co2-ok { color: #3498db; }
+.room-value-number.co2-warning { color: #f39c12; }
+.room-value-number.co2-critical { color: #e74c3c; }
+
+.room-values.with-co2 {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.3rem;
+}
+.room-values.with-co2 .room-value {
+    padding: 0.25rem 0.1rem;
+}
+.room-values.with-co2 .room-value-label {
+    font-size: 0.7em;
+}
+.room-values.with-co2 .room-value-number {
+    font-size: 0.85em;
+}
+
+.hidden-rooms-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.hidden-room-chip {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95em;
+}
+.hidden-room-chip button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    font-size: 0.8em;
+}
+.hidden-room-chip button:hover {
+    background: #388e3c;
+}
+.no-hidden {
+    color: #666;
+    font-style: italic;
+}
+
+.room-recommendation {
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.room-recommendation.good { background: #e8f5e9; color: #2e7d32; }
+.room-recommendation.warning { background: #fff3e0; color: #e65100; }
+.room-recommendation.critical { background: #ffebee; color: #c62828; }
+
+/* Loading State */
+.loading-state {
+    grid-column: 1/-1;
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+}
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Einstellungen */
+.settings-section {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.settings-section h3 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+}
+.info-text {
+    color: #666;
+    margin-bottom: 1.5rem;
+    font-size: 0.95em;
+}
+
+.outdoor-sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+.sensor-config-card {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+}
+.sensor-config-card label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.sensor-config-card select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1em;
+}
+.sensor-preview {
+    margin-top: 0.5rem;
+    font-size: 0.9em;
+    color: #666;
+}
+
+.room-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.room-setting-card {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 3px solid #667eea;
+}
+.room-setting-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.room-setting-header h4 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.room-setting-header .hide-room-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85em;
+    background: #fff;
+    border: 1px solid #e74c3c;
+    color: #e74c3c;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.room-setting-header .hide-room-btn:hover {
+    background: #e74c3c;
+    color: white;
+}
+.room-setting-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+.room-setting-row label {
+    font-size: 0.85em;
+    color: #666;
+    margin-bottom: 0.25rem;
+    display: block;
+}
+.room-setting-row select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.btn-save {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 8px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    z-index: 9999;
+    animation: slideIn 0.3s ease;
+}
+.toast.success { background: #4CAF50; }
+.toast.error { background: #f44336; }
+.toast.info { background: #2196F3; }
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
 </style>
 
 <script>
+// Globale Daten
+let roomsData = {};
+let outdoorConfig = {};
 let allSensors = [];
-let currentMapping = {};
-let sensorsLoaded = false;
+let hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
 
-// Tab Switching
-function switchTab(evt, tabName) {
-    console.log('Switching to tab:', tabName);
-    console.log('sensorsLoaded:', sensorsLoaded);
-    
+// Tab-Wechsel
+function switchTab(tab) {
     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
-    evt.target.classList.add('active');
-    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+    document.getElementById(tab + '-tab').classList.add('active');
     
-    if (tabName === 'settings') {
-        console.log('Settings tab activated, loading sensors...');
-        if (!sensorsLoaded) {
-            console.log('Loading sensors for first time...');
-            loadSensorSettings();
-        } else {
-            console.log('Sensors already loaded, skipping');
-        }
+    if (tab === 'settings') {
+        loadSettings();
     }
 }
 
-// Lade Sensor-Einstellungen
-async function loadSensorSettings() {
-    console.log('Loading sensor settings...');
-    const container = document.getElementById('room-sensor-mapping');
-    
+// Daten laden und Übersicht anzeigen
+async function loadOverview() {
     try {
-        container.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">⏳ Lade Sensoren...</div>';
+        const response = await fetch('/api/ventilation/sensors');
+        const data = await response.json();
         
-        // Lade alle verfügbaren Sensoren
-        const sensorsResponse = await fetch('/api/ventilation/sensors');
-        console.log('Sensors response status:', sensorsResponse.status);
-        
-        const sensorsData = await sensorsResponse.json();
-        console.log('Sensors loaded:', sensorsData);
-        
-        if (sensorsData.success) {
-            allSensors = sensorsData.sensors;
-            console.log('Total sensors:', allSensors.length);
-            sensorsLoaded = true;
-            
-            // Lade gespeicherte Zuordnung
-            const mappingResponse = await fetch('/api/ventilation/sensor-mapping');
-            const mappingData = await mappingResponse.json();
-            
-            console.log('Mapping loaded:', mappingData);
-            
-            if (mappingData.success) {
-                currentMapping = mappingData.mapping || {};
-            }
-            
-            displaySensorMapping();
-        } else {
-            console.error('Failed to load sensors:', sensorsData);
-            container.innerHTML = '<div style="padding: 2rem; text-align: center; color: red;">❌ Fehler beim Laden der Sensoren</div>';
+        if (!data.success) {
+            showError('Fehler beim Laden der Sensoren');
+            return;
         }
+        
+        allSensors = data.sensors;
+        
+        // Gruppiere nach Homey-Räumen (ignoriere 'Unbekannt')
+        roomsData = {};
+        allSensors.forEach(sensor => {
+            const room = sensor.room;
+            if (room && room !== 'Unbekannt') {
+                if (!roomsData[room]) {
+                    roomsData[room] = { temp: [], humidity: [], co2: [] };
+                }
+                if (sensor.type === 'temperature' && sensor.current_value !== null && sensor.current_value < 45) {
+                    roomsData[room].temp.push(sensor);
+                } else if (sensor.type === 'humidity' && sensor.current_value !== null) {
+                    roomsData[room].humidity.push(sensor);
+                } else if (sensor.type === 'co2' && sensor.current_value !== null) {
+                    roomsData[room].co2.push(sensor);
+                }
+            }
+        });
+        
+        // Suche CO2 Sensoren auch nach Namen
+        allSensors.forEach(sensor => {
+            if (sensor.name && sensor.name.toLowerCase().includes('co2') && sensor.current_value !== null) {
+                const room = sensor.room;
+                if (room && room !== 'Unbekannt' && roomsData[room]) {
+                    // Prüfe ob schon vorhanden
+                    const exists = roomsData[room].co2.some(s => s.device_id === sensor.device_id);
+                    if (!exists && sensor.current_value > 100 && sensor.current_value < 10000) {
+                        roomsData[room].co2.push(sensor);
+                    }
+                }
+            }
+        });
+        
+        // Lade Konfiguration
+        const configResponse = await fetch('/api/ventilation/sensor-mapping');
+        const configData = await configResponse.json();
+        if (configData.success) {
+            outdoorConfig = configData.outdoor_sensors || {};
+        }
+        
+        displayOutdoorHeader();
+        displayRooms();
+        
     } catch (error) {
-        console.error('Fehler beim Laden der Sensor-Einstellungen:', error);
-        container.innerHTML = '<div style="padding: 2rem; text-align: center; color: red;">❌ Fehler: ' + error.message + '</div>';
+        console.error('Fehler:', error);
+        showError('Verbindungsfehler');
     }
 }
 
-// Zeige Sensor-Zuordnung
-function displaySensorMapping() {
-    console.log('Displaying sensor mapping...');
-    const container = document.getElementById('room-sensor-mapping');
+// Außenbedingungen anzeigen
+function displayOutdoorHeader() {
+    const header = document.getElementById('outdoor-header');
     
-    if (!container) {
-        console.error('Container room-sensor-mapping not found!');
+    // Finde Außensensor-Werte
+    let outdoorTemp = null;
+    let outdoorHumidity = null;
+    
+    // Suche nach konfigurierten Außensensoren
+    if (outdoorConfig.temperature) {
+        const sensor = allSensors.find(s => s.device_id === outdoorConfig.temperature);
+        if (sensor) outdoorTemp = sensor.current_value;
+    }
+    if (outdoorConfig.humidity) {
+        const sensor = allSensors.find(s => s.device_id === outdoorConfig.humidity);
+        if (sensor) outdoorHumidity = sensor.current_value;
+    }
+    
+    // Fallback: Suche nach "Außen" im Namen
+    if (outdoorTemp === null) {
+        const sensor = allSensors.find(s => 
+            s.type === 'temperature' && 
+            (s.name.toLowerCase().includes('außen') || s.name.toLowerCase().includes('outdoor')) &&
+            s.current_value !== null && s.current_value < 40
+        );
+        if (sensor) outdoorTemp = sensor.current_value;
+    }
+    if (outdoorHumidity === null) {
+        const sensor = allSensors.find(s => 
+            s.type === 'humidity' && 
+            (s.name.toLowerCase().includes('außen') || s.name.toLowerCase().includes('outdoor')) &&
+            s.current_value !== null
+        );
+        if (sensor) outdoorHumidity = sensor.current_value;
+    }
+    
+    const roomCount = Object.keys(roomsData).length;
+    
+    header.innerHTML = `
+        <h3>🌤️ Außenbedingungen</h3>
+        <div class="outdoor-info">
+            <div>
+                <span class="value">${outdoorTemp !== null ? outdoorTemp.toFixed(1) + '°C' : '--'}</span>
+                <span>Temperatur</span>
+            </div>
+            <div>
+                <span class="value">${outdoorHumidity !== null ? Math.round(outdoorHumidity) + '%' : '--'}</span>
+                <span>Luftfeuchtigkeit</span>
+            </div>
+            <div style="margin-left: auto; opacity: 0.9;">
+                📊 ${roomCount} Räume überwacht
+            </div>
+        </div>
+    `;
+}
+
+// Räume anzeigen
+function displayRooms() {
+    const grid = document.getElementById('rooms-grid');
+    
+    // Filtere versteckte Räume
+    const roomNames = Object.keys(roomsData).filter(r => !hiddenRooms.includes(r)).sort();
+    
+    if (roomNames.length === 0) {
+        grid.innerHTML = '<div class="loading-state">Keine Räume mit Sensoren gefunden</div>';
         return;
     }
     
-    // Gruppiere Sensoren nach Räumen
-    const rooms = {};
-    allSensors.forEach(sensor => {
-        if (!rooms[sensor.room]) {
-            rooms[sensor.room] = [];
-        }
-        rooms[sensor.room].push(sensor);
-    });
-    
-    console.log('Rooms found:', Object.keys(rooms).length);
-    console.log('Rooms:', Object.keys(rooms));
-    
-    if (Object.keys(rooms).length === 0) {
-        container.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">Keine Sensoren gefunden</div>';
-        return;
-    }
-    
-    const html = Object.keys(rooms).sort().map(roomName => {
-        const roomSensors = rooms[roomName];
-        const tempSensors = roomSensors.filter(s => s.type === 'temperature');
-        const humiditySensors = roomSensors.filter(s => s.type === 'humidity');
+    grid.innerHTML = roomNames.map(roomName => {
+        const room = roomsData[roomName];
         
-        console.log(`Room ${roomName}: ${tempSensors.length} temp, ${humiditySensors.length} humidity`);
+        // Wähle besten Sensor (niedrigste Temp für Raumtemperatur, nicht Gerätetemp)
+        const tempSensor = room.temp.sort((a, b) => a.current_value - b.current_value)[0];
+        const humiditySensor = room.humidity[0];
+        const co2Sensor = room.co2?.[0];
+        
+        const temp = tempSensor?.current_value;
+        const humidity = humiditySensor?.current_value;
+        const co2 = co2Sensor?.current_value;
+        
+        // Berechne Status
+        const status = getStatus(temp, humidity, co2);
+        const recommendation = getRecommendation(temp, humidity, co2);
+        const icon = getRoomIcon(roomName);
+        
+        // CO2 Anzeige
+        const co2Html = co2 ? `
+            <div class="room-value co2-value">
+                <div class="room-value-label">💨</div>
+                <div class="room-value-number co2 ${getCO2Class(co2)}">${Math.round(co2)}</div>
+            </div>
+        ` : '';
         
         return `
-            <div class="sensor-room-card">
-                <h3 style="margin-top: 0;">🏠 ${roomName}</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+            <div class="room-tile ${status.class}">
+                <div class="room-tile-header">
+                    <span class="room-icon">${icon}</span>
+                    <span class="room-name">${roomName}</span>
+                </div>
+                <div class="room-values ${co2 ? 'with-co2' : ''}">
+                    <div class="room-value">
+                        <div class="room-value-label">🌡️</div>
+                        <div class="room-value-number temp">${temp !== undefined ? temp.toFixed(1) + '°' : '--'}</div>
+                    </div>
+                    <div class="room-value">
+                        <div class="room-value-label">💧</div>
+                        <div class="room-value-number humidity">${humidity !== undefined ? Math.round(humidity) + '%' : '--'}</div>
+                    </div>
+                    ${co2Html}
+                </div>
+                <div class="room-recommendation ${recommendation.class}">
+                    ${recommendation.icon} ${recommendation.text}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// CO2-Klasse für Farbcodierung
+function getCO2Class(co2) {
+    if (co2 < 800) return 'co2-good';
+    if (co2 < 1000) return 'co2-ok';
+    if (co2 < 1400) return 'co2-warning';
+    return 'co2-critical';
+}
+
+// Raum ausblenden
+function hideRoom(roomName) {
+    if (!hiddenRooms.includes(roomName)) {
+        hiddenRooms.push(roomName);
+        localStorage.setItem('hiddenRooms', JSON.stringify(hiddenRooms));
+        displayRooms();
+        displayOutdoorHeader();
+        showToast(`${roomName} ausgeblendet`, 'info');
+    }
+}
+
+// Raum wieder einblenden
+function showRoom(roomName) {
+    hiddenRooms = hiddenRooms.filter(r => r !== roomName);
+    localStorage.setItem('hiddenRooms', JSON.stringify(hiddenRooms));
+    displayRooms();
+    displayOutdoorHeader();
+    loadSettings();
+    showToast(`${roomName} wieder eingeblendet`, 'success');
+}
+
+// Ausgeblendete Räume anzeigen
+function displayHiddenRooms() {
+    const container = document.getElementById('hidden-rooms-list');
+    if (!container) return;
+    
+    if (hiddenRooms.length === 0) {
+        container.innerHTML = '<span class="no-hidden">Keine Räume ausgeblendet</span>';
+        return;
+    }
+    
+    container.innerHTML = hiddenRooms.map(roomName => {
+        const icon = getRoomIcon(roomName);
+        return `
+            <div class="hidden-room-chip">
+                ${icon} ${roomName}
+                <button onclick="showRoom('${roomName}')" title="Wieder einblenden">✓</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function getStatus(temp, humidity, co2) {
+    if (co2 > 1400) return { class: 'status-critical' };
+    if (humidity > 70) return { class: 'status-critical' };
+    if (co2 > 1000) return { class: 'status-warning' };
+    if (humidity > 60 || temp > 25 || temp < 18) return { class: 'status-warning' };
+    return { class: 'status-good' };
+}
+
+function getRecommendation(temp, humidity, co2) {
+    // CO2 hat höchste Priorität
+    if (co2 !== undefined && co2 > 1400) {
+        return { class: 'critical', icon: '🔴', text: `CO₂ kritisch (${Math.round(co2)} ppm) - Sofort lüften!` };
+    }
+    if (co2 !== undefined && co2 > 1000) {
+        return { class: 'warning', icon: '🟠', text: `CO₂ erhöht (${Math.round(co2)} ppm) - Lüften empfohlen` };
+    }
+    
+    if (humidity === undefined) {
+        return { class: 'warning', icon: '⚠️', text: 'Kein Feuchtigkeitssensor' };
+    }
+    if (humidity > 70) {
+        return { class: 'critical', icon: '🔴', text: 'Lüften dringend empfohlen!' };
+    }
+    if (humidity > 60) {
+        return { class: 'warning', icon: '🟠', text: 'Lüften empfohlen' };
+    }
+    if (humidity < 40) {
+        return { class: 'warning', icon: '🟡', text: 'Luft zu trocken' };
+    }
+    
+    if (co2 !== undefined && co2 < 600) {
+        return { class: 'good', icon: '✅', text: `Sehr gute Luftqualität (${Math.round(co2)} ppm)` };
+    }
+    return { class: 'good', icon: '✅', text: 'Raumklima optimal' };
+}
+
+function getRoomIcon(name) {
+    const n = name.toLowerCase();
+    if (n.includes('bad')) return '🚿';
+    if (n.includes('küche')) return '🍳';
+    if (n.includes('schlaf')) return '🛏️';
+    if (n.includes('wohn')) return '🛋️';
+    if (n.includes('arbeit') || n.includes('büro')) return '💻';
+    if (n.includes('flur')) return '🚪';
+    if (n.includes('keller')) return '📦';
+    if (n.includes('garage')) return '🚗';
+    if (n.includes('abstell')) return '🗄️';
+    if (n.includes('heim')) return '🏠';
+    return '🏠';
+}
+
+// Einstellungen laden
+async function loadSettings() {
+    // Ausgeblendete Räume anzeigen
+    displayHiddenRooms();
+    
+    const container = document.getElementById('room-settings');
+    
+    // Außensensor-Dropdowns füllen
+    const tempSelect = document.getElementById('outdoor-temp-sensor');
+    const humiditySelect = document.getElementById('outdoor-humidity-sensor');
+    
+    const tempSensors = allSensors.filter(s => s.type === 'temperature');
+    const humiditySensors = allSensors.filter(s => s.type === 'humidity');
+    
+    tempSelect.innerHTML = '<option value="">-- Wählen --</option>' +
+        tempSensors.map(s => `
+            <option value="${s.device_id}" ${outdoorConfig.temperature === s.device_id ? 'selected' : ''}>
+                ${s.name} ${s.current_value !== null ? '(' + s.current_value.toFixed(1) + '°C)' : ''}
+            </option>
+        `).join('');
+    
+    humiditySelect.innerHTML = '<option value="">-- Wählen --</option>' +
+        humiditySensors.map(s => `
+            <option value="${s.device_id}" ${outdoorConfig.humidity === s.device_id ? 'selected' : ''}>
+                ${s.name} ${s.current_value !== null ? '(' + Math.round(s.current_value) + '%)' : ''}
+            </option>
+        `).join('');
+    
+    // Raum-Einstellungen
+    const roomNames = Object.keys(roomsData).sort();
+    
+    if (roomNames.length === 0) {
+        container.innerHTML = '<div class="loading-state">Keine Räume gefunden</div>';
+        return;
+    }
+    
+    container.innerHTML = roomNames.map(roomName => {
+        const room = roomsData[roomName];
+        const icon = getRoomIcon(roomName);
+        
+        return `
+            <div class="room-setting-card">
+                <div class="room-setting-header">
+                    <h4>${icon} ${roomName}</h4>
+                    <button class="hide-room-btn" onclick="hideRoom('${roomName}')" title="Raum ausblenden">🙈 Ausblenden</button>
+                </div>
+                <div class="room-setting-row">
                     <div>
-                        <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">🌡️ Temperatursensor</label>
-                        <select class="sensor-select" data-room="${roomName}" data-type="temperature">
-                            <option value="">-- Bitte wählen --</option>
-                            ${tempSensors.map(s => {
-                                const platformIcon = s.platform === 'homeassistant' ? '🏠' : '🔷';
-                                return `<option value="${s.device_id}" ${currentMapping[roomName]?.temperature === s.device_id ? 'selected' : ''}>${platformIcon} ${s.name}</option>`;
-                            }).join('')}
+                        <label>🌡️ Temperatur</label>
+                        <select data-room="${roomName}" data-type="temperature">
+                            ${room.temp.length === 0 ? '<option value="">Kein Sensor</option>' :
+                              room.temp.map((s, i) => `
+                                <option value="${s.device_id}" ${i === 0 ? 'selected' : ''}>
+                                    ${s.name} (${s.current_value?.toFixed(1)}°C)
+                                </option>
+                              `).join('')
+                            }
                         </select>
-                        <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
-                            ${tempSensors.length} Sensor(en) verfügbar
-                        </div>
                     </div>
                     <div>
-                        <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">💧 Feuchtigkeitssensor</label>
-                        <select class="sensor-select" data-room="${roomName}" data-type="humidity">
-                            <option value="">-- Bitte wählen --</option>
-                            ${humiditySensors.map(s => {
-                                const platformIcon = s.platform === 'homeassistant' ? '🏠' : '🔷';
-                                return `<option value="${s.device_id}" ${currentMapping[roomName]?.humidity === s.device_id ? 'selected' : ''}>${platformIcon} ${s.name}</option>`;
-                            }).join('')}
+                        <label>💧 Feuchtigkeit</label>
+                        <select data-room="${roomName}" data-type="humidity">
+                            ${room.humidity.length === 0 ? '<option value="">Kein Sensor</option>' :
+                              room.humidity.map((s, i) => `
+                                <option value="${s.device_id}" ${i === 0 ? 'selected' : ''}>
+                                    ${s.name} (${Math.round(s.current_value)}%)
+                                </option>
+                              `).join('')
+                            }
                         </select>
-                        <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
-                            ${humiditySensors.length} Sensor(en) verfügbar
-                        </div>
                     </div>
                 </div>
             </div>
         `;
     }).join('');
-    
-    console.log('Generated HTML length:', html.length);
-    container.innerHTML = html;
-    console.log('Container updated');
 }
 
-// Home Assistant Entity prüfen
-async function queryHAEntity() {
-    const entityId = document.getElementById('ha-entity-id').value.trim();
-    const infoDiv = document.getElementById('ha-entity-info');
+// Außensensor-Konfiguration speichern
+async function saveOutdoorConfig() {
+    outdoorConfig = {
+        temperature: document.getElementById('outdoor-temp-sensor').value,
+        humidity: document.getElementById('outdoor-humidity-sensor').value
+    };
     
-    if (!entityId) {
-        alert('Bitte Entity ID eingeben');
-        return;
-    }
-    
-    try {
-        infoDiv.innerHTML = '<div style="text-align: center;">⏳ Prüfe Entity...</div>';
-        infoDiv.style.display = 'block';
-        
-        const response = await fetch(`/api/ha/entity/${entityId}`);
-        const data = await response.json();
-        
-        if (data.success && data.entity) {
-            const entity = data.entity;
-            const state = entity.state || 'Unbekannt';
-            const unit = entity.attributes?.unit_of_measurement || '';
-            const friendlyName = entity.attributes?.friendly_name || entityId;
-            
-            infoDiv.innerHTML = `
-                <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1rem;">
-                    <strong>Name:</strong> <span>${friendlyName}</span>
-                    <strong>Aktueller Wert:</strong> <span>${state} ${unit}</span>
-                    <strong>Status:</strong> <span style="color: green;">✅ Verfügbar</span>
-                </div>
-            `;
-            infoDiv.style.display = 'block';
-        } else {
-            infoDiv.innerHTML = '<div style="color: red;">❌ Entity nicht gefunden oder nicht verfügbar</div>';
-            infoDiv.style.display = 'block';
-        }
-    } catch (error) {
-        infoDiv.innerHTML = '<div style="color: red;">❌ Fehler: ' + error.message + '</div>';
-        infoDiv.style.display = 'block';
-    }
+    // Preview aktualisieren
+    updateOutdoorPreview();
 }
 
-// Home Assistant Entity hinzufügen
-async function addHAEntity() {
-    const entityId = document.getElementById('ha-entity-id').value.trim();
-    const roomName = document.getElementById('ha-room-name').value.trim();
-    const sensorType = document.getElementById('ha-sensor-type').value;
+function updateOutdoorPreview() {
+    const tempId = document.getElementById('outdoor-temp-sensor').value;
+    const humidityId = document.getElementById('outdoor-humidity-sensor').value;
     
-    if (!entityId || !roomName) {
-        alert('Bitte Entity ID und Raum eingeben');
-        return;
-    }
+    const tempSensor = allSensors.find(s => s.device_id === tempId);
+    const humiditySensor = allSensors.find(s => s.device_id === humidityId);
     
-    try {
-        // Prüfe ob Entity existiert
-        const response = await fetch(`/api/ha/entity/${entityId}`);
-        const data = await response.json();
-        
-        if (!data.success || !data.entity) {
-            alert('❌ Entity nicht gefunden. Bitte erst mit "Prüfen" die Verfügbarkeit prüfen.');
-            return;
-        }
-        
-        const friendlyName = data.entity.attributes?.friendly_name || entityId;
-        const currentValue = parseFloat(data.entity.state) || null;
-        
-        // Füge zur Sensor-Liste hinzu
-        allSensors.push({
-            device_id: entityId,
-            name: friendlyName,
-            room: roomName,
-            type: sensorType,
-            platform: 'homeassistant',
-            current_value: currentValue
-        });
-        
-        // Aktualisiere Anzeige
-        displaySensorMapping();
-        
-        // Leere Felder
-        document.getElementById('ha-entity-id').value = '';
-        document.getElementById('ha-room-name').value = '';
-        document.getElementById('ha-entity-info').style.display = 'none';
-        
-        alert('✅ Sensor erfolgreich hinzugefügt!');
-        
-    } catch (error) {
-        alert('❌ Fehler beim Hinzufügen: ' + error.message);
-    }
+    document.getElementById('outdoor-temp-preview').textContent = 
+        tempSensor ? `Aktuell: ${tempSensor.current_value?.toFixed(1)}°C` : '';
+    document.getElementById('outdoor-humidity-preview').textContent = 
+        humiditySensor ? `Aktuell: ${Math.round(humiditySensor.current_value)}%` : '';
 }
 
-// Speichere Sensor-Zuordnung
-async function saveSensorMapping() {
+// Konfiguration speichern
+async function saveRoomConfig() {
     const mapping = {};
     
-    document.querySelectorAll('.sensor-select').forEach(select => {
+    document.querySelectorAll('#room-settings select').forEach(select => {
         const room = select.dataset.room;
         const type = select.dataset.type;
-        const deviceId = select.value;
+        const value = select.value;
         
-        if (deviceId) {
-            if (!mapping[room]) {
-                mapping[room] = {};
-            }
-            mapping[room][type] = deviceId;
+        if (value) {
+            if (!mapping[room]) mapping[room] = {};
+            mapping[room][type] = value;
         }
     });
     
@@ -337,102 +838,43 @@ async function saveSensorMapping() {
         const response = await fetch('/api/ventilation/sensor-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mapping })
+            body: JSON.stringify({
+                mapping: mapping,
+                outdoor_sensors: outdoorConfig
+            })
         });
         
         const data = await response.json();
         
         if (data.success) {
-            alert('✅ Sensor-Zuordnung erfolgreich gespeichert!');
-            currentMapping = mapping;
+            showToast('Einstellungen gespeichert!', 'success');
         } else {
-            alert('❌ Fehler beim Speichern: ' + (data.error || 'Unbekannter Fehler'));
+            showToast('Fehler beim Speichern', 'error');
         }
     } catch (error) {
-        alert('❌ Fehler beim Speichern: ' + error.message);
+        showToast('Verbindungsfehler', 'error');
     }
 }
 
-// Empfehlungen laden
-async function loadRecommendations() {
-    try {
-        const response = await fetch('/api/ventilation/recommendations');
-        const data = await response.json();
-
-        if (data.success) {
-            displayRooms(data.recommendations, data.outdoor_conditions);
-        }
-    } catch (error) {
-        document.getElementById('rooms-container').innerHTML = '<div class="loading">❌ Fehler beim Laden</div>';
-    }
+// Toast-Nachricht
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 
-function displayRooms(recommendations, outdoorConditions) {
-    const container = document.getElementById('rooms-container');
-
-    if (recommendations.length === 0) {
-        container.innerHTML = '<div class="loading">Keine Empfehlungen verfügbar</div>';
-        return;
-    }
-
-    // Zähle Prioritäten
-    const hochCount = recommendations.filter(r => r.recommendation?.priority === 'HOCH').length;
-    const mittelCount = recommendations.filter(r => r.recommendation?.priority === 'MITTEL').length;
-    const niedrigCount = recommendations.filter(r => r.recommendation?.priority === 'NIEDRIG').length;
-
-    // Statistik-Header
-    let statsHTML = `
-        <div style="grid-column: 1/-1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem;">
-            <h3 style="margin: 0 0 0.5rem 0; color: white;">🌤️ Außenbedingungen & Übersicht</h3>
-            <div style="display: flex; gap: 2rem; font-size: 1.1em; flex-wrap: wrap;">
-                <div><strong>${outdoorConditions.temperature?.toFixed(1) || '-'}°C</strong> Außentemperatur</div>
-                <div><strong>${outdoorConditions.humidity?.toFixed(0) || '-'}%</strong> Außen-Luftfeuchtigkeit</div>
-                <div style="margin-left: auto; opacity: 0.9;">
-                    ${hochCount > 0 ? `🔴 ${hochCount} hoch ` : ''}
-                    ${mittelCount > 0 ? `🟠 ${mittelCount} mittel ` : ''}
-                    ${niedrigCount > 0 ? `🟢 ${niedrigCount} niedrig` : ''}
-                </div>
-            </div>
-        </div>
-    `;
-
-    container.innerHTML = statsHTML + recommendations.map(rec => {
-        const r = rec.recommendation || {};
-        const icon = r.action === 'Lüften empfohlen' ? '✅' :
-                    r.action === 'Lüften NICHT empfohlen' ? '⛔' :
-                    r.action === 'Kurz lüften' ? '⏱️' : '💨';
-
-        return `
-            <div class="room-card">
-                <h3 style="margin-top: 0;">🏠 ${rec.room_name}</h3>
-                <div class="action-icon">${icon}</div>
-                <div style="font-size: 1.2em; font-weight: bold; margin: 0.5rem 0;">${r.action}</div>
-                <div class="priority-badge priority-${r.priority}">${r.priority}</div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; padding: 1rem; background: #f9fafb; border-radius: 6px;">
-                    <div>
-                        <div style="color: #666; font-size: 0.85em;">Innen</div>
-                        <div style="font-weight: bold; font-size: 1.1em;">${rec.indoor_temp}°C</div>
-                        <div style="font-weight: bold; color: #4CAF50;">${rec.indoor_humidity}%</div>
-                    </div>
-                    <div>
-                        <div style="color: #666; font-size: 0.85em;">Außen</div>
-                        <div style="font-weight: bold; font-size: 1.1em;">${rec.outdoor_temp}°C</div>
-                        <div style="font-weight: bold; color: #2196F3;">${rec.outdoor_humidity}%</div>
-                    </div>
-                </div>
-
-                <div style="background: #f5f5f5; padding: 1rem; border-radius: 6px; margin-top: 1rem; font-size: 0.9em;">
-                    <strong>💡 Grund:</strong> ${r.reason}
-                </div>
-
-                ${r.duration_minutes ? `<div style="margin-top: 0.8rem; color: #666; font-size: 0.9em;">⏱️ Empfohlene Dauer: <strong>${r.duration_minutes} Minuten</strong></div>` : ''}
-            </div>
-        `;
-    }).join('');
+function showError(message) {
+    document.getElementById('rooms-grid').innerHTML = 
+        `<div class="loading-state" style="color: #c62828;">❌ ${message}</div>`;
 }
 
-document.addEventListener('DOMContentLoaded', loadRecommendations);
-setInterval(loadRecommendations, 300000); // Alle 5 Minuten
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+    loadOverview();
+    // Alle 60 Sekunden aktualisieren
+    setInterval(loadOverview, 60000);
+});
 </script>
 {% endblock %}
