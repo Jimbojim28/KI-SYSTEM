@@ -324,14 +324,15 @@ class MLAutoTrainer:
                        ORDER BY timestamp DESC LIMIT 10000"""
                 )
                 for row in result:
+                    # WICHTIG: 'light_state' statt 'state' - so erwartet es das Model
                     light_states.append({
                         'timestamp': row['timestamp'],
                         'device_id': row['device_id'],
-                        'state': 1 if row['new_state'] == 'on' else 0,
-                        'brightness': row.get('brightness'),
-                        'motion_detected': row.get('motion_detected'),
-                        'ambient_light': row.get('ambient_light'),
-                        'time_of_day': row.get('time_of_day')
+                        'light_state': 1 if row['new_state'] == 'on' else 0,
+                        'brightness': row.get('brightness') or 0,
+                        'motion_detected': 1 if row.get('motion_detected') else 0,
+                        'ambient_light': row.get('ambient_light') or 0,
+                        'time_of_day': row.get('time_of_day') or 'unknown'
                     })
                 logger.info(f"Loaded {len(light_states)} events from lighting_events table")
             except Exception as e:
@@ -345,7 +346,7 @@ class MLAutoTrainer:
                         'timestamp': row['timestamp'],
                         'device_id': row['device_id'],
                         'action': row['action'],
-                        'state': 1 if row.get('state_after') else 0
+                        'light_state': 1 if row.get('state_after') else 0
                     })
 
             if len(light_states) < self.MIN_LIGHTING_SAMPLES:
@@ -385,11 +386,19 @@ class MLAutoTrainer:
             # Erstelle und trainiere Modell
             self._update_progress(progress=40, step='Bereite Trainingsdaten vor...')
             model = LightingModel(model_type="random_forest")
-            X, y = model.prepare_training_data(sensor_data, light_states)
+            
+            # Versuche zuerst die direkte Methode (wenn lighting_events alle Daten hat)
+            if light_states and 'brightness' in light_states[0]:
+                logger.info("Using direct training data preparation (lighting_events has all data)")
+                X, y = model.prepare_training_data_direct(light_states)
+            else:
+                # Fallback: Merge mit sensor_data
+                logger.info("Using merged training data preparation")
+                X, y = model.prepare_training_data(sensor_data, light_states)
 
             if len(X) < 50:
                 logger.warning(f"Not enough training samples after preparation: {len(X)}")
-                self._update_progress(status='error', error=f'Zu wenig Samples nach Vorbereitung: {len(X)}')
+                self._update_progress(status='error', error=f'Zu wenig Samples nach Vorbereitung: {len(X)}. Prüfe ob die Daten korrekt gesammelt werden.')
                 return False
 
             self._update_progress(progress=50, step=f'Trainiere Modell mit {len(X)} Samples...')
@@ -506,7 +515,19 @@ class MLAutoTrainer:
             # Erstelle und trainiere Modell
             self._update_progress(progress=30, step='Bereite Trainingsdaten vor...')
             model = TemperatureModel(model_type="gradient_boosting")
-            X, y = model.prepare_training_data(sensor_data)
+            
+            # Prüfe ob wir Daten aus der neuen Tabelle haben (mit target_temp/heating_active)
+            has_new_table_data = any('target_temp' in d or 'heating_active' in d for d in sensor_data)
+            
+            if has_new_table_data:
+                # Neue Tabelle: verwende direkte Methode
+                logger.info("Using prepare_training_data_direct for new table format")
+                X, y = model.prepare_training_data_direct(sensor_data)
+            else:
+                # Legacy: wir brauchen temperature_settings separat
+                # Da wir keine haben, versuchen wir die direkte Methode trotzdem
+                logger.info("Falling back to prepare_training_data_direct")
+                X, y = model.prepare_training_data_direct(sensor_data)
 
             if len(X) < 50:
                 logger.warning(f"Not enough training samples after preparation: {len(X)}")

@@ -175,6 +175,78 @@ class TemperatureModel:
 
         return X, y
 
+    def prepare_training_data_direct(self, measurements: List[Dict]) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Bereitet Trainingsdaten direkt aus continuous_measurements vor.
+        Diese Methode funktioniert mit der neuen Tabellenstruktur.
+
+        Args:
+            measurements: Liste von Messungen mit allen notwendigen Feldern
+
+        Returns:
+            X (Features DataFrame), y (Target Series)
+        """
+        if not measurements:
+            return pd.DataFrame(), pd.Series()
+
+        df = pd.DataFrame(measurements)
+
+        # Timestamp konvertieren
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        # Prüfe, ob wir target_temp haben (sonst können wir nicht trainieren)
+        if 'target_temp' not in df.columns or df['target_temp'].isna().all():
+            # Versuche heating_active als Proxy zu verwenden
+            if 'heating_active' in df.columns:
+                # Wenn Heizung aktiv war, nehme aktuellen Wert + 1 als Ziel
+                # Das ist ein einfacher Heuristik-Ansatz
+                df['target_temp'] = df.apply(
+                    lambda row: row['value'] + 1.0 if row.get('heating_active') else row['value'],
+                    axis=1
+                )
+            else:
+                logger.warning("No target_temp or heating_active available for training")
+                return pd.DataFrame(), pd.Series()
+
+        # Kopiere Werte für _create_features
+        df['current_temperature'] = df['value']
+        df['outdoor_temperature'] = df.get('outdoor_temp', df['outdoor_temp'] if 'outdoor_temp' in df.columns else 15.0)
+        df['humidity'] = df.get('humidity', 50.0)
+        df['target_temperature'] = df['target_temp']
+
+        # Fülle fehlende Werte
+        df['outdoor_temperature'] = df['outdoor_temperature'].fillna(15.0)
+        df['humidity'] = df['humidity'].fillna(50.0)
+        df['current_temperature'] = df['current_temperature'].fillna(20.0)
+
+        # Presence - schätze anhand der Zeit
+        df['presence_home'] = df['timestamp'].dt.hour.apply(
+            lambda h: 1 if h < 8 or h >= 18 else 0
+        )
+
+        # Weather condition (default: bewölkt = 1)
+        df['weather_condition'] = 1
+
+        # Energy price level (default: mittel = 2)
+        df['energy_price_level'] = 2
+
+        # Entferne Zeilen ohne target_temp
+        df = df.dropna(subset=['target_temperature'])
+
+        if len(df) < 10:
+            logger.warning(f"Not enough valid samples: {len(df)}")
+            return pd.DataFrame(), pd.Series()
+
+        # Ausreißer-Erkennung
+        outlier_columns = ['current_temperature', 'target_temperature', 'outdoor_temperature', 'humidity']
+        df = self._remove_outliers(df, [c for c in outlier_columns if c in df.columns])
+
+        # Features erstellen
+        X = self._create_features(df)
+        y = df['target_temperature']
+
+        return X, y
+
     def train(self, X: pd.DataFrame, y: pd.Series) -> Dict:
         """Trainiert das Modell"""
         if len(X) < 100:

@@ -154,6 +154,48 @@ class LightingModel:
 
         return X, y
 
+    def prepare_training_data_direct(self, light_events: List[Dict]) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Bereitet Trainingsdaten direkt aus lighting_events vor (ohne Merge)
+        
+        Diese Methode wird verwendet wenn die lighting_events Tabelle bereits
+        alle nötigen Daten enthält (brightness, motion_detected, ambient_light, etc.)
+
+        Args:
+            light_events: Liste von Events aus der lighting_events Tabelle
+        
+        Returns:
+            X (Features), y (Labels)
+        """
+        if not light_events:
+            return pd.DataFrame(), pd.Series()
+            
+        df = pd.DataFrame(light_events)
+        
+        # Timestamp konvertieren
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        # Sortieren
+        df = df.sort_values('timestamp')
+        
+        # Entferne Zeilen ohne light_state
+        if 'light_state' not in df.columns:
+            logger.error("light_state column missing in data")
+            return pd.DataFrame(), pd.Series()
+            
+        df = df.dropna(subset=['light_state'])
+        
+        if len(df) < 50:
+            logger.warning(f"Not enough data after cleaning: {len(df)} samples")
+            return pd.DataFrame(), pd.Series()
+        
+        # Erstelle Features direkt aus den vorhandenen Daten
+        X = self._create_features(df)
+        y = df['light_state'].astype(int)
+
+        logger.info(f"Prepared {len(X)} training samples from direct data")
+        return X, y
+
     def train(self, X: pd.DataFrame, y: pd.Series) -> Dict:
         """
         Trainiert das Modell
