@@ -208,21 +208,30 @@ class MLAutoTrainer:
 
         # Prüfe ob genug Daten vorhanden
         try:
-            # Zähle Licht-Events (decisions wo device_type = light)
-            result = self.db.execute(
-                "SELECT COUNT(*) as count FROM decisions WHERE device_id LIKE '%light%' OR device_id LIKE '%lamp%'"
-            )
-            light_events = result[0]['count'] if result else 0
+            # Zähle Licht-Events aus NEUER lighting_events Tabelle
+            light_events = 0
+            try:
+                result = self.db.execute("SELECT COUNT(*) as count FROM lighting_events")
+                light_events = result[0]['count'] if result else 0
+            except Exception:
+                # Fallback auf alte decisions Tabelle
+                result = self.db.execute(
+                    "SELECT COUNT(*) as count FROM decisions WHERE device_id LIKE '%light%' OR device_id LIKE '%lamp%'"
+                )
+                light_events = result[0]['count'] if result else 0
 
-            # Prüfe Datenzeitraum
-            result = self.db.execute(
-                "SELECT MIN(timestamp) as first_reading FROM sensor_data"
-            )
-            if result and result[0]['first_reading']:
-                first_reading = datetime.fromisoformat(result[0]['first_reading'])
-                days_of_data = (datetime.now() - first_reading).days
-            else:
-                days_of_data = 0
+            # Prüfe Datenzeitraum aus neuer Tabelle
+            days_of_data = 0
+            try:
+                result = self.db.execute("SELECT MIN(timestamp) as first_reading FROM lighting_events")
+                if result and result[0]['first_reading']:
+                    first_reading = datetime.fromisoformat(result[0]['first_reading'])
+                    days_of_data = (datetime.now() - first_reading).days
+            except Exception:
+                result = self.db.execute("SELECT MIN(timestamp) as first_reading FROM sensor_data")
+                if result and result[0]['first_reading']:
+                    first_reading = datetime.fromisoformat(result[0]['first_reading'])
+                    days_of_data = (datetime.now() - first_reading).days
 
             logger.info(f"Lighting data check: {light_events} events, {days_of_data} days")
 
@@ -253,21 +262,34 @@ class MLAutoTrainer:
 
         # Prüfe ob genug Daten vorhanden
         try:
-            # Zähle Temperatur-Readings
-            result = self.db.execute(
-                "SELECT COUNT(*) as count FROM sensor_data WHERE sensor_id LIKE '%temp%' OR sensor_id LIKE '%temperature%'"
-            )
-            temp_readings = result[0]['count'] if result else 0
+            # Zähle Temperatur-Readings aus NEUER continuous_measurements Tabelle
+            temp_readings = 0
+            try:
+                result = self.db.execute(
+                    "SELECT COUNT(*) as count FROM continuous_measurements WHERE sensor_type = 'temperature'"
+                )
+                temp_readings = result[0]['count'] if result else 0
+            except Exception:
+                # Fallback auf alte sensor_data Tabelle
+                result = self.db.execute(
+                    "SELECT COUNT(*) as count FROM sensor_data WHERE sensor_id LIKE '%temp%' OR sensor_id LIKE '%temperature%'"
+                )
+                temp_readings = result[0]['count'] if result else 0
 
             # Prüfe Datenzeitraum
-            result = self.db.execute(
-                "SELECT MIN(timestamp) as first_reading FROM sensor_data"
-            )
-            if result and result[0]['first_reading']:
-                first_reading = datetime.fromisoformat(result[0]['first_reading'])
-                days_of_data = (datetime.now() - first_reading).days
-            else:
-                days_of_data = 0
+            days_of_data = 0
+            try:
+                result = self.db.execute(
+                    "SELECT MIN(timestamp) as first_reading FROM continuous_measurements"
+                )
+                if result and result[0]['first_reading']:
+                    first_reading = datetime.fromisoformat(result[0]['first_reading'])
+                    days_of_data = (datetime.now() - first_reading).days
+            except Exception:
+                result = self.db.execute("SELECT MIN(timestamp) as first_reading FROM sensor_data")
+                if result and result[0]['first_reading']:
+                    first_reading = datetime.fromisoformat(result[0]['first_reading'])
+                    days_of_data = (datetime.now() - first_reading).days
 
             logger.info(f"Temperature data check: {temp_readings} readings, {days_of_data} days")
 
@@ -289,37 +311,76 @@ class MLAutoTrainer:
         try:
             self._update_progress(status='training', model='lighting', progress=0, step='Initialisierung...')
 
-            # Hole Trainingsdaten aus DB
-            self._update_progress(progress=10, step='Lade Sensordaten aus Datenbank...')
-            sensor_data = []
-            result = self.db.execute(
-                "SELECT timestamp, sensor_id, value FROM sensor_data ORDER BY timestamp DESC LIMIT 10000"
-            )
-            for row in result:
-                sensor_data.append({
-                    'timestamp': row['timestamp'],
-                    'sensor_id': row['sensor_id'],
-                    'value': row['value']
-                })
-
-            # Hole Licht-Entscheidungen
-            self._update_progress(progress=25, step='Lade Licht-Events aus Datenbank...')
+            # Hole Trainingsdaten aus der NEUEN lighting_events Tabelle
+            self._update_progress(progress=10, step='Lade Licht-Events aus Datenbank...')
             light_states = []
-            result = self.db.execute(
-                "SELECT timestamp, device_id, action, state_before, state_after FROM decisions WHERE device_id LIKE '%light%' ORDER BY timestamp DESC LIMIT 5000"
-            )
-            for row in result:
-                light_states.append({
-                    'timestamp': row['timestamp'],
-                    'device_id': row['device_id'],
-                    'action': row['action'],
-                    'state': 1 if row.get('state_after') else 0
-                })
+            
+            # Versuche zuerst die neue Tabelle
+            try:
+                result = self.db.execute(
+                    """SELECT timestamp, device_id, new_state, brightness, 
+                              motion_detected, ambient_light, time_of_day
+                       FROM lighting_events 
+                       ORDER BY timestamp DESC LIMIT 10000"""
+                )
+                for row in result:
+                    light_states.append({
+                        'timestamp': row['timestamp'],
+                        'device_id': row['device_id'],
+                        'state': 1 if row['new_state'] == 'on' else 0,
+                        'brightness': row.get('brightness'),
+                        'motion_detected': row.get('motion_detected'),
+                        'ambient_light': row.get('ambient_light'),
+                        'time_of_day': row.get('time_of_day')
+                    })
+                logger.info(f"Loaded {len(light_states)} events from lighting_events table")
+            except Exception as e:
+                logger.warning(f"Could not load from lighting_events: {e}, trying decisions table")
+                # Fallback auf alte decisions Tabelle
+                result = self.db.execute(
+                    "SELECT timestamp, device_id, action, state_before, state_after FROM decisions WHERE device_id LIKE '%light%' ORDER BY timestamp DESC LIMIT 5000"
+                )
+                for row in result:
+                    light_states.append({
+                        'timestamp': row['timestamp'],
+                        'device_id': row['device_id'],
+                        'action': row['action'],
+                        'state': 1 if row.get('state_after') else 0
+                    })
 
             if len(light_states) < self.MIN_LIGHTING_SAMPLES:
                 logger.warning(f"Not enough light events: {len(light_states)} < {self.MIN_LIGHTING_SAMPLES}")
-                self._update_progress(status='error', error=f'Nicht genug Daten: {len(light_states)} Events')
+                self._update_progress(status='error', error=f'Nicht genug Daten: {len(light_states)} Events (benötigt: {self.MIN_LIGHTING_SAMPLES})')
                 return False
+
+            # Hole Sensor-Kontext aus continuous_measurements
+            self._update_progress(progress=25, step='Lade Sensor-Kontext...')
+            sensor_data = []
+            try:
+                result = self.db.execute(
+                    """SELECT timestamp, sensor_type, value, room_id
+                       FROM continuous_measurements 
+                       ORDER BY timestamp DESC LIMIT 20000"""
+                )
+                for row in result:
+                    sensor_data.append({
+                        'timestamp': row['timestamp'],
+                        'sensor_id': row.get('room_id', '') + '_' + row['sensor_type'],
+                        'sensor_type': row['sensor_type'],
+                        'value': row['value']
+                    })
+            except Exception as e:
+                logger.warning(f"Could not load continuous_measurements: {e}, trying sensor_data")
+                # Fallback
+                result = self.db.execute(
+                    "SELECT timestamp, sensor_id, value FROM sensor_data ORDER BY timestamp DESC LIMIT 10000"
+                )
+                for row in result:
+                    sensor_data.append({
+                        'timestamp': row['timestamp'],
+                        'sensor_id': row['sensor_id'],
+                        'value': row['value']
+                    })
 
             # Erstelle und trainiere Modell
             self._update_progress(progress=40, step='Bereite Trainingsdaten vor...')
@@ -399,22 +460,47 @@ class MLAutoTrainer:
         try:
             self._update_progress(status='training', model='temperature', progress=0, step='Initialisierung...')
 
-            # Hole Trainingsdaten aus DB
+            # Hole Trainingsdaten aus der NEUEN continuous_measurements Tabelle
             self._update_progress(progress=10, step='Lade Temperaturdaten aus Datenbank...')
             sensor_data = []
-            result = self.db.execute(
-                "SELECT timestamp, sensor_id, value FROM sensor_data WHERE sensor_id LIKE '%temp%' ORDER BY timestamp DESC LIMIT 10000"
-            )
-            for row in result:
-                sensor_data.append({
-                    'timestamp': row['timestamp'],
-                    'sensor_id': row['sensor_id'],
-                    'value': row['value']
-                })
+            
+            # Versuche zuerst die neue Tabelle
+            try:
+                result = self.db.execute(
+                    """SELECT timestamp, sensor_type, value, room_id, outdoor_temp, 
+                              humidity, target_temp, heating_active
+                       FROM continuous_measurements 
+                       WHERE sensor_type = 'temperature'
+                       ORDER BY timestamp DESC LIMIT 20000"""
+                )
+                for row in result:
+                    sensor_data.append({
+                        'timestamp': row['timestamp'],
+                        'sensor_id': row.get('room_id', 'unknown') + '_temperature',
+                        'room_id': row.get('room_id'),
+                        'value': row['value'],
+                        'outdoor_temp': row.get('outdoor_temp'),
+                        'humidity': row.get('humidity'),
+                        'target_temp': row.get('target_temp'),
+                        'heating_active': row.get('heating_active')
+                    })
+                logger.info(f"Loaded {len(sensor_data)} readings from continuous_measurements table")
+            except Exception as e:
+                logger.warning(f"Could not load from continuous_measurements: {e}, trying sensor_data")
+                # Fallback auf alte sensor_data Tabelle
+                result = self.db.execute(
+                    "SELECT timestamp, sensor_id, value FROM sensor_data WHERE sensor_id LIKE '%temp%' ORDER BY timestamp DESC LIMIT 10000"
+                )
+                for row in result:
+                    sensor_data.append({
+                        'timestamp': row['timestamp'],
+                        'sensor_id': row['sensor_id'],
+                        'value': row['value']
+                    })
 
             if len(sensor_data) < self.MIN_TEMPERATURE_SAMPLES:
                 logger.warning(f"Not enough temperature readings: {len(sensor_data)} < {self.MIN_TEMPERATURE_SAMPLES}")
-                self._update_progress(status='error', error=f'Nicht genug Daten: {len(sensor_data)} Readings')
+                self._update_progress(status='error', error=f'Nicht genug Daten: {len(sensor_data)} Readings (benötigt: {self.MIN_TEMPERATURE_SAMPLES})')
                 return False
 
             # Erstelle und trainiere Modell
