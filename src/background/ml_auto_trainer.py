@@ -318,21 +318,26 @@ class MLAutoTrainer:
             # Versuche zuerst die neue Tabelle
             try:
                 result = self.db.execute(
-                    """SELECT timestamp, device_id, new_state, brightness, 
-                              motion_detected, ambient_light, time_of_day
+                    """SELECT timestamp, device_id, device_name, room_name, state, brightness, 
+                              hour_of_day, day_of_week, is_weekend, outdoor_light, 
+                              presence, motion_detected
                        FROM lighting_events 
                        ORDER BY timestamp DESC LIMIT 10000"""
                 )
                 for row in result:
-                    # WICHTIG: 'light_state' statt 'state' - so erwartet es das Model
                     light_states.append({
                         'timestamp': row['timestamp'],
                         'device_id': row['device_id'],
-                        'light_state': 1 if row['new_state'] == 'on' else 0,
+                        'device_name': row.get('device_name'),
+                        'room_name': row.get('room_name'),
+                        'state': row['state'],  # 'on' oder 'off'
                         'brightness': row.get('brightness') or 0,
-                        'motion_detected': 1 if row.get('motion_detected') else 0,
-                        'ambient_light': row.get('ambient_light') or 0,
-                        'time_of_day': row.get('time_of_day') or 'unknown'
+                        'hour_of_day': row.get('hour_of_day') or 0,
+                        'day_of_week': row.get('day_of_week') or 0,
+                        'is_weekend': 1 if row.get('is_weekend') else 0,
+                        'outdoor_light': row.get('outdoor_light') or 0,
+                        'presence': 1 if row.get('presence') else 0,
+                        'motion_detected': 1 if row.get('motion_detected') else 0
                     })
                 logger.info(f"Loaded {len(light_states)} events from lighting_events table")
             except Exception as e:
@@ -346,7 +351,7 @@ class MLAutoTrainer:
                         'timestamp': row['timestamp'],
                         'device_id': row['device_id'],
                         'action': row['action'],
-                        'light_state': 1 if row.get('state_after') else 0
+                        'state': 'on' if row.get('state_after') else 'off'
                     })
 
             if len(light_states) < self.MIN_LIGHTING_SAMPLES:
@@ -387,8 +392,9 @@ class MLAutoTrainer:
             self._update_progress(progress=40, step='Bereite Trainingsdaten vor...')
             model = LightingModel(model_type="random_forest")
             
-            # Versuche zuerst die direkte Methode (wenn lighting_events alle Daten hat)
-            if light_states and 'brightness' in light_states[0]:
+            # Die lighting_events Tabelle hat alle nötigen Daten direkt
+            # (state, brightness, hour_of_day, etc.)
+            if light_states and 'state' in light_states[0]:
                 logger.info("Using direct training data preparation (lighting_events has all data)")
                 X, y = model.prepare_training_data_direct(light_states)
             else:
@@ -423,7 +429,7 @@ class MLAutoTrainer:
             self._update_progress(progress=80, step='Speichere trainiertes Modell...')
             models_dir = Path('models')
             models_dir.mkdir(exist_ok=True)
-            model.save_model(str(models_dir / 'lighting_model.pkl'))
+            model.save(str(models_dir / 'lighting_model.pkl'))
 
             # 4. Registriere neue Version
             self._update_progress(progress=85, step='Registriere Model-Version...')
@@ -473,25 +479,33 @@ class MLAutoTrainer:
             self._update_progress(progress=10, step='Lade Temperaturdaten aus Datenbank...')
             sensor_data = []
             
-            # Versuche zuerst die neue Tabelle
+            # Versuche zuerst die neue Tabelle (mit den tatsächlichen Spaltennamen)
             try:
                 result = self.db.execute(
-                    """SELECT timestamp, sensor_type, value, room_id, outdoor_temp, 
-                              humidity, target_temp, heating_active
+                    """SELECT timestamp, device_id, device_name, room_name,
+                              current_temperature, target_temperature, outdoor_temperature,
+                              humidity, heating_active, presence, window_open,
+                              hour_of_day, day_of_week, is_weekend, energy_price_level
                        FROM continuous_measurements 
-                       WHERE sensor_type = 'temperature'
                        ORDER BY timestamp DESC LIMIT 20000"""
                 )
                 for row in result:
                     sensor_data.append({
                         'timestamp': row['timestamp'],
-                        'sensor_id': row.get('room_id', 'unknown') + '_temperature',
-                        'room_id': row.get('room_id'),
-                        'value': row['value'],
-                        'outdoor_temp': row.get('outdoor_temp'),
+                        'device_id': row.get('device_id'),
+                        'device_name': row.get('device_name'),
+                        'room_name': row.get('room_name'),
+                        'current_temperature': row.get('current_temperature'),
+                        'target_temperature': row.get('target_temperature'),
+                        'outdoor_temperature': row.get('outdoor_temperature'),
                         'humidity': row.get('humidity'),
-                        'target_temp': row.get('target_temp'),
-                        'heating_active': row.get('heating_active')
+                        'heating_active': 1 if row.get('heating_active') else 0,
+                        'presence': 1 if row.get('presence') else 0,
+                        'window_open': 1 if row.get('window_open') else 0,
+                        'hour_of_day': row.get('hour_of_day') or 0,
+                        'day_of_week': row.get('day_of_week') or 0,
+                        'is_weekend': 1 if row.get('is_weekend') else 0,
+                        'energy_price_level': row.get('energy_price_level') or 2
                     })
                 logger.info(f"Loaded {len(sensor_data)} readings from continuous_measurements table")
             except Exception as e:
@@ -516,17 +530,14 @@ class MLAutoTrainer:
             self._update_progress(progress=30, step='Bereite Trainingsdaten vor...')
             model = TemperatureModel(model_type="gradient_boosting")
             
-            # Prüfe ob wir Daten aus der neuen Tabelle haben (mit target_temp/heating_active)
-            has_new_table_data = any('target_temp' in d or 'heating_active' in d for d in sensor_data)
-            
-            if has_new_table_data:
-                # Neue Tabelle: verwende direkte Methode
-                logger.info("Using prepare_training_data_direct for new table format")
+            # Die continuous_measurements Tabelle hat alle nötigen Daten direkt
+            # (current_temperature, target_temperature, etc.)
+            if sensor_data and 'current_temperature' in sensor_data[0]:
+                logger.info("Using prepare_training_data_direct for continuous_measurements format")
                 X, y = model.prepare_training_data_direct(sensor_data)
             else:
-                # Legacy: wir brauchen temperature_settings separat
-                # Da wir keine haben, versuchen wir die direkte Methode trotzdem
-                logger.info("Falling back to prepare_training_data_direct")
+                # Legacy: versuche trotzdem die direkte Methode
+                logger.info("Using prepare_training_data_direct (legacy fallback)")
                 X, y = model.prepare_training_data_direct(sensor_data)
 
             if len(X) < 50:
@@ -556,7 +567,7 @@ class MLAutoTrainer:
             self._update_progress(progress=80, step='Speichere trainiertes Modell...')
             models_dir = Path('models')
             models_dir.mkdir(exist_ok=True)
-            model.save_model(str(models_dir / 'temperature_model.pkl'))
+            model.save(str(models_dir / 'temperature_model.pkl'))
 
             # 4. Registriere neue Version
             self._update_progress(progress=85, step='Registriere Model-Version...')

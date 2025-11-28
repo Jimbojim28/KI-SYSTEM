@@ -52,26 +52,59 @@ class LightingModel:
                                      (data['timestamp'].dt.hour < 23)).astype(int)
             features['is_night'] = ((data['timestamp'].dt.hour >= 23) |
                                    (data['timestamp'].dt.hour < 6)).astype(int)
+        elif 'hour_of_day' in data.columns:
+            # Bereits vorberechnete Zeit-Features aus der Datenbank
+            features['hour_of_day'] = data['hour_of_day'].fillna(0).astype(int)
+            features['day_of_week'] = data.get('day_of_week', pd.Series([0] * len(data))).fillna(0).astype(int)
+            features['is_weekend'] = data.get('is_weekend', pd.Series([0] * len(data))).fillna(0).astype(int)
+            features['is_evening'] = ((data['hour_of_day'] >= 18) & (data['hour_of_day'] < 23)).astype(int)
+            features['is_night'] = ((data['hour_of_day'] >= 23) | (data['hour_of_day'] < 6)).astype(int)
 
-        # Sensor-Features
-        features['brightness'] = data.get('brightness', 0)
-        features['motion_detected'] = data.get('motion_detected', 0).astype(int)
-        features['presence_home'] = data.get('presence_home', 1).astype(int)
+        # Sensor-Features - sichere Extraktion
+        if 'brightness' in data.columns:
+            features['brightness'] = data['brightness'].fillna(0).astype(float)
+        else:
+            features['brightness'] = 0
+            
+        if 'motion_detected' in data.columns:
+            features['motion_detected'] = data['motion_detected'].fillna(0).astype(int)
+        else:
+            features['motion_detected'] = 0
+            
+        if 'presence' in data.columns:
+            features['presence_home'] = data['presence'].fillna(1).astype(int)
+        elif 'presence_home' in data.columns:
+            features['presence_home'] = data['presence_home'].fillna(1).astype(int)
+        else:
+            features['presence_home'] = 1
+            
+        # Außenlicht
+        if 'outdoor_light' in data.columns:
+            features['outdoor_light'] = data['outdoor_light'].fillna(50).astype(float)
+        else:
+            features['outdoor_light'] = 50
 
-        # Wetter-Features (One-Hot Encoding)
-        weather = data.get('weather_condition', 'clear').str.lower()
-        features['weather_condition_clear'] = (weather == 'clear').astype(int)
-        features['weather_condition_cloudy'] = (weather == 'clouds').astype(int)
-        features['weather_condition_rainy'] = (weather == 'rain').astype(int)
+        # Wetter-Features - vereinfacht für DB ohne Wetterdaten
+        features['weather_condition_clear'] = 1
+        features['weather_condition_cloudy'] = 0
+        features['weather_condition_rainy'] = 0
         
-        # Feature Engineering: Rolling Averages
-        if len(data) >= 3:
-            features['brightness_rolling_3'] = data.get('brightness', 0).rolling(window=3, min_periods=1).mean()
-            features['motion_rolling_3'] = data.get('motion_detected', 0).rolling(window=3, min_periods=1).mean()
+        # Feature Engineering: Rolling Averages (nur wenn genug Daten)
+        if len(data) >= 3 and 'brightness' in data.columns:
+            features['brightness_rolling_3'] = data['brightness'].fillna(0).rolling(window=3, min_periods=1).mean()
+            if 'motion_detected' in data.columns:
+                features['motion_rolling_3'] = data['motion_detected'].fillna(0).rolling(window=3, min_periods=1).mean()
+            else:
+                features['motion_rolling_3'] = 0
+        else:
+            features['brightness_rolling_3'] = features.get('brightness', 0)
+            features['motion_rolling_3'] = 0
         
         # Feature Engineering: Trends
-        if len(data) >= 2:
-            features['brightness_trend'] = data.get('brightness', 0).diff().fillna(0)
+        if len(data) >= 2 and 'brightness' in data.columns:
+            features['brightness_trend'] = data['brightness'].fillna(0).diff().fillna(0)
+        else:
+            features['brightness_trend'] = 0
         
         # Feature Engineering: Saisonale Features
         if 'timestamp' in data.columns:
@@ -178,9 +211,13 @@ class LightingModel:
         # Sortieren
         df = df.sort_values('timestamp')
         
-        # Entferne Zeilen ohne light_state
-        if 'light_state' not in df.columns:
-            logger.error("light_state column missing in data")
+        # Normalisiere Spaltennamen - DB kann 'state' oder 'light_state' haben
+        if 'state' in df.columns and 'light_state' not in df.columns:
+            df['light_state'] = df['state'].apply(lambda x: 1 if x in ['on', 1, '1', True] else 0)
+        elif 'light_state' in df.columns:
+            df['light_state'] = df['light_state'].apply(lambda x: 1 if x in ['on', 1, '1', True] else 0)
+        else:
+            logger.error("Neither 'state' nor 'light_state' column found in data")
             return pd.DataFrame(), pd.Series()
             
         df = df.dropna(subset=['light_state'])

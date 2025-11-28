@@ -1,0 +1,72 @@
+{
+  "lighting_model": {
+    "current_version": "20251128_082436",
+    "versions": [
+      {
+        "version": "20251128_082436",
+        "timestamp": "2025-11-28T08:24:36.584967",
+        "metrics": {
+          "accuracy": 0.9300699300699301,
+          "cv_accuracy_mean": 0.9015758888998325,
+          "cv_accuracy_std": 0.14191580625608083,
+          "samples_train": 570,
+          "samples_test": 143,
+          "feature_importance": {
+            "hour_of_day": 0.05997361125847598,
+            "day_of_week": 0.045221650386793176,
+            "brightness": 0.0,
+            "motion_detected": 0.0067755307878694495,
+            "presence_home": 0.006187797426100956,
+            "weather_condition_clear": 0.2776551882450335,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "is_weekend": 0.006301523592891415,
+            "is_evening": 0.0,
+            "is_night": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.930, Samples: 713",
+        "model_path": "lighting_model.pkl"
+      }
+    ]
+  },
+  "temperature_model": {
+    "current_version": "20251128_082454",
+    "versions": [
+      {
+        "version": "20251128_082454",
+        "timestamp": "2025-11-28T08:24:54.488344",
+        "metrics": {
+          "mae": 0.12451363370414169,
+          "rmse": 0.32129836831194525,
+          "r2_score": 0.9676887076009071,
+          "cv_mae_mean": 0.5537680030774392,
+          "cv_mae_std": 0.20138131776081925,
+          "cv_r2_mean": 0.7318167686305257,
+          "cv_r2_std": 0.18690006376128648,
+          "samples_train": 5475,
+          "samples_test": 1369,
+          "feature_importance": {
+            "hour_of_day": 0.0694319588837182,
+            "day_of_week": 0.025312228088979063,
+            "outdoor_temperature": 0.0,
+            "current_temperature": 0.010336460703772516,
+            "presence_home": 0.011861961869767507,
+            "is_sleeping_hours": 0.0,
+            "is_work_hours": 0.14255556614562015,
+            "weather_condition": 0.40698735476120135,
+            "energy_price_level": 0.0,
+            "is_weekend": 0.0,
+            "humidity": 0.0
+          },
+          "model_type": "gradient_boosting",
+          "version": "1.0.0"
+        },
+        "notes": "R\u00b2: 0.968, MAE: 0.12, Samples: 6844",
+        "model_path": "temperature_model.pkl"
+      }
+    ]
+  }
+}

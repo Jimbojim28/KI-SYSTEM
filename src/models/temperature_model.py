@@ -59,41 +59,73 @@ class TemperatureModel:
                 (data['timestamp'].dt.hour < 18) &
                 (data['timestamp'].dt.dayofweek < 5)
             ).astype(int)
+        elif 'hour_of_day' in data.columns:
+            # Bereits vorberechnete Zeit-Features aus der Datenbank
+            features['hour_of_day'] = data['hour_of_day'].fillna(12).astype(int)
+            features['day_of_week'] = data.get('day_of_week', pd.Series([0] * len(data))).fillna(0).astype(int)
+            features['is_weekend'] = data.get('is_weekend', pd.Series([0] * len(data))).fillna(0).astype(int)
+            features['is_sleeping_hours'] = ((data['hour_of_day'] >= 22) | (data['hour_of_day'] < 7)).astype(int)
+            features['is_work_hours'] = ((data['hour_of_day'] >= 8) & (data['hour_of_day'] < 18) & (features['day_of_week'] < 5)).astype(int)
 
-        # Temperatur-Features
-        features['outdoor_temperature'] = data.get('outdoor_temperature', 15.0)
-        features['current_temperature'] = data.get('current_temperature', 20.0)
-        features['humidity'] = data.get('humidity', 50.0)
+        # Temperatur-Features - sichere Extraktion
+        if 'outdoor_temperature' in data.columns:
+            features['outdoor_temperature'] = data['outdoor_temperature'].fillna(15.0).astype(float)
+        else:
+            features['outdoor_temperature'] = 15.0
+            
+        if 'current_temperature' in data.columns:
+            features['current_temperature'] = data['current_temperature'].fillna(20.0).astype(float)
+        else:
+            features['current_temperature'] = 20.0
+            
+        if 'humidity' in data.columns:
+            features['humidity'] = data['humidity'].fillna(50.0).astype(float)
+        else:
+            features['humidity'] = 50.0
 
         # Anwesenheit
-        features['presence_home'] = data.get('presence_home', 1).astype(int)
+        if 'presence' in data.columns:
+            features['presence_home'] = data['presence'].fillna(1).astype(int)
+        elif 'presence_home' in data.columns:
+            features['presence_home'] = data['presence_home'].fillna(1).astype(int)
+        else:
+            features['presence_home'] = 1
 
-        # Wetter (kodiert als Zahl)
-        weather_mapping = {
-            'clear': 1,
-            'clouds': 2,
-            'rain': 3,
-            'snow': 4,
-            'storm': 5
-        }
-        weather = data.get('weather_condition', 'clear').str.lower()
-        features['weather_condition'] = weather.map(weather_mapping).fillna(1)
+        # Wetter - vereinfacht (keine Wetterdaten in der DB)
+        features['weather_condition'] = 1  # "clear" als Default
 
         # Energiepreis Level (1=günstig, 2=mittel, 3=teuer)
-        features['energy_price_level'] = data.get('energy_price_level', 2)
+        if 'energy_price_level' in data.columns:
+            features['energy_price_level'] = data['energy_price_level'].fillna(2).astype(int)
+        else:
+            features['energy_price_level'] = 2
         
-        # Feature Engineering: Rolling Averages
-        if len(data) >= 6:
-            features['temp_rolling_6h'] = data.get('current_temperature', 20.0).rolling(window=6, min_periods=1).mean()
-            features['outdoor_temp_rolling_6h'] = data.get('outdoor_temperature', 15.0).rolling(window=6, min_periods=1).mean()
+        # Feature Engineering: Rolling Averages (nur wenn Spalten existieren)
+        if len(data) >= 6 and 'current_temperature' in data.columns:
+            features['temp_rolling_6h'] = data['current_temperature'].fillna(20.0).rolling(window=6, min_periods=1).mean()
+            if 'outdoor_temperature' in data.columns:
+                features['outdoor_temp_rolling_6h'] = data['outdoor_temperature'].fillna(15.0).rolling(window=6, min_periods=1).mean()
+            else:
+                features['outdoor_temp_rolling_6h'] = 15.0
+        else:
+            features['temp_rolling_6h'] = features.get('current_temperature', 20.0)
+            features['outdoor_temp_rolling_6h'] = features.get('outdoor_temperature', 15.0)
         
-        if len(data) >= 24:
-            features['temp_rolling_24h'] = data.get('current_temperature', 20.0).rolling(window=24, min_periods=1).mean()
+        if len(data) >= 24 and 'current_temperature' in data.columns:
+            features['temp_rolling_24h'] = data['current_temperature'].fillna(20.0).rolling(window=24, min_periods=1).mean()
+        else:
+            features['temp_rolling_24h'] = features.get('current_temperature', 20.0)
         
         # Feature Engineering: Trends
-        if len(data) >= 2:
-            features['temp_trend'] = data.get('current_temperature', 20.0).diff().fillna(0)
-            features['outdoor_temp_trend'] = data.get('outdoor_temperature', 15.0).diff().fillna(0)
+        if len(data) >= 2 and 'current_temperature' in data.columns:
+            features['temp_trend'] = data['current_temperature'].fillna(20.0).diff().fillna(0)
+            if 'outdoor_temperature' in data.columns:
+                features['outdoor_temp_trend'] = data['outdoor_temperature'].fillna(15.0).diff().fillna(0)
+            else:
+                features['outdoor_temp_trend'] = 0
+        else:
+            features['temp_trend'] = 0
+            features['outdoor_temp_trend'] = 0
         
         # Feature Engineering: Saisonale Features
         if 'timestamp' in data.columns:
@@ -101,9 +133,15 @@ class TemperatureModel:
             features['is_winter'] = data['timestamp'].dt.month.isin([12, 1, 2]).astype(int)
             features['is_summer'] = data['timestamp'].dt.month.isin([6, 7, 8]).astype(int)
             features['is_transition'] = data['timestamp'].dt.month.isin([3, 4, 5, 9, 10, 11]).astype(int)
+        else:
+            # Default: November = Übergang
+            features['month'] = 11
+            features['is_winter'] = 0
+            features['is_summer'] = 0
+            features['is_transition'] = 1
         
         # Feature Engineering: Temperatur-Differenz
-        features['temp_diff'] = data.get('current_temperature', 20.0) - data.get('outdoor_temperature', 15.0)
+        features['temp_diff'] = features['current_temperature'] - features['outdoor_temperature']
 
         return features
 
@@ -194,25 +232,37 @@ class TemperatureModel:
         # Timestamp konvertieren
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-        # Prüfe, ob wir target_temp haben (sonst können wir nicht trainieren)
-        if 'target_temp' not in df.columns or df['target_temp'].isna().all():
+        # Normalisiere Spaltennamen - DB kann verschiedene Namen haben
+        # value vs current_temperature
+        if 'value' in df.columns:
+            df['current_temperature'] = df['value']
+        elif 'current_temperature' not in df.columns:
+            logger.warning("Neither 'value' nor 'current_temperature' column found")
+            return pd.DataFrame(), pd.Series()
+            
+        # target_temp vs target_temperature
+        if 'target_temp' in df.columns:
+            df['target_temperature'] = df['target_temp']
+        elif 'target_temperature' not in df.columns:
             # Versuche heating_active als Proxy zu verwenden
             if 'heating_active' in df.columns:
-                # Wenn Heizung aktiv war, nehme aktuellen Wert + 1 als Ziel
-                # Das ist ein einfacher Heuristik-Ansatz
-                df['target_temp'] = df.apply(
-                    lambda row: row['value'] + 1.0 if row.get('heating_active') else row['value'],
+                df['target_temperature'] = df.apply(
+                    lambda row: row['current_temperature'] + 1.0 if row.get('heating_active') else row['current_temperature'],
                     axis=1
                 )
             else:
-                logger.warning("No target_temp or heating_active available for training")
+                logger.warning("No target_temp/target_temperature or heating_active available")
                 return pd.DataFrame(), pd.Series()
-
-        # Kopiere Werte für _create_features
-        df['current_temperature'] = df['value']
-        df['outdoor_temperature'] = df.get('outdoor_temp', df['outdoor_temp'] if 'outdoor_temp' in df.columns else 15.0)
-        df['humidity'] = df.get('humidity', 50.0)
-        df['target_temperature'] = df['target_temp']
+                
+        # outdoor_temp vs outdoor_temperature
+        if 'outdoor_temp' in df.columns:
+            df['outdoor_temperature'] = df['outdoor_temp']
+        elif 'outdoor_temperature' not in df.columns:
+            df['outdoor_temperature'] = 15.0
+            
+        # humidity sollte bereits vorhanden sein
+        if 'humidity' not in df.columns:
+            df['humidity'] = 50.0
 
         # Fülle fehlende Werte
         df['outdoor_temperature'] = df['outdoor_temperature'].fillna(15.0)
