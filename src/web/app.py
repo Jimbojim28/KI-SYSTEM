@@ -2555,8 +2555,14 @@ class WebInterface:
                     hours = 24
                 
                 from datetime import datetime, timedelta
+                import re
+                
                 cutoff = datetime.now() - timedelta(hours=hours)
                 cutoff_str = cutoff.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Extrahiere Basis-Raumnamen (vor Klammern, z.B. "Schlafzimmer (Doppelbett)" -> "Schlafzimmer")
+                base_room_name = re.split(r'\s*\(', room_name)[0].strip()
+                search_pattern = f"%{base_room_name}%"
                 
                 data = {
                     'temperature': [],
@@ -2573,7 +2579,7 @@ class WebInterface:
                     AND datetime(timestamp) >= datetime(?)
                     ORDER BY timestamp ASC
                     LIMIT 2000
-                """, (f"%{room_name}%", cutoff_str))
+                """, (search_pattern, cutoff_str))
                 
                 if temp_rows:
                     for row in temp_rows:
@@ -2593,7 +2599,7 @@ class WebInterface:
                         AND datetime(timestamp) >= datetime(?)
                         ORDER BY timestamp ASC
                         LIMIT 2000
-                    """, (f'%"device_name": "%{room_name}%"%', f'%"room": "%{room_name}%"%', cutoff_str))
+                    """, (f'%"device_name": "%{base_room_name}%"%', f'%"room": "%{base_room_name}%"%', cutoff_str))
                     
                     if co2_rows:
                         for row in co2_rows:
