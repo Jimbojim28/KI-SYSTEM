@@ -395,6 +395,139 @@ async function testAutomation() {
     }
 }
 
+// Geräte-Test (Luftentfeuchter/Heizung für 30s einschalten)
+async function testDevice(deviceType) {
+    const resultDiv = document.getElementById('test-result');
+    const button = document.getElementById(`test-${deviceType}`);
+    const deviceName = deviceType === 'dehumidifier' ? 'Luftentfeuchter' : 'Heizung';
+    
+    // Button deaktivieren während Test läuft
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = `<span class="spinner"></span> ${deviceName} wird getestet...`;
+    }
+    
+    // Zeige "läuft" Status
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `
+        <div style="padding: 15px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="spinner"></div>
+                <div>
+                    <strong>🧪 Test läuft...</strong>
+                    <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #6b7280;">
+                        ${deviceName} wird für 30 Sekunden eingeschaltet.
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    try {
+        const result = await postJSON('/api/luftentfeuchten/test-device', {
+            device_type: deviceType,
+            duration: 30
+        });
+
+        if (result.success) {
+            resultDiv.innerHTML = `
+                <div style="padding: 15px; background: #d1fae5; border-left: 4px solid #10b981; border-radius: 6px;">
+                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                        <span style="font-size: 1.5em;">✅</span>
+                        <div>
+                            <strong style="color: #065f46;">Test erfolgreich!</strong>
+                            <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #047857;">
+                                ${result.message}
+                            </p>
+                            <p style="margin: 8px 0 0 0; font-size: 0.85em; color: #6b7280;">
+                                Gerät: <code>${result.device_name || result.device_id}</code><br>
+                                Vorheriger Status: ${result.previous_state}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Countdown anzeigen
+            let countdown = result.test_duration || 30;
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    resultDiv.innerHTML += `
+                        <div style="margin-top: 10px; padding: 10px; background: #f3f4f6; border-radius: 6px; font-size: 0.9em; color: #6b7280;">
+                            ✓ ${deviceName} wurde automatisch ausgeschaltet.
+                        </div>
+                    `;
+                } else {
+                    const countdownEl = document.getElementById('test-countdown');
+                    if (countdownEl) {
+                        countdownEl.textContent = countdown;
+                    }
+                }
+            }, 1000);
+            
+            // Füge Countdown hinzu
+            resultDiv.querySelector('div > div > div:last-child').innerHTML += `
+                <p style="margin: 8px 0 0 0; font-size: 0.9em; color: #3b82f6;">
+                    ⏱️ Automatisches Ausschalten in <strong id="test-countdown">${countdown}</strong> Sekunden...
+                </p>
+            `;
+            
+        } else {
+            throw new Error(result.error || 'Unbekannter Fehler');
+        }
+    } catch (error) {
+        console.error('Error testing device:', error);
+        
+        // Fehlerdetails extrahieren
+        let errorMessage = error.message || 'Unbekannter Fehler';
+        let errorDetails = '';
+        
+        if (error.response) {
+            try {
+                const errData = await error.response.json();
+                errorMessage = errData.error || errorMessage;
+                errorDetails = errData.details || '';
+            } catch (e) {}
+        }
+        
+        resultDiv.innerHTML = `
+            <div style="padding: 15px; background: #fee2e2; border-left: 4px solid #ef4444; border-radius: 6px;">
+                <div style="display: flex; align-items: flex-start; gap: 10px;">
+                    <span style="font-size: 1.5em;">❌</span>
+                    <div>
+                        <strong style="color: #991b1b;">Test fehlgeschlagen</strong>
+                        <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #dc2626;">
+                            ${errorMessage}
+                        </p>
+                        ${errorDetails ? `
+                            <details style="margin-top: 10px;">
+                                <summary style="cursor: pointer; color: #6b7280; font-size: 0.85em;">Technische Details</summary>
+                                <pre style="margin: 8px 0 0 0; padding: 10px; background: #fef2f2; border-radius: 4px; font-size: 0.75em; overflow-x: auto; white-space: pre-wrap;">${errorDetails}</pre>
+                            </details>
+                        ` : ''}
+                        <p style="margin: 10px 0 0 0; font-size: 0.85em; color: #6b7280;">
+                            💡 <strong>Mögliche Lösungen:</strong><br>
+                            • Prüfe ob die Geräte-ID korrekt ist<br>
+                            • Prüfe ob das Gerät eingeschaltet und erreichbar ist<br>
+                            • Prüfe die Verbindung zu Home Assistant/Homey
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+    } finally {
+        // Button wieder aktivieren
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = deviceType === 'dehumidifier' 
+                ? '<span>💨</span><span>Luftentfeuchter testen</span>'
+                : '<span>🔥</span><span>Heizung testen</span>';
+        }
+    }
+}
+
 // Slider-Updates
 function updateSliderValue(sliderId) {
     const slider = document.getElementById(sliderId);
@@ -1411,6 +1544,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Event Listeners
     document.getElementById('save-bathroom-config').addEventListener('click', saveConfig);
     document.getElementById('test-bathroom').addEventListener('click', testAutomation);
+
+    // Geräte-Test Buttons
+    const testDehumidifierBtn = document.getElementById('test-dehumidifier');
+    if (testDehumidifierBtn) {
+        testDehumidifierBtn.addEventListener('click', () => testDevice('dehumidifier'));
+    }
+    const testHeaterBtn = document.getElementById('test-heater');
+    if (testHeaterBtn) {
+        testHeaterBtn.addEventListener('click', () => testDevice('heater'));
+    }
 
     // Reset Button
     const resetBtn = document.getElementById('reset-learned-btn');

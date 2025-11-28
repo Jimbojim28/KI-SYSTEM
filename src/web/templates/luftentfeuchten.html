@@ -457,6 +457,30 @@
                         um Energieverschwendung zu vermeiden und natürliche Lüftung zu nutzen.
                     </small>
                 </div>
+
+                <!-- Geräte-Test Sektion -->
+                <div style="margin-top: 25px; padding-top: 20px; border-top: 2px dashed #e5e7eb;">
+                    <h4 style="margin: 0 0 15px 0; color: #374151;">🧪 Geräte-Test</h4>
+                    <p style="color: #6b7280; font-size: 0.9em; margin-bottom: 15px;">
+                        Teste ob die konfigurierten Geräte erreichbar sind und korrekt reagieren.
+                        Das Gerät wird für 30 Sekunden eingeschaltet und dann automatisch wieder ausgeschaltet.
+                    </p>
+                    
+                    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <button type="button" id="test-dehumidifier" class="btn btn-secondary" style="display: flex; align-items: center; gap: 8px;">
+                            <span>💨</span>
+                            <span>Luftentfeuchter testen</span>
+                        </button>
+                        <button type="button" id="test-heater" class="btn btn-secondary" style="display: flex; align-items: center; gap: 8px;">
+                            <span>🔥</span>
+                            <span>Heizung testen</span>
+                        </button>
+                    </div>
+                    
+                    <div id="test-result" style="margin-top: 15px; display: none;">
+                        <!-- Test-Ergebnis wird hier angezeigt -->
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1063,5 +1087,5 @@
 
 </style>
 
-<script src="{{ url_for('static', filename='js/luftentfeuchten.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/luftentfeuchten.js') }}?v=4"></script>
 {% endblock %}

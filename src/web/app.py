@@ -3711,6 +3711,121 @@ class WebInterface:
                 logger.error(f"Error getting bathroom analytics: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/luftentfeuchten/test-device', methods=['POST'])
+        def api_bathroom_test_device():
+            """API: Teste ein Gerät (Luftentfeuchter, Heizung) für 30 Sekunden"""
+            try:
+                import json
+                import threading
+                import time
+                from pathlib import Path
+
+                data = request.json
+                device_type = data.get('device_type', 'dehumidifier')  # dehumidifier, heater
+                duration = min(int(data.get('duration', 30)), 60)  # Max 60 Sekunden
+
+                # Lade Config
+                config_file = Path('data/luftentfeuchten_config.json')
+                if not config_file.exists():
+                    return jsonify({
+                        'success': False,
+                        'error': 'Keine Konfiguration gefunden. Bitte zuerst Geräte konfigurieren.'
+                    }), 400
+
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+
+                # Bestimme Device-ID
+                if device_type == 'dehumidifier':
+                    device_id = config.get('dehumidifier_id')
+                    device_name = 'Luftentfeuchter'
+                elif device_type == 'heater':
+                    device_id = config.get('heater_id')
+                    device_name = 'Heizung'
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Unbekannter Gerätetyp: {device_type}'
+                    }), 400
+
+                if not device_id:
+                    return jsonify({
+                        'success': False,
+                        'error': f'{device_name} nicht konfiguriert. Bitte ID in den Einstellungen setzen.'
+                    }), 400
+
+                # Prüfe ob Gerät erreichbar ist
+                if not self.engine or not self.engine.platform:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Keine Plattform-Verbindung (Home Assistant/Homey)'
+                    }), 500
+
+                # Versuche Gerätestatus zu holen
+                state = self.engine.platform.get_state(device_id)
+                if not state:
+                    return jsonify({
+                        'success': False,
+                        'error': f'{device_name} nicht gefunden (ID: {device_id}). Prüfe die Geräte-ID.'
+                    }), 404
+
+                device_friendly_name = state.get('attributes', {}).get('friendly_name', device_id)
+                current_state = state.get('state', 'unknown')
+
+                # Schalte Gerät ein
+                logger.info(f"🧪 Test: Schalte {device_name} ({device_friendly_name}) für {duration}s ein...")
+                
+                try:
+                    if device_type == 'heater':
+                        # Für Heizung: Temperatur erhöhen
+                        self.engine.platform.set_temperature(device_id, 25.0)
+                    else:
+                        # Für andere Geräte: Einschalten
+                        self.engine.platform.turn_on(device_id)
+                except Exception as turn_on_error:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Fehler beim Einschalten: {str(turn_on_error)}',
+                        'device_id': device_id,
+                        'device_name': device_friendly_name
+                    }), 500
+
+                # Timer zum automatischen Ausschalten
+                def auto_turn_off():
+                    time.sleep(duration)
+                    try:
+                        logger.info(f"🧪 Test: Schalte {device_name} nach {duration}s automatisch aus...")
+                        if device_type == 'heater':
+                            # Heizung zurücksetzen
+                            original_temp = config.get('target_temp', 21.0)
+                            self.engine.platform.set_temperature(device_id, original_temp)
+                        else:
+                            self.engine.platform.turn_off(device_id)
+                    except Exception as e:
+                        logger.error(f"Fehler beim Ausschalten nach Test: {e}")
+
+                # Starte Timer im Hintergrund
+                timer_thread = threading.Thread(target=auto_turn_off, daemon=True)
+                timer_thread.start()
+
+                return jsonify({
+                    'success': True,
+                    'message': f'{device_name} wurde eingeschaltet und wird nach {duration} Sekunden automatisch ausgeschaltet.',
+                    'device_id': device_id,
+                    'device_name': device_friendly_name,
+                    'previous_state': current_state,
+                    'test_duration': duration
+                })
+
+            except Exception as e:
+                logger.error(f"Error testing device: {e}")
+                import traceback
+                return jsonify({
+                    'success': False,
+                    'error': str(e),
+                    'details': traceback.format_exc()
+                }), 500
+
         @self.app.route('/api/luftentfeuchten/events')
         def api_bathroom_events():
             """API: Badezimmer Events (Historie) mit Event-Typ-Klassifikation"""
