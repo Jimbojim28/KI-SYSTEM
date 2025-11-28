@@ -38,10 +38,10 @@ class BathroomAnalyzer:
         Returns:
             Dict mit type, confidence, description
         """
-        duration = event.get('duration_minutes', 0)
-        peak_humidity = event.get('peak_humidity', 0)
-        start_humidity = event.get('start_humidity', 0)
-        humidity_rise = peak_humidity - start_humidity if start_humidity else 0
+        duration = event.get('duration_minutes') or 0
+        peak_humidity = event.get('peak_humidity') or 0
+        start_humidity = event.get('start_humidity') or 0
+        humidity_rise = peak_humidity - start_humidity if peak_humidity and start_humidity else 0
         
         # Klassifikation basierend auf Dauer und Feuchtigkeitsanstieg
         if duration < 5:
