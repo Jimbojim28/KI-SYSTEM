@@ -141,8 +141,9 @@
                 <input type="text" id="edit-room-name" required>
             </div>
 
-            <h4>💡 Lampen im Raum</h4>
-            <div id="room-lights-list" class="room-lights-list">
+            <h4>💡 Geräte im Raum</h4>
+            <p class="modal-hint">Lege fest, welche Geräte als Lampen angezeigt werden sollen:</p>
+            <div id="room-devices-list" class="room-devices-list">
                 <div class="loading-state">Lädt...</div>
             </div>
 
@@ -732,55 +733,100 @@
     padding-top: 0;
 }
 
-/* Lampen-Liste im Modal */
-.room-lights-list {
+.modal-hint {
+    font-size: 0.85rem;
+    color: #888;
+    margin: -0.5rem 0 0.8rem 0;
+}
+
+/* Geräte-Liste im Modal */
+.room-devices-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     margin-bottom: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
 }
 
-.light-item {
+.device-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.8rem 1rem;
+    padding: 0.6rem 1rem;
     background: #f8f8f8;
     border-radius: 8px;
     transition: all 0.2s;
+    border-left: 3px solid transparent;
 }
 
-.light-item.is-on {
+.device-item.is-on {
     background: linear-gradient(135deg, #FFF8E1, #FFECB3);
     box-shadow: 0 2px 8px rgba(255, 213, 79, 0.3);
+    border-left-color: #FFB300;
 }
 
-.light-info {
+.device-item.is-device {
+    border-left-color: #2196F3;
+}
+
+.device-item.excluded {
+    opacity: 0.5;
+    border-left-color: #9e9e9e;
+}
+
+.device-info {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
+    gap: 0.6rem;
+    flex: 1;
+    min-width: 0;
 }
 
-.light-status-icon {
-    font-size: 1.5rem;
+.device-status-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
 }
 
-.light-name {
+.device-name {
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.light-toggle {
+.device-domain {
+    font-size: 0.75rem;
+    color: #888;
+    background: #e0e0e0;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.device-controls {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.device-type-select-mini {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    background: white;
 }
 
 .light-toggle-btn {
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.8rem;
     border: none;
-    border-radius: 20px;
+    border-radius: 16px;
     cursor: pointer;
     font-weight: 500;
+    font-size: 0.85rem;
     transition: all 0.2s;
 }
 
@@ -802,7 +848,7 @@
     background: #bdbdbd;
 }
 
-.no-lights-message {
+.no-devices-message {
     color: #888;
     font-style: italic;
     padding: 1rem;
@@ -860,6 +906,16 @@
     .room-header {
         flex-wrap: wrap;
     }
+    
+    .device-item {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .device-controls {
+        width: 100%;
+        justify-content: flex-end;
+    }
 }
 </style>
 
@@ -868,6 +924,8 @@
 let allRooms = [];
 let allSensors = [];
 let allLights = [];
+let allDevices = [];
+let deviceTypes = {};
 let sensorMapping = {};
 let outdoorSensors = {};
 let hiddenRooms = [];
@@ -900,12 +958,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Alle Daten laden
 async function loadAllData() {
     try {
-        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes] = await Promise.all([
+        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes] = await Promise.all([
             fetch('/api/ventilation/sensors'),
             fetch('/api/ventilation/sensor-mapping'),
             fetch('/api/rooms/hidden'),
             fetch('/api/devices'),
-            fetch('/api/rooms')
+            fetch('/api/rooms'),
+            fetch('/api/rooms/device-types')
         ]);
         
         const sensorsData = await sensorsRes.json();
@@ -913,6 +972,7 @@ async function loadAllData() {
         const hiddenData = await hiddenRes.json();
         const devicesData = await devicesRes.json();
         const roomsData = await roomsRes.json();
+        const deviceTypesData = await deviceTypesRes.json();
         
         if (sensorsData.success) {
             allSensors = sensorsData.sensors;
@@ -928,6 +988,11 @@ async function loadAllData() {
             hiddenRooms = hiddenData.hidden || [];
         }
         
+        // Geräte-Typen laden
+        if (deviceTypesData.success) {
+            deviceTypes = deviceTypesData.device_types || {};
+        }
+        
         // Zone-ID zu Raum-Namen Mapping erstellen
         if (roomsData.rooms) {
             roomsData.rooms.forEach(r => {
@@ -935,13 +1000,22 @@ async function loadAllData() {
             });
         }
         
-        // Lampen aus Geräten extrahieren und Zone-ID zu Namen auflösen
+        // Alle Geräte speichern
         if (devicesData.devices) {
-            allLights = devicesData.devices.filter(d => d.domain === 'light').map(l => ({
-                ...l,
-                roomName: zoneIdToName[l.zone] || l.zone || 'Unbekannt'
+            allDevices = devicesData.devices.map(d => ({
+                ...d,
+                roomName: zoneIdToName[d.zone] || d.zone || 'Unbekannt'
             }));
         }
+        
+        // Lampen extrahieren: Nutze deviceTypes-Konfiguration oder domain === 'light'
+        allLights = allDevices.filter(d => {
+            // Wenn explizit konfiguriert, nutze das
+            if (deviceTypes[d.id] === 'light') return true;
+            if (deviceTypes[d.id] === 'device' || deviceTypes[d.id] === 'exclude') return false;
+            // Sonst: Standard-Erkennung (domain === 'light')
+            return d.domain === 'light';
+        });
         
         // Räume aus Sensoren UND Lampen extrahieren
         const roomSet = new Set();
@@ -1274,8 +1348,8 @@ function openRoomModal(room) {
     document.getElementById('edit-room-original-name').value = room;
     document.getElementById('edit-room-name').value = room;
     
-    // Lampen für diesen Raum anzeigen
-    renderRoomLights(room);
+    // Geräte für diesen Raum anzeigen (mit Kategorisierung)
+    renderRoomDevices(room);
     
     // Sensor-Dropdowns füllen
     const tempSelect = document.getElementById('edit-temp-sensor');
@@ -1305,37 +1379,92 @@ function openRoomModal(room) {
     modal.classList.add('show');
 }
 
-// Lampen im Modal anzeigen
-function renderRoomLights(room) {
-    const container = document.getElementById('room-lights-list');
-    const roomLights = allLights.filter(l => l.roomName === room);
+// Geräte im Modal anzeigen (Lampen + Schalter mit Kategorisierung)
+function renderRoomDevices(room) {
+    const container = document.getElementById('room-devices-list');
     
-    if (roomLights.length === 0) {
-        container.innerHTML = '<div class="no-lights-message">Keine Lampen in diesem Raum zugeordnet</div>';
+    // Alle Geräte (light + switch) für diesen Raum
+    const roomDevices = allDevices.filter(d => 
+        d.roomName === room && (d.domain === 'light' || d.domain === 'switch' || deviceTypes[d.id])
+    );
+    
+    if (roomDevices.length === 0) {
+        container.innerHTML = '<div class="no-devices-message">Keine Geräte in diesem Raum</div>';
         return;
     }
     
-    container.innerHTML = roomLights.map(light => {
-        const isOn = light.state === 'on' || light.state === true;
+    container.innerHTML = roomDevices.map(device => {
+        const configuredType = deviceTypes[device.id] || 'auto';
+        const isLamp = configuredType === 'light' || (configuredType === 'auto' && device.domain === 'light');
+        const isExcluded = configuredType === 'exclude';
+        const isOn = device.state === 'on' || device.state === true;
+        
+        let icon = isExcluded ? '🚫' : (isLamp ? (isOn ? '💡' : '🔅') : '🔌');
+        let stateClass = isExcluded ? 'excluded' : (isLamp ? (isOn ? 'is-on' : '') : 'is-device');
+        
         return `
-            <div class="light-item ${isOn ? 'is-on' : ''}">
-                <div class="light-info">
-                    <span class="light-status-icon">${isOn ? '💡' : '🔅'}</span>
-                    <span class="light-name">${light.name}</span>
+            <div class="device-item ${stateClass}">
+                <div class="device-info">
+                    <span class="device-status-icon">${icon}</span>
+                    <span class="device-name">${device.name}</span>
+                    <span class="device-domain">${device.domain}</span>
                 </div>
-                <div class="light-toggle">
-                    <button class="light-toggle-btn ${isOn ? 'on' : 'off'}" 
-                            onclick="toggleLight('${light.id}', ${!isOn})">
-                        ${isOn ? 'An' : 'Aus'}
-                    </button>
+                <div class="device-controls">
+                    <select class="device-type-select-mini" onchange="setDeviceTypeInModal('${device.id}', this.value, '${room.replace(/'/g, "\\'")}')">
+                        <option value="auto" ${configuredType === 'auto' ? 'selected' : ''}>Auto</option>
+                        <option value="light" ${configuredType === 'light' ? 'selected' : ''}>💡 Lampe</option>
+                        <option value="device" ${configuredType === 'device' ? 'selected' : ''}>🔌 Gerät</option>
+                        <option value="exclude" ${configuredType === 'exclude' ? 'selected' : ''}>🚫 Aus</option>
+                    </select>
+                    ${isLamp && !isExcluded ? `
+                        <button class="light-toggle-btn ${isOn ? 'on' : 'off'}" 
+                                onclick="toggleLight('${device.id}', ${!isOn}, '${room.replace(/'/g, "\\'")}')">
+                            ${isOn ? 'An' : 'Aus'}
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         `;
     }).join('');
 }
 
+// Gerätetyp im Modal setzen
+async function setDeviceTypeInModal(deviceId, type, room) {
+    try {
+        const response = await fetch('/api/rooms/device-types', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, type: type })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            deviceTypes = data.device_types;
+            
+            // Lampen-Liste neu berechnen
+            allLights = allDevices.filter(d => {
+                if (deviceTypes[d.id] === 'light') return true;
+                if (deviceTypes[d.id] === 'device' || deviceTypes[d.id] === 'exclude') return false;
+                return d.domain === 'light';
+            });
+            
+            // UI aktualisieren
+            renderRoomDevices(room);
+            renderOverview();
+            
+            const typeLabel = type === 'light' ? 'Lampe' : type === 'device' ? 'Gerät' : type === 'exclude' ? 'Ausgeblendet' : 'Auto';
+            showNotification(`Als "${typeLabel}" markiert`, 'success');
+        } else {
+            showNotification('Fehler beim Speichern', 'error');
+        }
+    } catch (error) {
+        console.error('Error setting device type:', error);
+        showNotification('Fehler beim Speichern', 'error');
+    }
+}
+
 // Lampe ein-/ausschalten
-async function toggleLight(deviceId, turnOn) {
+async function toggleLight(deviceId, turnOn, room) {
     try {
         const response = await fetch(`/api/devices/${deviceId}/control`, {
             method: 'POST',
@@ -1346,14 +1475,17 @@ async function toggleLight(deviceId, turnOn) {
         const data = await response.json();
         if (data.success) {
             // Aktualisiere lokale Daten
+            const device = allDevices.find(d => d.id === deviceId);
+            if (device) {
+                device.state = turnOn ? 'on' : 'off';
+            }
             const light = allLights.find(l => l.id === deviceId);
             if (light) {
                 light.state = turnOn ? 'on' : 'off';
             }
             
             // UI aktualisieren
-            const room = document.getElementById('edit-room-original-name').value;
-            renderRoomLights(room);
+            renderRoomDevices(room);
             renderOverview();
             
             showNotification(`Lampe ${turnOn ? 'eingeschaltet' : 'ausgeschaltet'}`, 'success');

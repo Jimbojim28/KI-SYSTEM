@@ -38,12 +38,15 @@
 <!-- Einstellungen Tab -->
 <div id="settings-tab" class="tab-content">
     <div class="settings-section">
-        <h3>ℹ️ Schimmelprävention - Einstellungen</h3>
+        <h3>🏠 Zentrale Raumverwaltung</h3>
         <p class="info-text">
-            Die Sensor-Konfiguration erfolgt über die <a href="/ventilation" style="color: #667eea;">Lüftungsübersicht</a>.<br>
-            Dort können Sie Sensoren zuordnen und Räume ausblenden.
+            Alle Einstellungen werden zentral verwaltet: Sensoren zuordnen, Räume ausblenden und Geräte konfigurieren.
         </p>
-        <a href="/ventilation" class="btn-link">➡️ Zur Lüftungs-Einstellung</a>
+        <a href="/rooms" class="btn-link">⚙️ Zur Raumverwaltung →</a>
+        
+        <div id="hidden-rooms-info" class="hidden-rooms-info" style="margin-top: 1rem;">
+            <!-- Wird dynamisch gefüllt -->
+        </div>
     </div>
     
     <div class="settings-section">
@@ -379,15 +382,30 @@
 .btn-link {
     display: inline-block;
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
     color: white;
     text-decoration: none;
     border-radius: 8px;
     font-weight: 500;
-    transition: transform 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 .btn-link:hover {
     transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+    color: white;
+}
+
+.hidden-rooms-info {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    font-size: 0.9em;
+    color: #666;
+}
+
+.hidden-rooms-info .count {
+    font-weight: 600;
+    color: #333;
 }
 
 /* Threshold Info */
@@ -585,10 +603,23 @@ async function loadHiddenRooms() {
         const data = await response.json();
         if (data.success) {
             hiddenRooms = data.hidden || [];
+            displayHiddenRoomsInfo();
         }
     } catch (error) {
         console.error('Error loading hidden rooms:', error);
         hiddenRooms = [];
+    }
+}
+
+// Ausgeblendete Räume Info anzeigen
+function displayHiddenRoomsInfo() {
+    const container = document.getElementById('hidden-rooms-info');
+    if (!container) return;
+    
+    if (hiddenRooms.length === 0) {
+        container.innerHTML = '✓ Alle Räume werden angezeigt';
+    } else {
+        container.innerHTML = `<span class="count">${hiddenRooms.length} Raum/Räume ausgeblendet:</span> ${hiddenRooms.join(', ')}`;
     }
 }
 

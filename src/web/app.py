@@ -3661,6 +3661,58 @@ class WebInterface:
                 logger.error(f"Error getting room settings: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/rooms/device-types', methods=['GET', 'POST'])
+        def api_device_types():
+            """API: Geräte-Kategorisierung verwalten - welche Geräte sind Lampen vs. sonstige Geräte"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'rooms': [], 'assignments': {}, 'hidden': [], 'device_types': {}}
+                
+                # Sicherstellen dass 'device_types' existiert
+                if 'device_types' not in rooms_data:
+                    rooms_data['device_types'] = {}
+                
+                if request.method == 'GET':
+                    return jsonify({
+                        'success': True,
+                        'device_types': rooms_data.get('device_types', {})
+                    })
+                
+                elif request.method == 'POST':
+                    data = request.json
+                    device_id = data.get('device_id')
+                    device_type = data.get('type')  # 'light', 'device', 'exclude'
+                    
+                    if device_id and device_type:
+                        if device_type == 'auto':
+                            # Automatische Erkennung - Eintrag entfernen
+                            rooms_data['device_types'].pop(device_id, None)
+                            logger.info(f"Device {device_id} set to auto detection")
+                        else:
+                            rooms_data['device_types'][device_id] = device_type
+                            logger.info(f"Device {device_id} set to type: {device_type}")
+                        
+                        # Speichern
+                        with open(rooms_file, 'w') as f:
+                            json.dump(rooms_data, f, indent=2, ensure_ascii=False)
+                        
+                        return jsonify({
+                            'success': True,
+                            'device_types': rooms_data['device_types']
+                        })
+                    else:
+                        return jsonify({'error': 'device_id and type required'}), 400
+                    
+            except Exception as e:
+                logger.error(f"Error managing device types: {e}")
+                return jsonify({'error': str(e)}), 500
+
         # === Analytics API Endpunkte ===
 
         @self.app.route('/api/analytics/temperature')

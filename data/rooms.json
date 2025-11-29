@@ -159,5 +159,12 @@
     "Heim",
     "Nachtlicht",
     "Wohn/Haustür"
-  ]
+  ],
+  "device_types": {
+    "fc3d7dcc-bbc9-45b3-bcf8-2e9fd39d7470": "device",
+    "609e9b63-2129-4bee-8c25-31432fe1950c": "device",
+    "44029312-ca05-4ae2-b371-1d5fa43daa07": "light",
+    "f442ec39-b04b-4bcf-92ba-4cc8b276cc22": "device",
+    "fbb3acc8-32cc-4e66-8f24-dcde4e6066df": "light"
+  }
 }

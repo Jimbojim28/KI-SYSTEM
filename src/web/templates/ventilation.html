@@ -55,10 +55,14 @@
     </div>
     
     <div class="settings-section">
-        <h3>🙈 Ausgeblendete Räume</h3>
-        <p class="info-text">Diese Räume werden in der Übersicht nicht angezeigt.</p>
-        <div id="hidden-rooms-list" class="hidden-rooms-list">
-            <span class="no-hidden">Keine Räume ausgeblendet</span>
+        <h3>🏠 Zentrale Raumverwaltung</h3>
+        <p class="info-text">Räume ausblenden, Sensoren zuordnen und Geräte konfigurieren - alles zentral an einem Ort.</p>
+        <a href="/rooms" class="btn-link">
+            ⚙️ Zur Raumverwaltung →
+        </a>
+        
+        <div id="hidden-rooms-info" class="hidden-rooms-info" style="margin-top: 1rem;">
+            <!-- Wird dynamisch gefüllt -->
         </div>
     </div>
     
@@ -528,6 +532,35 @@
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
+.btn-link {
+    display: inline-block;
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+    color: white;
+    text-decoration: none;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.btn-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+    color: white;
+}
+
+.hidden-rooms-info {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    font-size: 0.9em;
+    color: #666;
+}
+
+.hidden-rooms-info .count {
+    font-weight: 600;
+    color: #333;
+}
+
 /* Toast */
 .toast {
     position: fixed;
@@ -563,6 +596,7 @@ async function loadHiddenRooms() {
         const data = await response.json();
         if (data.success) {
             hiddenRooms = data.hidden || [];
+            displayHiddenRooms();
         }
     } catch (error) {
         console.error('Error loading hidden rooms:', error);
@@ -816,25 +850,16 @@ async function showRoom(roomName) {
     }
 }
 
-// Ausgeblendete Räume anzeigen
+// Ausgeblendete Räume Info anzeigen
 function displayHiddenRooms() {
-    const container = document.getElementById('hidden-rooms-list');
+    const container = document.getElementById('hidden-rooms-info');
     if (!container) return;
     
     if (hiddenRooms.length === 0) {
-        container.innerHTML = '<span class="no-hidden">Keine Räume ausgeblendet</span>';
-        return;
+        container.innerHTML = '✓ Alle Räume werden angezeigt';
+    } else {
+        container.innerHTML = `<span class="count">${hiddenRooms.length} Raum/Räume ausgeblendet:</span> ${hiddenRooms.join(', ')}`;
     }
-    
-    container.innerHTML = hiddenRooms.map(roomName => {
-        const icon = getRoomIcon(roomName);
-        return `
-            <div class="hidden-room-chip">
-                ${icon} ${roomName}
-                <button onclick="showRoom('${roomName}')" title="Wieder einblenden">✓</button>
-            </div>
-        `;
-    }).join('');
 }
 
 function getStatus(temp, humidity, co2) {
