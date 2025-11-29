@@ -326,7 +326,47 @@ def init_ventilation_blueprint(engine, db, config):
                 except Exception as e:
                     logger.error(f"Error getting HA sensors: {e}")
             
-            return jsonify({'success': True, 'sensors': sensors, 'count': len(sensors)})
+            # Hole Außensensor-Konfiguration und -Werte
+            outdoor = None
+            try:
+                mapping_data = _load_sensor_mapping()
+                outdoor_sensors = mapping_data.get('outdoor_sensors', {})
+                
+                outdoor_temp = None
+                outdoor_humidity = None
+                
+                # Hole Werte aus konfigurierten Sensoren
+                if outdoor_sensors.get('temperature'):
+                    outdoor_temp = _get_sensor_value(outdoor_sensors.get('temperature'))
+                if outdoor_sensors.get('humidity'):
+                    outdoor_humidity = _get_sensor_value(outdoor_sensors.get('humidity'))
+                
+                # Fallback: Suche nach Sensoren mit "Außen" im Namen
+                if outdoor_temp is None:
+                    for s in sensors:
+                        if s['type'] == 'temperature' and s['current_value'] is not None:
+                            name_lower = s['name'].lower()
+                            if 'außen' in name_lower or 'outdoor' in name_lower or 'aussen' in name_lower:
+                                outdoor_temp = s['current_value']
+                                break
+                
+                if outdoor_humidity is None:
+                    for s in sensors:
+                        if s['type'] == 'humidity' and s['current_value'] is not None:
+                            name_lower = s['name'].lower()
+                            if 'außen' in name_lower or 'outdoor' in name_lower or 'aussen' in name_lower:
+                                outdoor_humidity = s['current_value']
+                                break
+                
+                if outdoor_temp is not None or outdoor_humidity is not None:
+                    outdoor = {
+                        'temperature': outdoor_temp,
+                        'humidity': outdoor_humidity
+                    }
+            except Exception as e:
+                logger.error(f"Error getting outdoor data: {e}")
+            
+            return jsonify({'success': True, 'sensors': sensors, 'count': len(sensors), 'outdoor': outdoor})
         except Exception as e:
             logger.error(f"Error getting sensors: {e}")
             return jsonify({'error': str(e)}), 500
