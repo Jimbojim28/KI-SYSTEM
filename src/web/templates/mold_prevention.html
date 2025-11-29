@@ -1,109 +1,910 @@
 {% extends "base.html" %}
+
 {% block title %}Schimmelprävention - KI Smart Home{% endblock %}
+
 {% block content %}
 <div class="page-header">
-    <h2>🍄 Schimmelprävention Dashboard</h2>
-    <p>Überwachung von Schimmelrisiken in allen Räumen</p>
+    <h2>🍄 Schimmelprävention</h2>
+    <p>Überwachung von Schimmelrisiken und Taupunkt-Analyse aller Räume</p>
 </div>
 
-<div id="rooms-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
-    <div class="loading">Lade Raum-Daten...</div>
+<!-- Tab Navigation -->
+<div class="tabs">
+    <button class="tab-button active" onclick="switchTab('overview')">🏠 Übersicht</button>
+    <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
 </div>
+
+<!-- Übersicht Tab -->
+<div id="overview-tab" class="tab-content active">
+    <!-- Status-Header -->
+    <div id="status-header" class="status-header">
+        <div class="status-loading">🍄 Berechne Schimmelrisiko...</div>
+    </div>
+    
+    <!-- Raum-Kacheln -->
+    <div id="rooms-grid" class="rooms-grid">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Analysiere Raumdaten...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Einstellungen Tab -->
+<div id="settings-tab" class="tab-content">
+    <div class="settings-section">
+        <h3>ℹ️ Schimmelprävention - Einstellungen</h3>
+        <p class="info-text">
+            Die Sensor-Konfiguration erfolgt über die <a href="/ventilation" style="color: #667eea;">Lüftungsübersicht</a>.<br>
+            Dort können Sie Sensoren zuordnen und Räume ausblenden.
+        </p>
+        <a href="/ventilation" class="btn-link">➡️ Zur Lüftungs-Einstellung</a>
+    </div>
+    
+    <div class="settings-section">
+        <h3>📊 Grenzwerte für Schimmelrisiko</h3>
+        <div class="threshold-info">
+            <div class="threshold-item good">
+                <span class="threshold-level">NIEDRIG</span>
+                <span class="threshold-desc">Luftfeuchtigkeit &lt; 60% - Kein Risiko</span>
+            </div>
+            <div class="threshold-item warning">
+                <span class="threshold-level">MITTEL</span>
+                <span class="threshold-desc">Luftfeuchtigkeit 60-70% - Erhöhte Aufmerksamkeit</span>
+            </div>
+            <div class="threshold-item critical">
+                <span class="threshold-level">HOCH</span>
+                <span class="threshold-desc">Luftfeuchtigkeit 70-80% - Lüften empfohlen</span>
+            </div>
+            <div class="threshold-item danger">
+                <span class="threshold-level">KRITISCH</span>
+                <span class="threshold-desc">Luftfeuchtigkeit &gt; 80% - Sofortiges Handeln erforderlich</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="settings-section">
+        <h3>💧 Taupunkt-Information</h3>
+        <p class="info-text">
+            Der <strong>Taupunkt</strong> ist die Temperatur, bei der die Luft mit Wasserdampf gesättigt ist.<br>
+            Wenn Oberflächen (z.B. Fenster, Außenwände) kälter als der Taupunkt sind, kondensiert Wasser - ideale Bedingungen für Schimmel.
+        </p>
+        <div class="dew-point-example">
+            <div class="example-item">
+                <span class="example-label">Beispiel:</span>
+                <span class="example-text">Bei 20°C und 65% Luftfeuchtigkeit liegt der Taupunkt bei ca. 13°C</span>
+            </div>
+            <div class="example-item">
+                <span class="example-label">Risiko:</span>
+                <span class="example-text">Wenn eine Außenwand nur 12°C hat, bildet sich dort Kondenswasser</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Room History Modal -->
+<div id="room-history-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h3 id="modal-room-title">📊 Raumhistorie</h3>
+            <button class="modal-close" onclick="closeRoomModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="time-selector">
+                <button class="time-btn active" onclick="loadRoomHistory(currentRoom, 24)">24 Stunden</button>
+                <button class="time-btn" onclick="loadRoomHistory(currentRoom, 48)">48 Stunden</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="room-chart"></canvas>
+            </div>
+            <div id="chart-loading" class="chart-loading">
+                <div class="spinner"></div>
+                <p>Lade Daten...</p>
+            </div>
+            <div id="chart-no-data" class="chart-no-data" style="display: none;">
+                <p>📭 Keine historischen Daten für diesen Raum verfügbar.</p>
+                <p class="hint">Daten werden automatisch gesammelt, sobald Sensoren aktiv sind.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 
 <style>
-.room-card { background: white; border-radius: 8px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.risk-badge { padding: 0.5rem 1rem; border-radius: 20px; font-weight: bold; display: inline-block; margin: 0.5rem 0; }
-.risk-NIEDRIG { background: #E8F5E9; color: #2E7D32; }
-.risk-MITTEL { background: #FFF3E0; color: #E65100; }
-.risk-HOCH { background: #FFEBEE; color: #C62828; }
-.risk-KRITISCH { background: #F44336; color: white; }
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+.tab-button {
+    padding: 1rem 2rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1.1em;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.3s;
+}
+.tab-button:hover { color: #333; background: #f8f9fa; }
+.tab-button.active {
+    color: #8B4513;
+    border-bottom-color: #8B4513;
+    font-weight: 600;
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Status Header */
+.status-header {
+    background: linear-gradient(135deg, #8B4513 0%, #A0522D 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 15px rgba(139, 69, 19, 0.3);
+}
+.status-header h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.2em;
+    color: white;
+}
+.status-info {
+    display: flex;
+    gap: 3rem;
+    flex-wrap: wrap;
+    font-size: 1.1em;
+}
+.status-info .value {
+    font-size: 1.4em;
+    font-weight: bold;
+}
+.status-loading {
+    text-align: center;
+    padding: 1rem;
+    opacity: 0.9;
+}
+
+/* Raum-Grid */
+.rooms-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.25rem;
+}
+
+/* Raum-Kacheln */
+.room-tile {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-left: 4px solid #4CAF50;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+.room-tile:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+.room-tile.risk-low { border-left-color: #4CAF50; }
+.room-tile.risk-medium { border-left-color: #FF9800; }
+.room-tile.risk-high { border-left-color: #f44336; }
+.room-tile.risk-critical { border-left-color: #9C27B0; }
+
+.room-tile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.room-tile-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.room-icon {
+    font-size: 1.5em;
+}
+.room-name {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: #333;
+}
+
+/* Risk Badge */
+.risk-badge {
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+.risk-badge.low { background: #E8F5E9; color: #2E7D32; }
+.risk-badge.medium { background: #FFF3E0; color: #E65100; }
+.risk-badge.high { background: #FFEBEE; color: #C62828; }
+.risk-badge.critical { background: #F3E5F5; color: #7B1FA2; }
+
+/* Mold Values */
+.mold-values {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.mold-value {
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+.mold-value-label {
+    font-size: 0.7em;
+    color: #666;
+    margin-bottom: 0.1rem;
+}
+.mold-value-number {
+    font-size: 1em;
+    font-weight: bold;
+}
+.mold-value-number.temp { color: #e74c3c; }
+.mold-value-number.humidity { color: #3498db; }
+.mold-value-number.dewpoint { color: #9b59b6; }
+
+.mold-value-number.humidity-good { color: #27ae60; }
+.mold-value-number.humidity-warning { color: #f39c12; }
+.mold-value-number.humidity-critical { color: #e74c3c; }
+
+/* Recommendation */
+.room-recommendation {
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.room-recommendation.good { background: #e8f5e9; color: #2e7d32; }
+.room-recommendation.warning { background: #fff3e0; color: #e65100; }
+.room-recommendation.critical { background: #ffebee; color: #c62828; }
+
+/* Dew Point Warning */
+.dew-point-warning {
+    margin-top: 0.75rem;
+    padding: 0.6rem;
+    background: #FFF3E0;
+    border-radius: 6px;
+    font-size: 0.85em;
+    color: #E65100;
+}
+
+/* Settings Styles */
+.settings-section {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.settings-section h3 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+}
+.info-text {
+    color: #666;
+    margin-bottom: 1rem;
+    font-size: 0.95em;
+    line-height: 1.6;
+}
+.btn-link {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: transform 0.2s;
+}
+.btn-link:hover {
+    transform: translateY(-2px);
+}
+
+/* Threshold Info */
+.threshold-info {
+    display: grid;
+    gap: 0.75rem;
+}
+.threshold-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+}
+.threshold-item.good { background: #E8F5E9; }
+.threshold-item.warning { background: #FFF3E0; }
+.threshold-item.critical { background: #FFEBEE; }
+.threshold-item.danger { background: #F3E5F5; }
+.threshold-level {
+    font-weight: 700;
+    min-width: 80px;
+}
+.threshold-item.good .threshold-level { color: #2E7D32; }
+.threshold-item.warning .threshold-level { color: #E65100; }
+.threshold-item.critical .threshold-level { color: #C62828; }
+.threshold-item.danger .threshold-level { color: #7B1FA2; }
+.threshold-desc {
+    color: #555;
+}
+
+/* Dew Point Example */
+.dew-point-example {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+.example-item {
+    margin-bottom: 0.5rem;
+}
+.example-item:last-child {
+    margin-bottom: 0;
+}
+.example-label {
+    font-weight: 600;
+    color: #8B4513;
+}
+.example-text {
+    color: #555;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 90%;
+    max-height: 90%;
+    overflow: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.modal-large {
+    width: 900px;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #eee;
+}
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.3em;
+}
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    cursor: pointer;
+    color: #666;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+.modal-close:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+.modal-body {
+    padding: 1.5rem;
+}
+.time-selector {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.time-btn {
+    padding: 0.5rem 1.25rem;
+    border: 1px solid #ddd;
+    background: #f8f9fa;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.95em;
+    transition: all 0.2s;
+}
+.time-btn:hover {
+    border-color: #8B4513;
+    color: #8B4513;
+}
+.time-btn.active {
+    background: #8B4513;
+    color: white;
+    border-color: #8B4513;
+}
+.chart-container {
+    position: relative;
+    height: 400px;
+}
+.chart-loading, .chart-no-data {
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+}
+.chart-no-data .hint {
+    font-size: 0.9em;
+    color: #999;
+    margin-top: 0.5rem;
+}
+
+/* Loading State */
+.loading-state {
+    grid-column: 1/-1;
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+}
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #8B4513;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    z-index: 9999;
+    animation: slideIn 0.3s ease;
+}
+.toast.success { background: #4CAF50; }
+.toast.error { background: #f44336; }
+.toast.info { background: #2196F3; }
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
 </style>
 
 <script>
-async function loadData() {
-    try {
-        const response = await fetch('/api/mold/status');
-        const data = await response.json();
-        if (data.success) displayRooms(data.rooms);
-    } catch (error) {
-        document.getElementById('rooms-container').innerHTML = '<div class="loading">❌ Fehler beim Laden</div>';
+// Globale Daten
+let roomsData = {};
+let currentRoom = null;
+let roomChart = null;
+let hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
+
+// Tab-Wechsel
+function switchTab(tab) {
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    event.target.classList.add('active');
+    document.getElementById(tab + '-tab').classList.add('active');
+}
+
+// Taupunkt berechnen (Magnus-Formel)
+function calculateDewPoint(temp, humidity) {
+    if (temp === null || humidity === null) return null;
+    const a = 17.27;
+    const b = 237.7;
+    const alpha = ((a * temp) / (b + temp)) + Math.log(humidity / 100);
+    return (b * alpha) / (a - alpha);
+}
+
+// Risikolevel bestimmen
+function getRiskLevel(humidity, dewPoint, temp) {
+    if (humidity === null) return { level: 'unknown', text: 'Unbekannt', class: '' };
+    
+    // Taupunkt-Warnung wenn Differenz < 3°C
+    const dewPointRisk = dewPoint !== null && temp !== null && (temp - dewPoint) < 3;
+    
+    if (humidity >= 80 || dewPointRisk) {
+        return { level: 'critical', text: 'KRITISCH', class: 'critical' };
+    } else if (humidity >= 70) {
+        return { level: 'high', text: 'HOCH', class: 'high' };
+    } else if (humidity >= 60) {
+        return { level: 'medium', text: 'MITTEL', class: 'medium' };
+    } else {
+        return { level: 'low', text: 'NIEDRIG', class: 'low' };
     }
 }
 
-function displayRooms(rooms) {
-    const container = document.getElementById('rooms-container');
-    if (rooms.length === 0) {
-        container.innerHTML = '<div class="loading">Keine Raum-Daten verfügbar</div>';
-        return;
+// Empfehlung basierend auf Risiko
+function getRecommendation(risk, humidity, dewPoint, temp) {
+    if (risk.level === 'critical') {
+        return { class: 'critical', icon: '🚨', text: 'Sofort lüften! Schimmelgefahr!' };
+    } else if (risk.level === 'high') {
+        return { class: 'warning', icon: '⚠️', text: 'Lüften empfohlen - Feuchtigkeit zu hoch' };
+    } else if (risk.level === 'medium') {
+        return { class: 'warning', icon: '💡', text: 'Feuchtigkeit beobachten' };
+    } else {
+        return { class: 'good', icon: '✅', text: 'Optimale Bedingungen' };
     }
+}
 
-    // Zeige Statistik oben
-    const total = rooms.length;
-    const complete = rooms.filter(r => r.status === 'complete').length;
-    const incomplete = rooms.filter(r => r.status === 'incomplete').length;
+// Raum-Icon basierend auf Namen
+function getRoomIcon(roomName) {
+    const name = roomName.toLowerCase();
+    if (name.includes('wohnzimmer') || name.includes('living')) return '🛋️';
+    if (name.includes('schlafzimmer') || name.includes('bedroom')) return '🛏️';
+    if (name.includes('küche') || name.includes('kitchen')) return '🍳';
+    if (name.includes('bad') || name.includes('bath') || name.includes('wc')) return '🚿';
+    if (name.includes('büro') || name.includes('office') || name.includes('arbeit')) return '💼';
+    if (name.includes('kinder') || name.includes('child')) return '🧒';
+    if (name.includes('flur') || name.includes('gang') || name.includes('hall')) return '🚪';
+    if (name.includes('keller') || name.includes('basement')) return '🏚️';
+    if (name.includes('dach') || name.includes('attic')) return '🏠';
+    if (name.includes('garage')) return '🚗';
+    if (name.includes('garten') || name.includes('terrasse') || name.includes('balkon')) return '🌿';
+    if (name.includes('abstell') || name.includes('lager')) return '📦';
+    return '🏠';
+}
 
-    let statsHTML = `
-        <div style="grid-column: 1/-1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem;">
-            <h3 style="margin: 0 0 0.5rem 0; color: white;">📊 Raum-Übersicht</h3>
-            <div style="display: flex; gap: 2rem; font-size: 1.1em;">
-                <div><strong>${total}</strong> Räume gesamt</div>
-                <div><strong>${complete}</strong> vollständig überwacht</div>
-                ${incomplete > 0 ? `<div style="opacity: 0.9;"><strong>${incomplete}</strong> unvollständig (fehlende Sensoren)</div>` : ''}
-            </div>
+// Humidity-Klasse für Farbe
+function getHumidityClass(humidity) {
+    if (humidity === null) return '';
+    if (humidity >= 70) return 'humidity-critical';
+    if (humidity >= 60) return 'humidity-warning';
+    return 'humidity-good';
+}
+
+// Daten laden
+async function loadOverview() {
+    try {
+        const response = await fetch('/api/ventilation/sensors');
+        const data = await response.json();
+        
+        if (!data.success) {
+            document.getElementById('rooms-grid').innerHTML = '<div class="loading-state">❌ Fehler beim Laden</div>';
+            return;
+        }
+        
+        // Gruppiere nach Räumen
+        roomsData = {};
+        data.sensors.forEach(sensor => {
+            const room = sensor.room;
+            if (room && room !== 'Unbekannt' && !hiddenRooms.includes(room)) {
+                if (!roomsData[room]) {
+                    roomsData[room] = { temp: null, humidity: null };
+                }
+                if (sensor.type === 'temperature' && sensor.current_value !== null && sensor.current_value < 45) {
+                    if (roomsData[room].temp === null || sensor.current_value !== null) {
+                        roomsData[room].temp = sensor.current_value;
+                    }
+                } else if (sensor.type === 'humidity' && sensor.current_value !== null) {
+                    if (roomsData[room].humidity === null || sensor.current_value !== null) {
+                        roomsData[room].humidity = sensor.current_value;
+                    }
+                }
+            }
+        });
+        
+        renderStatus();
+        renderRooms();
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+        document.getElementById('rooms-grid').innerHTML = '<div class="loading-state">❌ Fehler beim Laden</div>';
+    }
+}
+
+// Status-Header rendern
+function renderStatus() {
+    const header = document.getElementById('status-header');
+    const rooms = Object.entries(roomsData);
+    
+    let criticalCount = 0;
+    let warningCount = 0;
+    let okCount = 0;
+    
+    rooms.forEach(([name, data]) => {
+        const dewPoint = calculateDewPoint(data.temp, data.humidity);
+        const risk = getRiskLevel(data.humidity, dewPoint, data.temp);
+        
+        if (risk.level === 'critical' || risk.level === 'high') {
+            criticalCount++;
+        } else if (risk.level === 'medium') {
+            warningCount++;
+        } else {
+            okCount++;
+        }
+    });
+    
+    const totalRooms = rooms.length;
+    let statusClass = 'good';
+    let statusIcon = '✅';
+    let statusText = 'Alle Räume optimal';
+    
+    if (criticalCount > 0) {
+        statusClass = 'critical';
+        statusIcon = '🚨';
+        statusText = `${criticalCount} Raum/Räume mit Schimmelrisiko!`;
+    } else if (warningCount > 0) {
+        statusClass = 'warning';
+        statusIcon = '⚠️';
+        statusText = `${warningCount} Raum/Räume erhöhte Aufmerksamkeit`;
+    }
+    
+    header.innerHTML = `
+        <h3>${statusIcon} Schimmelprävention Status</h3>
+        <div class="status-info">
+            <div><span class="value">${totalRooms}</span> Räume überwacht</div>
+            <div><span class="value" style="color: #90EE90;">${okCount}</span> optimal</div>
+            ${warningCount > 0 ? `<div><span class="value" style="color: #FFD700;">${warningCount}</span> erhöht</div>` : ''}
+            ${criticalCount > 0 ? `<div><span class="value" style="color: #FF6B6B;">${criticalCount}</span> kritisch</div>` : ''}
         </div>
     `;
+}
 
-    container.innerHTML = statsHTML + rooms.map(room => {
-        const analysis = room.analysis || {};
-        const humidityStatus = analysis.humidity_status || {};
-        const riskLevel = humidityStatus.level || 'UNBEKANNT';
-        const dewPoint = analysis.dew_point || {};
-
-        // Handle incomplete rooms
-        if (room.status === 'incomplete') {
-            return `
-                <div class="room-card" style="border: 2px dashed #FFA726; background: #FFF3E0;">
-                    <h3>🏠 ${room.room_name}</h3>
-                    <div style="margin: 1rem 0; padding: 1rem; background: white; border-radius: 6px;">
-                        ${room.humidity !== null ? `
-                            <div style="font-size: 1.5em; font-weight: bold; color: #4CAF50;">${room.humidity}%</div>
-                            <div style="color: #666;">Luftfeuchtigkeit</div>
-                        ` : '<div style="color: #999;">❌ Keine Luftfeuchtigkeit</div>'}
-                        ${room.temperature !== null ? `
-                            <div style="font-size: 1.3em; margin: 0.5rem 0;">${room.temperature}°C</div>
-                        ` : '<div style="color: #999;">❌ Keine Temperatur</div>'}
-                    </div>
-                    <div style="padding: 0.8rem; background: white; border-radius: 6px; color: #E65100; font-weight: bold;">
-                        ⚠️ ${room.warning}
-                    </div>
-                    <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
-                        Schimmel-Analyse nicht möglich ohne beide Werte
-                    </div>
-                </div>
-            `;
-        }
-
-        // Complete rooms
+// Räume rendern
+function renderRooms() {
+    const grid = document.getElementById('rooms-grid');
+    const rooms = Object.entries(roomsData);
+    
+    if (rooms.length === 0) {
+        grid.innerHTML = '<div class="loading-state">Keine Räume mit Sensoren gefunden</div>';
+        return;
+    }
+    
+    // Sortiere nach Risiko (kritisch zuerst)
+    rooms.sort((a, b) => {
+        const riskA = getRiskLevel(a[1].humidity, null, null);
+        const riskB = getRiskLevel(b[1].humidity, null, null);
+        const order = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 };
+        return order[riskA.level] - order[riskB.level];
+    });
+    
+    grid.innerHTML = rooms.map(([roomName, data]) => {
+        const icon = getRoomIcon(roomName);
+        const temp = data.temp;
+        const humidity = data.humidity;
+        const dewPoint = calculateDewPoint(temp, humidity);
+        const risk = getRiskLevel(humidity, dewPoint, temp);
+        const recommendation = getRecommendation(risk, humidity, dewPoint, temp);
+        const humidityClass = getHumidityClass(humidity);
+        
+        // Taupunkt-Warnung
+        const dewPointWarning = dewPoint !== null && temp !== null && (temp - dewPoint) < 3;
+        
         return `
-            <div class="room-card">
-                <h3>🏠 ${room.room_name}</h3>
-                <div style="margin: 1rem 0;">
-                    <div style="font-size: 2em; font-weight: bold; color: #4CAF50;">${room.humidity}%</div>
-                    <div style="color: #666;">Luftfeuchtigkeit</div>
+            <div class="room-tile risk-${risk.level}" onclick="openRoomModal('${roomName.replace(/'/g, "\\'")}')">
+                <div class="room-tile-header">
+                    <div class="room-tile-left">
+                        <span class="room-icon">${icon}</span>
+                        <span class="room-name">${roomName}</span>
+                    </div>
+                    <span class="risk-badge ${risk.class}">${risk.text}</span>
                 </div>
-                <div style="font-size: 1.3em; margin: 0.5rem 0;">${room.temperature}°C</div>
-                <div class="risk-badge risk-${riskLevel}">${riskLevel}</div>
-                ${dewPoint.value ? `<div style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">💧 Taupunkt: ${dewPoint.value.toFixed(1)}°C</div>` : ''}
-                ${humidityStatus.recommendation ? `<div style="margin-top: 1rem; padding: 0.8rem; background: #f5f5f5; border-radius: 6px; font-size: 0.9em;">💡 ${humidityStatus.recommendation}</div>` : ''}
-                <div style="margin-top: 0.5rem; font-size: 0.8em; color: #999;">
-                    ${room.devices_count} Sensor(en)
+                
+                <div class="mold-values">
+                    <div class="mold-value">
+                        <div class="mold-value-label">🌡️ Temp</div>
+                        <div class="mold-value-number temp">${temp !== null ? temp.toFixed(1) + '°C' : '--'}</div>
+                    </div>
+                    <div class="mold-value">
+                        <div class="mold-value-label">💧 Feuchte</div>
+                        <div class="mold-value-number ${humidityClass}">${humidity !== null ? humidity.toFixed(0) + '%' : '--'}</div>
+                    </div>
+                    <div class="mold-value">
+                        <div class="mold-value-label">💦 Taupunkt</div>
+                        <div class="mold-value-number dewpoint">${dewPoint !== null ? dewPoint.toFixed(1) + '°C' : '--'}</div>
+                    </div>
                 </div>
+                
+                <div class="room-recommendation ${recommendation.class}">
+                    ${recommendation.icon} ${recommendation.text}
+                </div>
+                
+                ${dewPointWarning ? `
+                    <div class="dew-point-warning">
+                        ⚠️ Taupunkt nur ${(temp - dewPoint).toFixed(1)}°C unter Raumtemperatur - Kondensation möglich!
+                    </div>
+                ` : ''}
             </div>
         `;
     }).join('');
 }
 
-document.addEventListener('DOMContentLoaded', loadData);
-setInterval(loadData, 60000); // Alle 60 Sekunden
+// Modal öffnen
+function openRoomModal(roomName) {
+    currentRoom = roomName;
+    const icon = getRoomIcon(roomName);
+    document.getElementById('modal-room-title').textContent = `📊 ${icon} ${roomName} - Historie`;
+    document.getElementById('room-history-modal').style.display = 'flex';
+    loadRoomHistory(roomName, 24);
+}
+
+// Modal schließen
+function closeRoomModal() {
+    document.getElementById('room-history-modal').style.display = 'none';
+    if (roomChart) {
+        roomChart.destroy();
+        roomChart = null;
+    }
+}
+
+// ESC zum Schließen
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRoomModal();
+});
+
+// Klick außerhalb schließt Modal
+document.getElementById('room-history-modal')?.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) closeRoomModal();
+});
+
+// Room History laden
+async function loadRoomHistory(roomName, hours) {
+    // Update active button
+    document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.includes(hours));
+    });
+    
+    // Show loading
+    document.getElementById('chart-loading').style.display = 'block';
+    document.getElementById('chart-no-data').style.display = 'none';
+    document.querySelector('.chart-container').style.display = 'none';
+    
+    try {
+        const response = await fetch(`/api/ventilation/room-history/${encodeURIComponent(roomName)}?hours=${hours}`);
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Fehler beim Laden');
+        }
+        
+        const data = result.data;
+        const hasData = data.temperature.length > 0 || data.humidity.length > 0;
+        
+        document.getElementById('chart-loading').style.display = 'none';
+        
+        if (!hasData) {
+            document.getElementById('chart-no-data').style.display = 'block';
+            return;
+        }
+        
+        document.querySelector('.chart-container').style.display = 'block';
+        renderChart(data, hours);
+        
+    } catch (error) {
+        console.error('Error loading room history:', error);
+        document.getElementById('chart-loading').style.display = 'none';
+        document.getElementById('chart-no-data').style.display = 'block';
+    }
+}
+
+// Chart rendern
+function renderChart(data, hours) {
+    const ctx = document.getElementById('room-chart').getContext('2d');
+    
+    if (roomChart) {
+        roomChart.destroy();
+    }
+    
+    const datasets = [];
+    
+    if (data.temperature.length > 0) {
+        datasets.push({
+            label: '🌡️ Temperatur (°C)',
+            data: data.temperature,
+            borderColor: '#e74c3c',
+            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y'
+        });
+    }
+    
+    if (data.humidity.length > 0) {
+        datasets.push({
+            label: '💧 Feuchtigkeit (%)',
+            data: data.humidity,
+            borderColor: '#3498db',
+            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y1'
+        });
+    }
+    
+    roomChart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    callbacks: {
+                        title: function(context) {
+                            const date = new Date(context[0].parsed.x);
+                            return date.toLocaleString('de-DE');
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: hours <= 24 ? 'hour' : 'day',
+                        displayFormats: {
+                            hour: 'HH:mm',
+                            day: 'dd.MM'
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Zeit'
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Temperatur (°C)'
+                    },
+                    grid: {
+                        drawOnChartArea: true
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Feuchtigkeit (%)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    min: 0,
+                    max: 100
+                }
+            }
+        }
+    });
+}
+
+// Initialisierung
+document.addEventListener('DOMContentLoaded', loadOverview);
+setInterval(loadOverview, 60000); // Alle 60 Sekunden aktualisieren
 </script>
 {% endblock %}
