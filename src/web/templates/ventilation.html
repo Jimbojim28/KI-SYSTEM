@@ -33,28 +33,6 @@
 <!-- Einstellungen Tab -->
 <div id="settings-tab" class="tab-content">
     <div class="settings-section">
-        <h3>🌡️ Außensensor-Konfiguration</h3>
-        <p class="info-text">Wählen Sie die Sensoren für die Außentemperatur und Außen-Luftfeuchtigkeit.</p>
-        
-        <div class="outdoor-sensor-grid">
-            <div class="sensor-config-card">
-                <label>🌡️ Außentemperatur</label>
-                <select id="outdoor-temp-sensor" onchange="saveOutdoorConfig()">
-                    <option value="">-- Wählen --</option>
-                </select>
-                <div id="outdoor-temp-preview" class="sensor-preview"></div>
-            </div>
-            <div class="sensor-config-card">
-                <label>💧 Außen-Luftfeuchtigkeit</label>
-                <select id="outdoor-humidity-sensor" onchange="saveOutdoorConfig()">
-                    <option value="">-- Wählen --</option>
-                </select>
-                <div id="outdoor-humidity-preview" class="sensor-preview"></div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="settings-section">
         <h3>🏠 Zentrale Raumverwaltung</h3>
         <p class="info-text">Räume ausblenden, Sensoren zuordnen und Geräte konfigurieren - alles zentral an einem Ort.</p>
         <a href="/rooms" class="btn-link">
@@ -64,17 +42,6 @@
         <div id="hidden-rooms-info" class="hidden-rooms-info" style="margin-top: 1rem;">
             <!-- Wird dynamisch gefüllt -->
         </div>
-    </div>
-    
-    <div class="settings-section">
-        <h3>🏠 Raum-Sensor-Zuordnung</h3>
-        <p class="info-text">Die Sensoren werden automatisch den Homey-Räumen zugeordnet. Hier können Sie die bevorzugten Sensoren pro Raum auswählen, falls mehrere verfügbar sind.</p>
-        
-        <div id="room-settings" class="room-settings-grid">
-            <div class="loading-state">Lade Räume...</div>
-        </div>
-        
-        <button onclick="saveRoomConfig()" class="btn-save">💾 Einstellungen speichern</button>
     </div>
 </div>
 
@@ -455,82 +422,6 @@
     border-radius: 6px;
     font-size: 1em;
 }
-.sensor-preview {
-    margin-top: 0.5rem;
-    font-size: 0.9em;
-    color: #666;
-}
-
-.room-settings-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.room-setting-card {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-radius: 8px;
-    border-left: 3px solid #667eea;
-}
-.room-setting-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-}
-.room-setting-header h4 {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.room-setting-header .hide-room-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85em;
-    background: #fff;
-    border: 1px solid #e74c3c;
-    color: #e74c3c;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-.room-setting-header .hide-room-btn:hover {
-    background: #e74c3c;
-    color: white;
-}
-.room-setting-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-}
-.room-setting-row label {
-    font-size: 0.85em;
-    color: #666;
-    margin-bottom: 0.25rem;
-    display: block;
-}
-.room-setting-row select {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
-.btn-save {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    padding: 1rem 2rem;
-    border-radius: 8px;
-    font-size: 1em;
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-.btn-save:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-}
 
 .btn-link {
     display: inline-block;
@@ -807,49 +698,6 @@ function getCO2Class(co2) {
     return 'co2-critical';
 }
 
-// Raum ausblenden - Speichert zentral auf Server (gilt für alle Seiten)
-async function hideRoom(roomName) {
-    try {
-        const response = await fetch('/api/rooms/hidden', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'hide', room: roomName })
-        });
-        const data = await response.json();
-        if (data.success) {
-            hiddenRooms = data.hidden;
-            displayRooms();
-            displayOutdoorHeader();
-            showToast(`${roomName} ausgeblendet (gilt für alle Seiten)`, 'info');
-        }
-    } catch (error) {
-        console.error('Error hiding room:', error);
-        showToast('Fehler beim Ausblenden', 'error');
-    }
-}
-
-// Raum wieder einblenden - Speichert zentral auf Server
-async function showRoom(roomName) {
-    try {
-        const response = await fetch('/api/rooms/hidden', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'show', room: roomName })
-        });
-        const data = await response.json();
-        if (data.success) {
-            hiddenRooms = data.hidden;
-            displayRooms();
-            displayOutdoorHeader();
-            loadSettings();
-            showToast(`${roomName} wieder eingeblendet`, 'success');
-        }
-    } catch (error) {
-        console.error('Error showing room:', error);
-        showToast('Fehler beim Einblenden', 'error');
-    }
-}
-
 // Ausgeblendete Räume Info anzeigen
 function displayHiddenRooms() {
     const container = document.getElementById('hidden-rooms-info');
@@ -913,142 +761,9 @@ function getRoomIcon(name) {
     return '🏠';
 }
 
-// Einstellungen laden
+// Einstellungen laden (nur noch Info über versteckte Räume)
 async function loadSettings() {
-    // Ausgeblendete Räume anzeigen
     displayHiddenRooms();
-    
-    const container = document.getElementById('room-settings');
-    
-    // Außensensor-Dropdowns füllen
-    const tempSelect = document.getElementById('outdoor-temp-sensor');
-    const humiditySelect = document.getElementById('outdoor-humidity-sensor');
-    
-    const tempSensors = allSensors.filter(s => s.type === 'temperature');
-    const humiditySensors = allSensors.filter(s => s.type === 'humidity');
-    
-    tempSelect.innerHTML = '<option value="">-- Wählen --</option>' +
-        tempSensors.map(s => `
-            <option value="${s.device_id}" ${outdoorConfig.temperature === s.device_id ? 'selected' : ''}>
-                ${s.name} ${s.current_value !== null ? '(' + s.current_value.toFixed(1) + '°C)' : ''}
-            </option>
-        `).join('');
-    
-    humiditySelect.innerHTML = '<option value="">-- Wählen --</option>' +
-        humiditySensors.map(s => `
-            <option value="${s.device_id}" ${outdoorConfig.humidity === s.device_id ? 'selected' : ''}>
-                ${s.name} ${s.current_value !== null ? '(' + Math.round(s.current_value) + '%)' : ''}
-            </option>
-        `).join('');
-    
-    // Raum-Einstellungen
-    const roomNames = Object.keys(roomsData).sort();
-    
-    if (roomNames.length === 0) {
-        container.innerHTML = '<div class="loading-state">Keine Räume gefunden</div>';
-        return;
-    }
-    
-    container.innerHTML = roomNames.map(roomName => {
-        const room = roomsData[roomName];
-        const icon = getRoomIcon(roomName);
-        
-        return `
-            <div class="room-setting-card">
-                <div class="room-setting-header">
-                    <h4>${icon} ${roomName}</h4>
-                    <button class="hide-room-btn" onclick="hideRoom('${roomName}')" title="Raum ausblenden">🙈 Ausblenden</button>
-                </div>
-                <div class="room-setting-row">
-                    <div>
-                        <label>🌡️ Temperatur</label>
-                        <select data-room="${roomName}" data-type="temperature">
-                            ${room.temp.length === 0 ? '<option value="">Kein Sensor</option>' :
-                              room.temp.map((s, i) => `
-                                <option value="${s.device_id}" ${i === 0 ? 'selected' : ''}>
-                                    ${s.name} (${s.current_value?.toFixed(1)}°C)
-                                </option>
-                              `).join('')
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label>💧 Feuchtigkeit</label>
-                        <select data-room="${roomName}" data-type="humidity">
-                            ${room.humidity.length === 0 ? '<option value="">Kein Sensor</option>' :
-                              room.humidity.map((s, i) => `
-                                <option value="${s.device_id}" ${i === 0 ? 'selected' : ''}>
-                                    ${s.name} (${Math.round(s.current_value)}%)
-                                </option>
-                              `).join('')
-                            }
-                        </select>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-// Außensensor-Konfiguration speichern
-async function saveOutdoorConfig() {
-    outdoorConfig = {
-        temperature: document.getElementById('outdoor-temp-sensor').value,
-        humidity: document.getElementById('outdoor-humidity-sensor').value
-    };
-    
-    // Preview aktualisieren
-    updateOutdoorPreview();
-}
-
-function updateOutdoorPreview() {
-    const tempId = document.getElementById('outdoor-temp-sensor').value;
-    const humidityId = document.getElementById('outdoor-humidity-sensor').value;
-    
-    const tempSensor = allSensors.find(s => s.device_id === tempId);
-    const humiditySensor = allSensors.find(s => s.device_id === humidityId);
-    
-    document.getElementById('outdoor-temp-preview').textContent = 
-        tempSensor ? `Aktuell: ${tempSensor.current_value?.toFixed(1)}°C` : '';
-    document.getElementById('outdoor-humidity-preview').textContent = 
-        humiditySensor ? `Aktuell: ${Math.round(humiditySensor.current_value)}%` : '';
-}
-
-// Konfiguration speichern
-async function saveRoomConfig() {
-    const mapping = {};
-    
-    document.querySelectorAll('#room-settings select').forEach(select => {
-        const room = select.dataset.room;
-        const type = select.dataset.type;
-        const value = select.value;
-        
-        if (value) {
-            if (!mapping[room]) mapping[room] = {};
-            mapping[room][type] = value;
-        }
-    });
-    
-    try {
-        const response = await fetch('/api/ventilation/sensor-mapping', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                mapping: mapping,
-                outdoor_sensors: outdoorConfig
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('Einstellungen gespeichert!', 'success');
-        } else {
-            showToast('Fehler beim Speichern', 'error');
-        }
-    } catch (error) {
-        showToast('Verbindungsfehler', 'error');
-    }
 }
 
 // Toast-Nachricht
