@@ -799,13 +799,28 @@ function renderOutdoorHeader() {
 // Daten laden
 async function loadOverview() {
     try {
-        const response = await fetch('/api/ventilation/sensors');
-        const data = await response.json();
+        // Lade Sensoren und Sensor-Mapping parallel
+        const [sensorsResponse, mappingResponse] = await Promise.all([
+            fetch('/api/ventilation/sensors'),
+            fetch('/api/ventilation/sensor-mapping')
+        ]);
+        
+        const data = await sensorsResponse.json();
+        const mappingData = await mappingResponse.json();
         
         if (!data.success) {
             document.getElementById('rooms-grid').innerHTML = '<div class="loading-state">❌ Fehler beim Laden</div>';
             return;
         }
+        
+        // Sensor-Mapping laden (von /ventilation Einstellungen)
+        const roomMapping = mappingData.success ? (mappingData.rooms || {}) : {};
+        
+        // Erstelle Lookup: device_id -> sensor
+        const sensorLookup = {};
+        data.sensors.forEach(s => {
+            sensorLookup[s.device_id] = s;
+        });
         
         // Außendaten speichern
         if (data.outdoor) {
@@ -817,20 +832,45 @@ async function loadOverview() {
         }
         renderOutdoorHeader();
         
-        // Gruppiere nach Räumen
+        // Gruppiere nach Räumen - nutze Mapping wenn vorhanden
         roomsData = {};
+        
+        // Erst: Räume aus dem Mapping mit konfigurierten Sensoren
+        Object.entries(roomMapping).forEach(([roomId, config]) => {
+            const roomName = config.name || roomId;
+            if (hiddenRooms.includes(roomName)) return;
+            
+            let temp = null;
+            let humidity = null;
+            
+            // Nutze konfigurierte Sensoren
+            if (config.temperature && sensorLookup[config.temperature]) {
+                temp = sensorLookup[config.temperature].current_value;
+            }
+            if (config.humidity && sensorLookup[config.humidity]) {
+                humidity = sensorLookup[config.humidity].current_value;
+            }
+            
+            if (temp !== null || humidity !== null) {
+                roomsData[roomName] = { temp, humidity };
+            }
+        });
+        
+        // Dann: Restliche Räume aus Sensoren (die nicht im Mapping sind)
         data.sensors.forEach(sensor => {
             const room = sensor.room;
-            if (room && room !== 'Unbekannt' && !hiddenRooms.includes(room)) {
-                if (!roomsData[room]) {
-                    roomsData[room] = { temp: null, humidity: null };
-                }
+            if (room && room !== 'Unbekannt' && !hiddenRooms.includes(room) && !roomsData[room]) {
+                roomsData[room] = { temp: null, humidity: null };
+            }
+            
+            // Nur hinzufügen wenn Raum noch nicht aus Mapping befüllt
+            if (room && roomsData[room] && !roomMapping[room.toLowerCase().replace(/\s+/g, '_')]) {
                 if (sensor.type === 'temperature' && sensor.current_value !== null && sensor.current_value < 45) {
-                    if (roomsData[room].temp === null || sensor.current_value !== null) {
+                    if (roomsData[room].temp === null) {
                         roomsData[room].temp = sensor.current_value;
                     }
                 } else if (sensor.type === 'humidity' && sensor.current_value !== null) {
-                    if (roomsData[room].humidity === null || sensor.current_value !== null) {
+                    if (roomsData[room].humidity === null) {
                         roomsData[room].humidity = sensor.current_value;
                     }
                 }
