@@ -1,195 +1,1323 @@
 {% extends "base.html" %}
 
-{% block title %}Räume & Zonen - KI Smart Home{% endblock %}
+{% block title %}Raumverwaltung - KI Smart Home{% endblock %}
 
 {% block content %}
 <div class="rooms-page">
-    <h2>Räume & Zonen</h2>
+    <div class="page-header">
+        <h2>🏠 Raumverwaltung</h2>
+        <p>Räume konfigurieren, Sensoren zuordnen und Sichtbarkeit verwalten</p>
+    </div>
 
-    <!-- Sync mit Homey -->
-    <div class="card">
-        <div class="sync-header">
-            <div>
-                <h3>Homey Zonen synchronisieren</h3>
-                <p>Importieren Sie Ihre Räume/Zonen direkt aus Homey Pro</p>
+    <!-- Tab Navigation -->
+    <div class="tabs">
+        <button class="tab-button active" onclick="switchTab('overview')">📋 Übersicht</button>
+        <button class="tab-button" onclick="switchTab('sensors')">🌡️ Sensoren</button>
+        <button class="tab-button" onclick="switchTab('visibility')">👁️ Sichtbarkeit</button>
+        <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
+    </div>
+
+    <!-- Tab: Übersicht -->
+    <div id="overview-tab" class="tab-content active">
+        <div class="rooms-grid" id="rooms-overview-grid">
+            <div class="loading-state">Lade Räume...</div>
+        </div>
+    </div>
+
+    <!-- Tab: Sensoren -->
+    <div id="sensors-tab" class="tab-content">
+        <div class="sensor-management">
+            <div class="sensor-info-box">
+                <h4>ℹ️ Sensor-Zuordnung</h4>
+                <p>Hier können Sie für jeden Raum festlegen, welche Sensoren für Temperatur, Luftfeuchtigkeit und CO₂ verwendet werden sollen. Diese Einstellungen werden auf allen Seiten (Ventilation, Schimmelprävention, etc.) verwendet.</p>
             </div>
-            <div class="sync-buttons">
-                <button class="btn btn-primary" id="sync-zones">
-                    🔄 Zonen aktualisieren
+            
+            <div class="room-sensor-list" id="room-sensor-list">
+                <div class="loading-state">Lade Sensor-Zuordnungen...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab: Sichtbarkeit -->
+    <div id="visibility-tab" class="tab-content">
+        <div class="visibility-management">
+            <div class="visibility-info-box">
+                <h4>👁️ Raumsichtbarkeit</h4>
+                <p>Hier können Sie Räume ausblenden, die auf den Dashboards nicht angezeigt werden sollen (z.B. technische Räume, Außenbereiche).</p>
+            </div>
+            
+            <div class="visibility-grid" id="visibility-grid">
+                <div class="loading-state">Lade Räume...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab: Einstellungen -->
+    <div id="settings-tab" class="tab-content">
+        <div class="settings-section">
+            <h3>🔄 Homey Synchronisation</h3>
+            <p>Räume und Zonen aus Homey Pro importieren</p>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="syncZones()">
+                    🔄 Zonen synchronisieren
                 </button>
-                <button class="btn btn-primary" id="sync-device-assignments">
+                <button class="btn btn-secondary" onclick="syncDevices()">
                     📱 Geräte-Zuordnungen importieren
                 </button>
             </div>
+            <div id="sync-status" class="sync-status"></div>
         </div>
-        <div id="sync-status" class="sync-status"></div>
-    </div>
 
-    <!-- Räume-Übersicht -->
-    <div class="card">
-        <h3>Ihre Räume</h3>
-        <div id="rooms-grid" class="rooms-grid">
-            <div class="loading">Lade Räume...</div>
-        </div>
-    </div>
-
-    <!-- Raum hinzufügen -->
-    <div class="card">
-        <h3>Neuen Raum hinzufügen</h3>
-        <form id="add-room-form" class="room-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Raum-Name:</label>
-                    <input type="text" id="new-room-name" placeholder="z.B. Wohnzimmer" required>
-                </div>
-                <div class="form-group">
-                    <label>Icon:</label>
-                    <select id="new-room-icon">
-                        <option value="🏠">🏠 Wohnzimmer</option>
-                        <option value="🛏️">🛏️ Schlafzimmer</option>
-                        <option value="🍳">🍳 Küche</option>
-                        <option value="🚿">🚿 Badezimmer</option>
-                        <option value="🚪">🚪 Flur</option>
-                        <option value="🏢">🏢 Büro</option>
-                        <option value="🎮">🎮 Gaming-Zimmer</option>
-                        <option value="🌳">🌳 Garten</option>
-                        <option value="🚗">🚗 Garage</option>
-                        <option value="📦">📦 Keller</option>
+        <div class="settings-section">
+            <h3>🌡️ Außensensoren</h3>
+            <p>Konfigurieren Sie die Sensoren für Außentemperatur und -feuchtigkeit</p>
+            <div class="sensor-selects" id="outdoor-sensor-config">
+                <div class="sensor-select-group">
+                    <label>🌡️ Außen-Temperatur:</label>
+                    <select id="outdoor-temp-sensor" onchange="saveOutdoorSensors()">
+                        <option value="">-- Automatisch erkennen --</option>
                     </select>
                 </div>
-                <button type="submit" class="btn btn-primary">Raum hinzufügen</button>
+                <div class="sensor-select-group">
+                    <label>💧 Außen-Feuchtigkeit:</label>
+                    <select id="outdoor-humidity-sensor" onchange="saveOutdoorSensors()">
+                        <option value="">-- Automatisch erkennen --</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>➕ Neuen Raum hinzufügen</h3>
+            <form id="add-room-form" class="room-form" onsubmit="addRoom(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Raum-Name:</label>
+                        <input type="text" id="new-room-name" placeholder="z.B. Gästezimmer" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Icon:</label>
+                        <select id="new-room-icon">
+                            <option value="🏠">🏠 Standard</option>
+                            <option value="🛋️">🛋️ Wohnzimmer</option>
+                            <option value="🛏️">🛏️ Schlafzimmer</option>
+                            <option value="🍳">🍳 Küche</option>
+                            <option value="🚿">🚿 Badezimmer</option>
+                            <option value="🚪">🚪 Flur</option>
+                            <option value="💼">💼 Arbeitszimmer</option>
+                            <option value="👶">👶 Kinderzimmer</option>
+                            <option value="🌳">🌳 Garten</option>
+                            <option value="🚗">🚗 Garage</option>
+                            <option value="📦">📦 Abstellraum</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">➕ Hinzufügen</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="settings-section">
+            <h3>🗑️ Daten zurücksetzen</h3>
+            <p>Alle Sensor-Zuordnungen und Sichtbarkeitseinstellungen löschen</p>
+            <button class="btn btn-danger" onclick="resetAllSettings()">
+                🗑️ Alle Einstellungen zurücksetzen
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Raum bearbeiten Modal -->
+<div id="room-edit-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3 id="modal-title">Raum bearbeiten</h3>
+        
+        <form id="edit-room-form" onsubmit="saveRoomEdit(event)">
+            <input type="hidden" id="edit-room-id">
+            <input type="hidden" id="edit-room-original-name">
+            
+            <div class="form-group">
+                <label>Raum-Name:</label>
+                <input type="text" id="edit-room-name" required>
+            </div>
+
+            <h4>🌡️ Sensor-Zuordnung</h4>
+            
+            <div class="form-group">
+                <label>Temperatursensor:</label>
+                <select id="edit-temp-sensor">
+                    <option value="">-- Automatisch --</option>
+                </select>
+                <small id="edit-temp-preview" class="sensor-preview"></small>
+            </div>
+            
+            <div class="form-group">
+                <label>Feuchtigkeitssensor:</label>
+                <select id="edit-humidity-sensor">
+                    <option value="">-- Automatisch --</option>
+                </select>
+                <small id="edit-humidity-preview" class="sensor-preview"></small>
+            </div>
+            
+            <div class="form-group">
+                <label>CO₂-Sensor:</label>
+                <select id="edit-co2-sensor">
+                    <option value="">-- Kein CO₂-Sensor --</option>
+                </select>
+                <small id="edit-co2-preview" class="sensor-preview"></small>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">💾 Speichern</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Abbrechen</button>
             </div>
         </form>
     </div>
-
-    <!-- Geräte-Zuordnung -->
-    <div class="card">
-        <h3>Geräte zu Räumen zuordnen</h3>
-        <p>Wählen Sie einen Raum aus, um Geräte zuzuordnen:</p>
-
-        <div class="room-selector">
-            <select id="room-select" class="room-select">
-                <option value="">Raum wählen...</option>
-            </select>
-            <span id="device-count-badge" class="badge"></span>
-        </div>
-
-        <div id="room-devices-container" class="room-devices-container hidden">
-            <h4>Geräte in <span id="selected-room-name"></span>:</h4>
-
-            <!-- Aktuell zugeordnete Geräte -->
-            <div class="assigned-devices">
-                <h5>Zugeordnete Geräte:</h5>
-                <div id="assigned-devices-list" class="devices-list"></div>
-            </div>
-
-            <!-- Verfügbare Geräte -->
-            <div class="available-devices">
-                <h5>Verfügbare Geräte hinzufügen:</h5>
-                <input type="text" id="device-search" placeholder="Gerät suchen..." class="search-input">
-                <div id="available-devices-list" class="devices-list"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Fenster & Türen Zuordnung -->
-    <div class="card">
-        <h3>🪟 Fenster & Türen den Räumen zuordnen</h3>
-        <p>Ordnen Sie Ihre Fenster- und Tür-Sensoren den richtigen Räumen zu für die Lüftungsstatistik:</p>
-
-        <div id="window-assignment-loading" class="loading" style="display: none;">
-            Lade Sensoren...
-        </div>
-
-        <div id="window-assignment-container">
-            <!-- Wird dynamisch gefüllt -->
-        </div>
-
-        <div id="window-assignment-empty" class="info-box" style="display: none;">
-            <strong>ℹ️ Hinweis:</strong> Keine Fenster- oder Tür-Sensoren gefunden.
-            <br>Synchronisieren Sie erst Ihre Geräte mit Homey.
-        </div>
-    </div>
 </div>
 
-<!-- Raum-Details Modal -->
-<div id="room-modal" class="modal">
-    <div class="modal-content modal-large">
-        <span class="close">&times;</span>
-        <h3 id="modal-room-title">Raum Details</h3>
+<style>
+/* Page Layout */
+.rooms-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1rem;
+}
 
-        <div class="room-details">
-            <div class="room-info">
-                <div class="room-icon-large" id="modal-room-icon">🏠</div>
-                <div>
-                    <p><strong>Raum-ID:</strong> <span id="modal-room-id"></span></p>
-                    <p><strong>Geräte:</strong> <span id="modal-room-device-count"></span></p>
+.page-header {
+    margin-bottom: 1.5rem;
+}
+
+.page-header h2 {
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.page-header p {
+    color: #666;
+    margin: 0;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 0;
+}
+
+.tab-button {
+    padding: 0.8rem 1.5rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+
+.tab-button:hover {
+    color: #4CAF50;
+    background: #f5f5f5;
+}
+
+.tab-button.active {
+    color: #4CAF50;
+    border-bottom-color: #4CAF50;
+    font-weight: 600;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Rooms Grid - Übersicht */
+.rooms-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.room-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.2rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    transition: all 0.2s;
+    cursor: pointer;
+    border: 2px solid transparent;
+}
+
+.room-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    border-color: #4CAF50;
+}
+
+.room-card.hidden-room {
+    opacity: 0.5;
+    background: #f5f5f5;
+}
+
+.room-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+.room-icon {
+    font-size: 2rem;
+}
+
+.room-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #333;
+    flex-grow: 1;
+}
+
+.hidden-badge {
+    font-size: 0.75rem;
+    color: #888;
+    background: #eee;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+}
+
+.room-sensors {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+}
+
+.sensor-value {
+    background: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.sensor-value .label {
+    font-size: 0.75rem;
+    color: #888;
+    display: block;
+}
+
+.sensor-value .value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.sensor-value.temp .value { color: #e91e63; }
+.sensor-value.humidity .value { color: #2196F3; }
+.sensor-value.co2 .value { color: #FF9800; }
+
+.room-status {
+    margin-top: 0.8rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sensor-count {
+    font-size: 0.85rem;
+    color: #888;
+}
+
+.configured-badge {
+    font-size: 0.75rem;
+    background: #E8F5E9;
+    color: #2E7D32;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+}
+
+.edit-btn {
+    background: #f0f0f0;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.edit-btn:hover {
+    background: #4CAF50;
+    color: white;
+}
+
+/* Sensor Management Tab */
+.sensor-management {
+    max-width: 900px;
+}
+
+.sensor-info-box, .visibility-info-box {
+    background: #E3F2FD;
+    border-left: 4px solid #2196F3;
+    padding: 1rem;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 1.5rem;
+}
+
+.sensor-info-box h4, .visibility-info-box h4 {
+    margin: 0 0 0.5rem 0;
+    color: #1565C0;
+}
+
+.sensor-info-box p, .visibility-info-box p {
+    margin: 0;
+    color: #333;
+}
+
+.room-sensor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.room-sensor-item {
+    background: white;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.room-sensor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid #eee;
+}
+
+.room-sensor-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.sensor-selects {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.sensor-select-group label {
+    display: block;
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 0.3rem;
+}
+
+.sensor-select-group select {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+
+.sensor-preview {
+    display: block;
+    margin-top: 0.3rem;
+    color: #4CAF50;
+    font-size: 0.85rem;
+}
+
+/* Visibility Tab */
+.visibility-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.8rem;
+}
+
+.visibility-item {
+    background: white;
+    border-radius: 10px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+}
+
+.visibility-item.is-hidden {
+    background: #f5f5f5;
+    opacity: 0.7;
+}
+
+.visibility-room-info {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 26px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #4CAF50;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+
+/* Settings Tab */
+.settings-section {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.settings-section h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
+.settings-section p {
+    color: #666;
+    margin-bottom: 1rem;
+}
+
+.button-group {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.room-form .form-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 500;
+    color: #555;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 0.3rem;
+    color: #888;
+}
+
+.sync-status {
+    margin-top: 1rem;
+    padding: 0.8rem;
+    border-radius: 6px;
+    display: none;
+}
+
+.sync-status.success {
+    display: block;
+    background: #E8F5E9;
+    color: #2E7D32;
+}
+
+.sync-status.error {
+    display: block;
+    background: #FFEBEE;
+    color: #C62828;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #4CAF50;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #45a049;
+}
+
+.btn-secondary {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.btn-secondary:hover {
+    background: #e0e0e0;
+}
+
+.btn-danger {
+    background: #f44336;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #d32f2f;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+}
+
+.modal-content h4 {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    color: #555;
+    border-top: 1px solid #eee;
+    padding-top: 1rem;
+}
+
+.close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #888;
+}
+
+.close:hover {
+    color: #333;
+}
+
+.form-actions {
+    display: flex;
+    gap: 0.8rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+}
+
+/* Loading */
+.loading-state {
+    text-align: center;
+    padding: 2rem;
+    color: #888;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .tabs {
+        flex-wrap: wrap;
+    }
+    
+    .tab-button {
+        flex: 1;
+        min-width: 100px;
+        padding: 0.6rem;
+        font-size: 0.85rem;
+    }
+    
+    .room-sensors {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .sensor-selects {
+        grid-template-columns: 1fr;
+    }
+    
+    .room-header {
+        flex-wrap: wrap;
+    }
+}
+</style>
+
+<script>
+// Globale Daten
+let allRooms = [];
+let allSensors = [];
+let sensorMapping = {};
+let outdoorSensors = {};
+let hiddenRooms = [];
+
+// Tab wechseln
+function switchTab(tab) {
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    event.target.classList.add('active');
+    document.getElementById(tab + '-tab').classList.add('active');
+    
+    // Daten laden wenn Tab gewechselt wird
+    if (tab === 'sensors') {
+        loadSensorManagement();
+    } else if (tab === 'visibility') {
+        loadVisibility();
+    } else if (tab === 'settings') {
+        loadOutdoorSensorConfig();
+    }
+}
+
+// Initialisierung
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadAllData();
+    renderOverview();
+});
+
+// Alle Daten laden
+async function loadAllData() {
+    try {
+        const [sensorsRes, mappingRes] = await Promise.all([
+            fetch('/api/ventilation/sensors'),
+            fetch('/api/ventilation/sensor-mapping')
+        ]);
+        
+        const sensorsData = await sensorsRes.json();
+        const mappingData = await mappingRes.json();
+        
+        if (sensorsData.success) {
+            allSensors = sensorsData.sensors;
+        }
+        
+        if (mappingData.success) {
+            sensorMapping = mappingData.rooms || {};
+            outdoorSensors = mappingData.outdoor_sensors || {};
+        }
+        
+        // Räume aus Sensoren extrahieren
+        const roomSet = new Set();
+        allSensors.forEach(s => {
+            if (s.room && s.room !== 'Unbekannt') {
+                roomSet.add(s.room);
+            }
+        });
+        allRooms = Array.from(roomSet).sort();
+        
+        // Versteckte Räume aus localStorage
+        hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+    }
+}
+
+// Übersicht rendern
+function renderOverview() {
+    const grid = document.getElementById('rooms-overview-grid');
+    
+    if (allRooms.length === 0) {
+        grid.innerHTML = '<div class="loading-state">Keine Räume gefunden. Bitte synchronisieren Sie mit Homey unter "Einstellungen".</div>';
+        return;
+    }
+    
+    grid.innerHTML = allRooms.map(room => {
+        const isHidden = hiddenRooms.includes(room);
+        const roomId = room.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '');
+        const config = sensorMapping[roomId] || {};
+        const isConfigured = config.temperature || config.humidity || config.co2;
+        
+        // Sensoren für diesen Raum
+        const roomSensors = allSensors.filter(s => s.room === room);
+        
+        // Werte ermitteln (konfiguriert oder automatisch)
+        let temp = null, humidity = null, co2 = null;
+        
+        if (config.temperature) {
+            const s = allSensors.find(x => x.device_id === config.temperature);
+            if (s) temp = s.current_value;
+        } else {
+            const s = roomSensors.find(x => x.type === 'temperature' && x.current_value !== null && x.current_value < 45);
+            if (s) temp = s.current_value;
+        }
+        
+        if (config.humidity) {
+            const s = allSensors.find(x => x.device_id === config.humidity);
+            if (s) humidity = s.current_value;
+        } else {
+            const s = roomSensors.find(x => x.type === 'humidity' && x.current_value !== null);
+            if (s) humidity = s.current_value;
+        }
+        
+        if (config.co2) {
+            const s = allSensors.find(x => x.device_id === config.co2);
+            if (s) co2 = s.current_value;
+        } else {
+            const s = roomSensors.find(x => x.type === 'co2' && x.current_value !== null);
+            if (s) co2 = s.current_value;
+        }
+        
+        const icon = getRoomIcon(room);
+        const sensorCount = roomSensors.length;
+        
+        return `
+            <div class="room-card ${isHidden ? 'hidden-room' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
+                <div class="room-header">
+                    <span class="room-icon">${icon}</span>
+                    <span class="room-name">${room}</span>
+                    ${isHidden ? '<span class="hidden-badge">Ausgeblendet</span>' : ''}
+                </div>
+                <div class="room-sensors">
+                    <div class="sensor-value temp">
+                        <span class="label">🌡️ Temp</span>
+                        <span class="value">${temp !== null ? temp.toFixed(1) + '°C' : '--'}</span>
+                    </div>
+                    <div class="sensor-value humidity">
+                        <span class="label">💧 Feuchte</span>
+                        <span class="value">${humidity !== null ? Math.round(humidity) + '%' : '--'}</span>
+                    </div>
+                    <div class="sensor-value co2">
+                        <span class="label">🌬️ CO₂</span>
+                        <span class="value">${co2 !== null ? co2 + '' : '--'}</span>
+                    </div>
+                </div>
+                <div class="room-status">
+                    <span class="sensor-count">${sensorCount} Sensoren</span>
+                    ${isConfigured ? '<span class="configured-badge">✓ Konfiguriert</span>' : ''}
+                    <button class="edit-btn" onclick="event.stopPropagation(); openRoomModal('${room.replace(/'/g, "\\'")}')">✏️</button>
                 </div>
             </div>
+        `;
+    }).join('');
+}
 
-            <div class="room-stats">
-                <h4>Statistiken</h4>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="room-lights-count">0</div>
-                        <div class="stat-label">💡 Lichter</div>
+// Raum-Icon ermitteln
+function getRoomIcon(roomName) {
+    const name = roomName.toLowerCase();
+    if (name.includes('wohnzimmer')) return '🛋️';
+    if (name.includes('schlafzimmer')) return '🛏️';
+    if (name.includes('küche')) return '🍳';
+    if (name.includes('bad')) return '🚿';
+    if (name.includes('flur')) return '🚪';
+    if (name.includes('arbeit') || name.includes('büro')) return '💼';
+    if (name.includes('kind')) return '👶';
+    if (name.includes('garten')) return '🌳';
+    if (name.includes('garage')) return '🚗';
+    if (name.includes('abstell') || name.includes('keller')) return '📦';
+    if (name.includes('terrasse') || name.includes('balkon')) return '🏡';
+    if (name.includes('heim')) return '🏠';
+    return '🏠';
+}
+
+// Sensor-Management Tab laden
+function loadSensorManagement() {
+    const container = document.getElementById('room-sensor-list');
+    
+    container.innerHTML = allRooms.map(room => {
+        const roomId = room.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '');
+        const config = sensorMapping[roomId] || {};
+        const roomSensors = allSensors.filter(s => s.room === room);
+        
+        // Alle Sensoren für Dropdowns (auch aus anderen Räumen)
+        const tempSensors = allSensors.filter(s => s.type === 'temperature');
+        const humiditySensors = allSensors.filter(s => s.type === 'humidity');
+        const co2Sensors = allSensors.filter(s => s.type === 'co2');
+        
+        return `
+            <div class="room-sensor-item">
+                <div class="room-sensor-header">
+                    <div class="room-sensor-title">
+                        <span>${getRoomIcon(room)}</span>
+                        <span>${room}</span>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="room-sensors-count">0</div>
-                        <div class="stat-label">📊 Sensoren</div>
+                    <span style="color: #888; font-size: 0.85rem;">${roomSensors.length} Sensoren im Raum</span>
+                </div>
+                <div class="sensor-selects">
+                    <div class="sensor-select-group">
+                        <label>🌡️ Temperatur:</label>
+                        <select onchange="saveSensorMapping('${roomId}', '${room.replace(/'/g, "\\'")}', 'temperature', this.value)">
+                            <option value="">-- Automatisch --</option>
+                            ${tempSensors.map(s => `
+                                <option value="${s.device_id}" ${config.temperature === s.device_id ? 'selected' : ''}>
+                                    ${s.name} ${s.current_value !== null ? `(${s.current_value.toFixed(1)}°C)` : ''}
+                                </option>
+                            `).join('')}
+                        </select>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="room-switches-count">0</div>
-                        <div class="stat-label">🔌 Schalter</div>
+                    <div class="sensor-select-group">
+                        <label>💧 Feuchtigkeit:</label>
+                        <select onchange="saveSensorMapping('${roomId}', '${room.replace(/'/g, "\\'")}', 'humidity', this.value)">
+                            <option value="">-- Automatisch --</option>
+                            ${humiditySensors.map(s => `
+                                <option value="${s.device_id}" ${config.humidity === s.device_id ? 'selected' : ''}>
+                                    ${s.name} ${s.current_value !== null ? `(${Math.round(s.current_value)}%)` : ''}
+                                </option>
+                            `).join('')}
+                        </select>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="room-climate-count">0</div>
-                        <div class="stat-label">🌡️ Klima</div>
+                    <div class="sensor-select-group">
+                        <label>🌬️ CO₂:</label>
+                        <select onchange="saveSensorMapping('${roomId}', '${room.replace(/'/g, "\\'")}', 'co2', this.value)">
+                            <option value="">-- Kein CO₂ --</option>
+                            ${co2Sensors.map(s => `
+                                <option value="${s.device_id}" ${config.co2 === s.device_id ? 'selected' : ''}>
+                                    ${s.name} ${s.current_value !== null ? `(${s.current_value} ppm)` : ''}
+                                </option>
+                            `).join('')}
+                        </select>
                     </div>
                 </div>
             </div>
+        `;
+    }).join('');
+}
 
-            <div class="room-actions">
-                <button class="btn btn-primary" id="room-all-lights-on">Alle Lichter AN</button>
-                <button class="btn btn-secondary" id="room-all-lights-off">Alle Lichter AUS</button>
-                <button class="btn btn-warning" id="edit-room">✏️ Raum bearbeiten</button>
-                <button class="btn btn-danger" id="delete-room">Raum löschen</button>
+// Sensor-Mapping speichern
+async function saveSensorMapping(roomId, roomName, sensorType, deviceId) {
+    try {
+        if (!sensorMapping[roomId]) {
+            sensorMapping[roomId] = { name: roomName };
+        }
+        
+        sensorMapping[roomId][sensorType] = deviceId || '';
+        sensorMapping[roomId].name = roomName;
+        
+        await fetch('/api/ventilation/sensor-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rooms: sensorMapping,
+                outdoor_sensors: outdoorSensors
+            })
+        });
+        
+        showNotification('Sensor-Zuordnung gespeichert!', 'success');
+        renderOverview();
+    } catch (error) {
+        console.error('Error saving mapping:', error);
+        showNotification('Fehler beim Speichern', 'error');
+    }
+}
+
+// Außensensor-Konfiguration laden
+function loadOutdoorSensorConfig() {
+    const tempSelect = document.getElementById('outdoor-temp-sensor');
+    const humiditySelect = document.getElementById('outdoor-humidity-sensor');
+    
+    const tempSensors = allSensors.filter(s => s.type === 'temperature');
+    const humiditySensors = allSensors.filter(s => s.type === 'humidity');
+    
+    tempSelect.innerHTML = '<option value="">-- Automatisch erkennen --</option>' +
+        tempSensors.map(s => `
+            <option value="${s.device_id}" ${outdoorSensors.temperature === s.device_id ? 'selected' : ''}>
+                ${s.name} ${s.current_value !== null ? `(${s.current_value.toFixed(1)}°C)` : ''}
+            </option>
+        `).join('');
+    
+    humiditySelect.innerHTML = '<option value="">-- Automatisch erkennen --</option>' +
+        humiditySensors.map(s => `
+            <option value="${s.device_id}" ${outdoorSensors.humidity === s.device_id ? 'selected' : ''}>
+                ${s.name} ${s.current_value !== null ? `(${Math.round(s.current_value)}%)` : ''}
+            </option>
+        `).join('');
+}
+
+// Außensensoren speichern
+async function saveOutdoorSensors() {
+    const tempSensor = document.getElementById('outdoor-temp-sensor').value;
+    const humiditySensor = document.getElementById('outdoor-humidity-sensor').value;
+    
+    outdoorSensors = {
+        temperature: tempSensor,
+        humidity: humiditySensor
+    };
+    
+    try {
+        await fetch('/api/ventilation/sensor-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rooms: sensorMapping,
+                outdoor_sensors: outdoorSensors
+            })
+        });
+        
+        showNotification('Außensensoren gespeichert!', 'success');
+    } catch (error) {
+        showNotification('Fehler beim Speichern', 'error');
+    }
+}
+
+// Sichtbarkeit Tab laden
+function loadVisibility() {
+    const grid = document.getElementById('visibility-grid');
+    
+    grid.innerHTML = allRooms.map(room => {
+        const isVisible = !hiddenRooms.includes(room);
+        
+        return `
+            <div class="visibility-item ${!isVisible ? 'is-hidden' : ''}">
+                <div class="visibility-room-info">
+                    <span>${getRoomIcon(room)}</span>
+                    <span>${room}</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" ${isVisible ? 'checked' : ''} onchange="toggleRoomVisibility('${room.replace(/'/g, "\\'")}', this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
             </div>
+        `;
+    }).join('');
+}
 
-            <!-- Edit Form (hidden by default) -->
-            <div id="edit-room-form" class="edit-room-form" style="display: none;">
-                <h4>Raum bearbeiten</h4>
-                <div class="form-group">
-                    <label>Name:</label>
-                    <input type="text" id="edit-room-name" class="form-control">
-                </div>
-                <div class="form-group">
-                    <label>Icon:</label>
-                    <select id="edit-room-icon" class="form-control">
-                        <option value="🏠">🏠 Standard</option>
-                        <option value="🛋️">🛋️ Wohnzimmer</option>
-                        <option value="🛏️">🛏️ Schlafzimmer</option>
-                        <option value="🍳">🍳 Küche</option>
-                        <option value="🚿">🚿 Badezimmer</option>
-                        <option value="🚪">🚪 Flur</option>
-                        <option value="💼">💼 Büro</option>
-                        <option value="🎮">🎮 Gaming-Zimmer</option>
-                        <option value="🌳">🌳 Garten</option>
-                        <option value="🚗">🚗 Garage</option>
-                        <option value="📦">📦 Keller</option>
-                        <option value="💡">💡 Lichtbereich</option>
-                        <option value="🏡">🏡 Terrasse</option>
-                        <option value="🧺">🧺 Waschküche</option>
-                    </select>
-                </div>
-                <div class="form-actions">
-                    <button class="btn btn-primary" id="save-room-edit">💾 Speichern</button>
-                    <button class="btn btn-secondary" id="cancel-room-edit">Abbrechen</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+// Raumsichtbarkeit umschalten
+function toggleRoomVisibility(room, isVisible) {
+    if (isVisible) {
+        hiddenRooms = hiddenRooms.filter(r => r !== room);
+    } else {
+        if (!hiddenRooms.includes(room)) {
+            hiddenRooms.push(room);
+        }
+    }
+    
+    localStorage.setItem('hiddenRooms', JSON.stringify(hiddenRooms));
+    renderOverview();
+    loadVisibility();
+    
+    showNotification(isVisible ? `${room} wird angezeigt` : `${room} ausgeblendet`, 'success');
+}
 
-<script src="{{ url_for('static', filename='js/rooms.js') }}"></script>
+// Raum Modal öffnen
+function openRoomModal(room) {
+    const modal = document.getElementById('room-edit-modal');
+    const roomId = room.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '');
+    const config = sensorMapping[roomId] || {};
+    
+    document.getElementById('modal-title').textContent = `${getRoomIcon(room)} ${room} bearbeiten`;
+    document.getElementById('edit-room-id').value = roomId;
+    document.getElementById('edit-room-original-name').value = room;
+    document.getElementById('edit-room-name').value = room;
+    
+    // Sensor-Dropdowns füllen
+    const tempSelect = document.getElementById('edit-temp-sensor');
+    const humiditySelect = document.getElementById('edit-humidity-sensor');
+    const co2Select = document.getElementById('edit-co2-sensor');
+    
+    const tempSensors = allSensors.filter(s => s.type === 'temperature');
+    const humiditySensors = allSensors.filter(s => s.type === 'humidity');
+    const co2Sensors = allSensors.filter(s => s.type === 'co2');
+    
+    tempSelect.innerHTML = '<option value="">-- Automatisch --</option>' +
+        tempSensors.map(s => `<option value="${s.device_id}" ${config.temperature === s.device_id ? 'selected' : ''}>${s.name} (${s.room})</option>`).join('');
+    
+    humiditySelect.innerHTML = '<option value="">-- Automatisch --</option>' +
+        humiditySensors.map(s => `<option value="${s.device_id}" ${config.humidity === s.device_id ? 'selected' : ''}>${s.name} (${s.room})</option>`).join('');
+    
+    co2Select.innerHTML = '<option value="">-- Kein CO₂ --</option>' +
+        co2Sensors.map(s => `<option value="${s.device_id}" ${config.co2 === s.device_id ? 'selected' : ''}>${s.name} (${s.room})</option>`).join('');
+    
+    // Preview aktualisieren
+    updateSensorPreviews();
+    
+    tempSelect.onchange = updateSensorPreviews;
+    humiditySelect.onchange = updateSensorPreviews;
+    co2Select.onchange = updateSensorPreviews;
+    
+    modal.classList.add('show');
+}
+
+// Sensor-Previews aktualisieren
+function updateSensorPreviews() {
+    const tempId = document.getElementById('edit-temp-sensor').value;
+    const humidityId = document.getElementById('edit-humidity-sensor').value;
+    const co2Id = document.getElementById('edit-co2-sensor').value;
+    
+    const tempSensor = allSensors.find(s => s.device_id === tempId);
+    const humiditySensor = allSensors.find(s => s.device_id === humidityId);
+    const co2Sensor = allSensors.find(s => s.device_id === co2Id);
+    
+    document.getElementById('edit-temp-preview').textContent = 
+        tempSensor && tempSensor.current_value !== null ? `Aktuell: ${tempSensor.current_value.toFixed(1)}°C` : '';
+    
+    document.getElementById('edit-humidity-preview').textContent = 
+        humiditySensor && humiditySensor.current_value !== null ? `Aktuell: ${Math.round(humiditySensor.current_value)}%` : '';
+    
+    document.getElementById('edit-co2-preview').textContent = 
+        co2Sensor && co2Sensor.current_value !== null ? `Aktuell: ${co2Sensor.current_value} ppm` : '';
+}
+
+// Modal schließen
+function closeModal() {
+    document.getElementById('room-edit-modal').classList.remove('show');
+}
+
+// Raum bearbeiten speichern
+async function saveRoomEdit(event) {
+    event.preventDefault();
+    
+    const roomId = document.getElementById('edit-room-id').value;
+    const roomName = document.getElementById('edit-room-name').value;
+    const tempSensor = document.getElementById('edit-temp-sensor').value;
+    const humiditySensor = document.getElementById('edit-humidity-sensor').value;
+    const co2Sensor = document.getElementById('edit-co2-sensor').value;
+    
+    sensorMapping[roomId] = {
+        name: roomName,
+        temperature: tempSensor,
+        humidity: humiditySensor,
+        co2: co2Sensor
+    };
+    
+    try {
+        await fetch('/api/ventilation/sensor-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rooms: sensorMapping,
+                outdoor_sensors: outdoorSensors
+            })
+        });
+        
+        closeModal();
+        renderOverview();
+        showNotification('Raum gespeichert!', 'success');
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Fehler beim Speichern', 'error');
+    }
+}
+
+// Zonen synchronisieren
+async function syncZones() {
+    const status = document.getElementById('sync-status');
+    status.className = 'sync-status';
+    status.textContent = 'Synchronisiere...';
+    status.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/rooms/sync', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            status.className = 'sync-status success';
+            status.textContent = `✅ ${data.synced || data.count || 0} Zonen synchronisiert!`;
+            await loadAllData();
+            renderOverview();
+        } else {
+            status.className = 'sync-status error';
+            status.textContent = '❌ Fehler: ' + (data.error || 'Unbekannt');
+        }
+    } catch (error) {
+        status.className = 'sync-status error';
+        status.textContent = '❌ Verbindungsfehler';
+    }
+}
+
+// Geräte synchronisieren
+async function syncDevices() {
+    const status = document.getElementById('sync-status');
+    status.className = 'sync-status';
+    status.textContent = 'Importiere Geräte-Zuordnungen...';
+    status.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/rooms/sync-devices', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            status.className = 'sync-status success';
+            status.textContent = `✅ ${data.count || 0} Geräte importiert!`;
+            await loadAllData();
+            renderOverview();
+        } else {
+            status.className = 'sync-status error';
+            status.textContent = '❌ Fehler: ' + (data.error || 'Unbekannt');
+        }
+    } catch (error) {
+        status.className = 'sync-status error';
+        status.textContent = '❌ Verbindungsfehler';
+    }
+}
+
+// Raum hinzufügen
+async function addRoom(event) {
+    event.preventDefault();
+    
+    const name = document.getElementById('new-room-name').value;
+    const icon = document.getElementById('new-room-icon').value;
+    
+    if (!name.trim()) return;
+    
+    try {
+        const response = await fetch('/api/rooms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, icon })
+        });
+        
+        if (response.ok) {
+            document.getElementById('new-room-name').value = '';
+            await loadAllData();
+            renderOverview();
+            showNotification(`Raum "${name}" hinzugefügt!`, 'success');
+        }
+    } catch (error) {
+        showNotification('Fehler beim Hinzufügen', 'error');
+    }
+}
+
+// Alle Einstellungen zurücksetzen
+async function resetAllSettings() {
+    if (!confirm('Wirklich alle Sensor-Zuordnungen und Sichtbarkeitseinstellungen löschen?')) {
+        return;
+    }
+    
+    try {
+        await fetch('/api/ventilation/sensor-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rooms: {}, outdoor_sensors: {} })
+        });
+        
+        localStorage.removeItem('hiddenRooms');
+        hiddenRooms = [];
+        sensorMapping = {};
+        outdoorSensors = {};
+        
+        renderOverview();
+        showNotification('Alle Einstellungen zurückgesetzt!', 'success');
+    } catch (error) {
+        showNotification('Fehler beim Zurücksetzen', 'error');
+    }
+}
+
+// Benachrichtigung anzeigen
+function showNotification(message, type) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 9999;
+        animation: slideIn 0.3s ease;
+        background: ${type === 'success' ? '#4CAF50' : '#f44336'};
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+// CSS Animation
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
+`;
+document.head.appendChild(style);
+
+// Modal schließen bei Klick außerhalb
+window.onclick = function(event) {
+    const modal = document.getElementById('room-edit-modal');
+    if (event.target === modal) {
+        closeModal();
+    }
+}
+
+// ESC-Taste zum Schließen
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModal();
+    }
+});
+</script>
 {% endblock %}
