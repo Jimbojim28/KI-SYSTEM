@@ -21,15 +21,21 @@ echo "📌 Aktuelle Version:"
 git log -1 --oneline
 echo ""
 
-# Prüfe auf ungespeicherte Änderungen (nur für wichtige Dateien)
-if git diff --quiet HEAD -- '*.py' '*.html' '*.css' '*.js' '*.sh' '*.md' 'requirements.txt' 'config/config.yaml'; then
+# Prüfe auf ungespeicherte Änderungen (alle Code- und Config-Dateien)
+if git diff --quiet HEAD -- '*.py' '*.html' '*.css' '*.js' '*.sh' '*.md' '*.yaml' '*.yml' 'requirements.txt'; then
     echo "✓ Keine Code-Änderungen gefunden"
 else
     echo "⚠️  Warnung: Ungespeicherte Code-Änderungen gefunden!"
+    echo ""
+    echo "Geänderte Dateien:"
+    git diff --name-only HEAD -- '*.py' '*.html' '*.css' '*.js' '*.sh' '*.md' '*.yaml' '*.yml' 'requirements.txt' | head -10
+    echo ""
+    
     # Wenn nicht interaktiv (z.B. von Web-Interface), automatisch überschreiben
     if [ ! -t 0 ]; then
-        echo "  ℹ️  Nicht-interaktiver Modus: Änderungen werden überschrieben"
-        git checkout -- '*.py' '*.html' '*.css' '*.js' '*.sh' 2>/dev/null || true
+        echo "  ℹ️  Nicht-interaktiver Modus: Änderungen werden zurückgesetzt"
+        git checkout -- '*.py' '*.html' '*.css' '*.js' '*.sh' '*.yaml' '*.yml' 2>/dev/null || true
+        git checkout -- 'config/' 2>/dev/null || true
     else
         echo "Diese werden überschrieben. Fortfahren? (j/n)"
         read -r response
@@ -37,6 +43,8 @@ else
             echo "Update abgebrochen."
             exit 0
         fi
+        git checkout -- '*.py' '*.html' '*.css' '*.js' '*.sh' '*.yaml' '*.yml' 2>/dev/null || true
+        git checkout -- 'config/' 2>/dev/null || true
     fi
 fi
 
