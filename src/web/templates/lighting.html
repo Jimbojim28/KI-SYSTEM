@@ -1,0 +1,860 @@
+{% extends "base.html" %}
+
+{% block title %}Beleuchtung{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>💡 Beleuchtungsoptimierung</h2>
+    <p>Vergessene Lampen erkennen und automatisch ausschalten</p>
+</div>
+
+<!-- Tab Navigation -->
+<div class="tabs">
+    <button class="tab-button active" onclick="switchTab('overview')">📊 Übersicht</button>
+    <button class="tab-button" onclick="switchTab('history')">📜 Historie</button>
+    <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
+</div>
+
+<!-- Übersicht Tab -->
+<div id="overview-tab" class="tab-content active">
+    
+    <!-- Status Karte -->
+    <div class="status-card">
+        <div class="status-header">
+            <h3>🔍 Vergessene Lampen Detektor</h3>
+            <div class="detector-controls">
+                <span id="detector-status" class="status-badge status-inactive">Inaktiv</span>
+                <button id="toggle-detector" class="btn-primary" onclick="toggleDetector()">
+                    ▶️ Starten
+                </button>
+            </div>
+        </div>
+        <div class="status-info">
+            <span id="mode-badge" class="mode-badge test-mode">🧪 Test-Modus</span>
+            <p class="mode-hint">Im Test-Modus wird nur protokolliert, keine Lampen werden ausgeschaltet.</p>
+        </div>
+    </div>
+    
+    <!-- Statistiken -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" id="stat-today">0</div>
+            <div class="stat-label">Heute erkannt</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Gesamt</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-top-room">-</div>
+            <div class="stat-label">Häufigster Raum</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-top-hour">-</div>
+            <div class="stat-label">Häufigste Uhrzeit</div>
+        </div>
+    </div>
+    
+    <!-- Aktuelle Vorhersagen -->
+    <div class="section-card">
+        <h3>🔴 Aktuelle Vorhersagen</h3>
+        <p class="section-hint">Lampen, die jetzt als "vergessen" erkannt wurden:</p>
+        <div id="current-predictions" class="predictions-list">
+            <p class="empty-state">Keine aktuellen Vorhersagen. Starte den Detektor um zu beginnen.</p>
+        </div>
+    </div>
+    
+    <!-- Chart: Wann wurden Lampen vergessen? -->
+    <div class="section-card">
+        <h3>📈 Wann wurden Lampen vergessen?</h3>
+        <div class="chart-controls">
+            <button class="chart-btn active" onclick="loadChart(7)">7 Tage</button>
+            <button class="chart-btn" onclick="loadChart(14)">14 Tage</button>
+            <button class="chart-btn" onclick="loadChart(30)">30 Tage</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="forgotten-chart"></canvas>
+        </div>
+        <div id="chart-empty" class="chart-empty" style="display: none;">
+            <p>📭 Noch keine Daten vorhanden.</p>
+            <p class="hint">Starte den Detektor um Daten zu sammeln.</p>
+        </div>
+    </div>
+    
+    <!-- Chart: Nach Raum -->
+    <div class="section-card">
+        <h3>🏠 Vergessene Lampen nach Raum</h3>
+        <div class="chart-container small">
+            <canvas id="room-chart"></canvas>
+        </div>
+    </div>
+    
+</div>
+
+<!-- Historie Tab -->
+<div id="history-tab" class="tab-content">
+    <div class="section-card">
+        <h3>📜 Erkennungs-Historie</h3>
+        <div class="history-controls">
+            <select id="history-hours" onchange="loadHistory()">
+                <option value="24">Letzte 24 Stunden</option>
+                <option value="48">Letzte 48 Stunden</option>
+                <option value="168">Letzte 7 Tage</option>
+            </select>
+        </div>
+        <div id="history-list" class="history-list">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Lade Historie...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Einstellungen Tab -->
+<div id="settings-tab" class="tab-content">
+    <div class="settings-section">
+        <h3>⏱️ Erkennungs-Schwellwerte</h3>
+        
+        <div class="setting-row">
+            <label>Keine Bewegung (Minuten)</label>
+            <input type="number" id="setting-no-motion" min="5" max="120" value="30">
+            <span class="setting-hint">Nach dieser Zeit ohne Bewegung gilt Lampe als vergessen</span>
+        </div>
+        
+        <div class="setting-row">
+            <label>Mindest-Einschaltdauer (Minuten)</label>
+            <input type="number" id="setting-min-duration" min="5" max="60" value="15">
+            <span class="setting-hint">Lampe muss mindestens so lange an sein</span>
+        </div>
+        
+        <div class="setting-row">
+            <label>Tageslicht-Schwelle (Lux)</label>
+            <input type="number" id="setting-daylight" min="50" max="1000" value="200">
+            <span class="setting-hint">Ab diesem Wert ist es "hell genug" draußen</span>
+        </div>
+    </div>
+    
+    <div class="settings-section">
+        <h3>🌙 Schlafenszeit</h3>
+        
+        <div class="setting-row">
+            <label>Schlafenszeit Start</label>
+            <input type="number" id="setting-sleep-start" min="0" max="23" value="23">
+            <span class="setting-hint">Uhrzeit (0-23)</span>
+        </div>
+        
+        <div class="setting-row">
+            <label>Schlafenszeit Ende</label>
+            <input type="number" id="setting-sleep-end" min="0" max="23" value="6">
+            <span class="setting-hint">Uhrzeit (0-23)</span>
+        </div>
+    </div>
+    
+    <div class="settings-section">
+        <h3>🔄 System</h3>
+        
+        <div class="setting-row">
+            <label>Prüf-Intervall (Sekunden)</label>
+            <input type="number" id="setting-interval" min="30" max="300" value="60">
+            <span class="setting-hint">Wie oft werden Lampen geprüft</span>
+        </div>
+        
+        <div class="mode-toggle">
+            <label class="toggle-label">
+                <input type="checkbox" id="setting-test-mode" checked>
+                <span class="toggle-slider"></span>
+                <span class="toggle-text">Test-Modus (nur protokollieren, nicht ausschalten)</span>
+            </label>
+        </div>
+    </div>
+    
+    <button class="btn-save" onclick="saveSettings()">💾 Einstellungen speichern</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+<style>
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+.tab-button {
+    padding: 1rem 2rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1.1em;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.3s;
+}
+.tab-button:hover { color: #333; background: #f8f9fa; }
+.tab-button.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Status Card */
+.status-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+.status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.status-header h3 { margin: 0; }
+.detector-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.status-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9em;
+}
+.status-active { background: #27ae60; }
+.status-inactive { background: rgba(255,255,255,0.2); }
+.btn-primary {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    background: white;
+    color: #667eea;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.btn-primary:hover { transform: scale(1.05); }
+.status-info { margin-top: 1rem; }
+.mode-badge {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+.test-mode { background: rgba(255,255,255,0.2); }
+.active-mode { background: #e74c3c; }
+.mode-hint {
+    margin-top: 0.5rem;
+    font-size: 0.9em;
+    opacity: 0.9;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.stat-value {
+    font-size: 2em;
+    font-weight: 700;
+    color: #667eea;
+}
+.stat-label {
+    color: #666;
+    font-size: 0.9em;
+    margin-top: 0.5rem;
+}
+
+/* Section Card */
+.section-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.section-card h3 { margin-top: 0; }
+.section-hint {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 1rem;
+}
+
+/* Predictions List */
+.predictions-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.prediction-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    border-left: 4px solid #e74c3c;
+}
+.prediction-info { flex: 1; }
+.prediction-device {
+    font-weight: 600;
+    color: #333;
+}
+.prediction-room {
+    color: #666;
+    font-size: 0.9em;
+}
+.prediction-reasons {
+    font-size: 0.85em;
+    color: #888;
+    margin-top: 0.3rem;
+}
+.prediction-time {
+    text-align: right;
+    color: #666;
+    font-size: 0.85em;
+}
+.prediction-confidence {
+    font-weight: 600;
+    color: #e74c3c;
+}
+.empty-state {
+    color: #888;
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Chart */
+.chart-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.chart-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.chart-btn:hover { background: #f5f5f5; }
+.chart-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+.chart-container {
+    position: relative;
+    height: 300px;
+}
+.chart-container.small { height: 200px; }
+.chart-empty {
+    text-align: center;
+    padding: 3rem;
+    color: #888;
+}
+.chart-empty .hint { font-size: 0.9em; }
+
+/* History List */
+.history-controls {
+    margin-bottom: 1rem;
+}
+.history-controls select {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    font-size: 1em;
+}
+.history-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #eee;
+}
+.history-item:last-child { border-bottom: none; }
+.history-device { font-weight: 600; }
+.history-room { color: #666; }
+.history-time {
+    color: #888;
+    font-size: 0.9em;
+}
+
+/* Settings */
+.settings-section {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.settings-section h3 { margin-top: 0; }
+.setting-row {
+    display: grid;
+    grid-template-columns: 200px 100px 1fr;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.setting-row label { font-weight: 500; }
+.setting-row input {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1em;
+}
+.setting-hint {
+    color: #888;
+    font-size: 0.85em;
+}
+.mode-toggle {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+}
+.toggle-slider {
+    position: relative;
+    width: 50px;
+    height: 26px;
+    background: #ccc;
+    border-radius: 13px;
+    transition: 0.3s;
+}
+.toggle-slider::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: 0.3s;
+}
+.toggle-label input:checked + .toggle-slider {
+    background: #27ae60;
+}
+.toggle-label input:checked + .toggle-slider::after {
+    left: 26px;
+}
+.toggle-label input { display: none; }
+.btn-save {
+    width: 100%;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.btn-save:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+
+/* Loading */
+.loading-state {
+    text-align: center;
+    padding: 2rem;
+    color: #888;
+}
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #eee;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+    .stat-card, .section-card, .settings-section {
+        background: #2a2a2a;
+        color: #eee;
+    }
+    .prediction-item { background: #333; }
+    .prediction-device { color: #eee; }
+    .history-item { border-color: #444; }
+    .setting-row input, .history-controls select {
+        background: #333;
+        color: #eee;
+        border-color: #555;
+    }
+}
+</style>
+
+<script>
+// Globale Variablen
+let forgottenChart = null;
+let roomChart = null;
+let autoRefreshInterval = null;
+
+// Tab-Wechsel
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    
+    document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+    document.getElementById(`${tabName}-tab`).classList.add('active');
+    
+    if (tabName === 'history') {
+        loadHistory();
+    } else if (tabName === 'settings') {
+        loadSettings();
+    }
+}
+
+// Status laden
+async function loadStatus() {
+    try {
+        const response = await fetch('/api/lighting/forgotten/status');
+        const data = await response.json();
+        
+        // Status Badge
+        const statusBadge = document.getElementById('detector-status');
+        const toggleBtn = document.getElementById('toggle-detector');
+        const modeBadge = document.getElementById('mode-badge');
+        
+        if (data.running) {
+            statusBadge.textContent = 'Aktiv';
+            statusBadge.className = 'status-badge status-active';
+            toggleBtn.textContent = '⏹️ Stoppen';
+        } else {
+            statusBadge.textContent = 'Inaktiv';
+            statusBadge.className = 'status-badge status-inactive';
+            toggleBtn.textContent = '▶️ Starten';
+        }
+        
+        if (data.test_mode) {
+            modeBadge.textContent = '🧪 Test-Modus';
+            modeBadge.className = 'mode-badge test-mode';
+        } else {
+            modeBadge.textContent = '⚡ Aktiv-Modus';
+            modeBadge.className = 'mode-badge active-mode';
+        }
+        
+        // Statistiken
+        const stats = data.statistics || {};
+        document.getElementById('stat-today').textContent = stats.predictions_today || 0;
+        document.getElementById('stat-total').textContent = stats.total_predictions || 0;
+        
+        if (stats.top_forgotten_lights && stats.top_forgotten_lights.length > 0) {
+            document.getElementById('stat-top-room').textContent = stats.top_forgotten_lights[0].room_name || '-';
+        }
+        
+        if (stats.top_hours && stats.top_hours.length > 0) {
+            document.getElementById('stat-top-hour').textContent = `${stats.top_hours[0].hour}:00`;
+        }
+        
+        // Aktuelle Vorhersagen
+        renderCurrentPredictions(data.current_predictions || []);
+        
+    } catch (error) {
+        console.error('Error loading status:', error);
+    }
+}
+
+// Aktuelle Vorhersagen rendern
+function renderCurrentPredictions(predictions) {
+    const container = document.getElementById('current-predictions');
+    
+    if (!predictions || predictions.length === 0) {
+        container.innerHTML = '<p class="empty-state">Keine aktuellen Vorhersagen. Starte den Detektor um zu beginnen.</p>';
+        return;
+    }
+    
+    container.innerHTML = predictions.map(p => `
+        <div class="prediction-item">
+            <div class="prediction-info">
+                <div class="prediction-device">💡 ${p.device_name}</div>
+                <div class="prediction-room">📍 ${p.room_name}</div>
+                <div class="prediction-reasons">${p.reasons.join(' • ')}</div>
+            </div>
+            <div class="prediction-time">
+                <div class="prediction-confidence">${Math.round(p.confidence * 100)}%</div>
+                <div>${formatTime(p.timestamp)}</div>
+                <div>${p.on_duration_minutes} Min. an</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Detektor starten/stoppen
+async function toggleDetector() {
+    const statusBadge = document.getElementById('detector-status');
+    const isRunning = statusBadge.textContent === 'Aktiv';
+    
+    try {
+        const endpoint = isRunning ? '/api/lighting/forgotten/stop' : '/api/lighting/forgotten/start';
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ test_mode: document.getElementById('setting-test-mode')?.checked ?? true })
+        });
+        
+        if (response.ok) {
+            loadStatus();
+        }
+    } catch (error) {
+        console.error('Error toggling detector:', error);
+    }
+}
+
+// Chart laden
+async function loadChart(days = 7) {
+    // Button-Status
+    document.querySelectorAll('.chart-btn').forEach(btn => btn.classList.remove('active'));
+    event?.target?.classList.add('active');
+    
+    try {
+        const response = await fetch(`/api/lighting/forgotten/chart?days=${days}`);
+        const data = await response.json();
+        
+        if (!data.data_points || data.data_points.length === 0) {
+            document.getElementById('chart-empty').style.display = 'block';
+            if (forgottenChart) forgottenChart.destroy();
+            return;
+        }
+        
+        document.getElementById('chart-empty').style.display = 'none';
+        
+        // Hauptchart: Timeline
+        renderTimelineChart(data.data_points);
+        
+        // Raum-Chart
+        renderRoomChart(data.by_room);
+        
+    } catch (error) {
+        console.error('Error loading chart:', error);
+    }
+}
+
+function renderTimelineChart(dataPoints) {
+    const ctx = document.getElementById('forgotten-chart').getContext('2d');
+    
+    if (forgottenChart) forgottenChart.destroy();
+    
+    // Gruppiere nach Datum und Stunde
+    const grouped = {};
+    dataPoints.forEach(p => {
+        const key = `${p.date} ${p.hour}:00`;
+        if (!grouped[key]) {
+            grouped[key] = { count: 0, devices: [] };
+        }
+        grouped[key].count += p.count;
+        grouped[key].devices.push(p.device_name);
+    });
+    
+    const labels = Object.keys(grouped).sort();
+    const values = labels.map(k => grouped[k].count);
+    
+    forgottenChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Vergessene Lampen',
+                data: values,
+                backgroundColor: 'rgba(231, 76, 60, 0.7)',
+                borderColor: 'rgba(231, 76, 60, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            const key = labels[context.dataIndex];
+                            return 'Lampen: ' + grouped[key].devices.join(', ');
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { stepSize: 1 }
+                }
+            }
+        }
+    });
+}
+
+function renderRoomChart(byRoom) {
+    if (!byRoom || byRoom.length === 0) return;
+    
+    const ctx = document.getElementById('room-chart').getContext('2d');
+    
+    if (roomChart) roomChart.destroy();
+    
+    roomChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: byRoom.map(r => r.room),
+            datasets: [{
+                data: byRoom.map(r => r.count),
+                backgroundColor: [
+                    '#667eea', '#764ba2', '#27ae60', '#e74c3c', 
+                    '#f39c12', '#3498db', '#9b59b6', '#1abc9c'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+}
+
+// Historie laden
+async function loadHistory() {
+    const hours = document.getElementById('history-hours').value;
+    const container = document.getElementById('history-list');
+    
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Lade Historie...</p></div>';
+    
+    try {
+        const response = await fetch(`/api/lighting/forgotten/history?hours=${hours}`);
+        const data = await response.json();
+        
+        if (!data.history || data.history.length === 0) {
+            container.innerHTML = '<p class="empty-state">Keine Einträge in diesem Zeitraum.</p>';
+            return;
+        }
+        
+        container.innerHTML = data.history.map(h => `
+            <div class="history-item">
+                <div>
+                    <span class="history-device">💡 ${h.device_name}</span>
+                    <span class="history-room">in ${h.room_name}</span>
+                </div>
+                <div class="history-time">
+                    ${formatDateTime(h.timestamp)}
+                    <br><small>${h.reasons.join(', ')}</small>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading history:', error);
+        container.innerHTML = '<p class="empty-state">Fehler beim Laden der Historie.</p>';
+    }
+}
+
+// Einstellungen laden
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/lighting/forgotten/settings');
+        const settings = await response.json();
+        
+        document.getElementById('setting-no-motion').value = settings.no_motion_threshold || 30;
+        document.getElementById('setting-min-duration').value = settings.min_on_duration || 15;
+        document.getElementById('setting-daylight').value = settings.daylight_lux_threshold || 200;
+        document.getElementById('setting-sleep-start').value = settings.sleep_hour_start || 23;
+        document.getElementById('setting-sleep-end').value = settings.sleep_hour_end || 6;
+        document.getElementById('setting-interval').value = settings.check_interval || 60;
+        
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+// Einstellungen speichern
+async function saveSettings() {
+    const settings = {
+        no_motion_threshold: parseInt(document.getElementById('setting-no-motion').value),
+        min_on_duration: parseInt(document.getElementById('setting-min-duration').value),
+        daylight_lux_threshold: parseInt(document.getElementById('setting-daylight').value),
+        sleep_hour_start: parseInt(document.getElementById('setting-sleep-start').value),
+        sleep_hour_end: parseInt(document.getElementById('setting-sleep-end').value),
+        check_interval: parseInt(document.getElementById('setting-interval').value)
+    };
+    
+    try {
+        const response = await fetch('/api/lighting/forgotten/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        
+        if (response.ok) {
+            alert('✅ Einstellungen gespeichert!');
+        } else {
+            alert('❌ Fehler beim Speichern');
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        alert('❌ Fehler beim Speichern');
+    }
+}
+
+// Hilfsfunktionen
+function formatTime(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTime(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleString('de-DE', { 
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit' 
+    });
+}
+
+// Auto-Refresh
+function startAutoRefresh() {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    autoRefreshInterval = setInterval(() => {
+        loadStatus();
+    }, 30000); // Alle 30 Sekunden
+}
+
+// Initialisierung
+document.addEventListener('DOMContentLoaded', () => {
+    loadStatus();
+    loadChart(7);
+    startAutoRefresh();
+});
+</script>
+{% endblock %}

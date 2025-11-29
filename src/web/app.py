@@ -364,6 +364,11 @@ class WebInterface:
             """Lüftungsempfehlungen Seite"""
             return render_template('ventilation.html')
 
+        @self.app.route('/lighting')
+        def lighting_page():
+            """Beleuchtungsoptimierung Seite"""
+            return render_template('lighting.html')
+
         # === API Endpunkte ===
 
         @self.app.route('/api/status')
@@ -573,6 +578,142 @@ class WebInterface:
                     'error': str(e),
                     'success': False
                 }), 500
+
+        # === LIGHTING / VERGESSENE LAMPEN API ===
+        
+        @self.app.route('/api/lighting/forgotten/status')
+        def api_lighting_forgotten_status():
+            """API: Status des Vergessene-Lampen-Detektors"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                return jsonify({
+                    'running': detector.running,
+                    'test_mode': detector.test_mode,
+                    'statistics': detector.get_statistics(),
+                    'current_predictions': detector.get_current_predictions()[:10]
+                })
+            except Exception as e:
+                logger.error(f"Error getting forgotten light status: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/start', methods=['POST'])
+        def api_lighting_forgotten_start():
+            """API: Startet den Vergessene-Lampen-Detektor"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                
+                data = request.json or {}
+                test_mode = data.get('test_mode', True)  # Default: Test-Modus
+                
+                detector = get_forgotten_light_detector(config=self.config, test_mode=test_mode)
+                
+                if not detector.running:
+                    detector.start()
+                    
+                return jsonify({
+                    'success': True,
+                    'running': detector.running,
+                    'test_mode': detector.test_mode
+                })
+            except Exception as e:
+                logger.error(f"Error starting forgotten light detector: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/stop', methods=['POST'])
+        def api_lighting_forgotten_stop():
+            """API: Stoppt den Vergessene-Lampen-Detektor"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector()
+                
+                if detector.running:
+                    detector.stop()
+                    
+                return jsonify({
+                    'success': True,
+                    'running': detector.running
+                })
+            except Exception as e:
+                logger.error(f"Error stopping forgotten light detector: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/history')
+        def api_lighting_forgotten_history():
+            """API: Historie der vergessenen Lampen"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                hours = request.args.get('hours', 24, type=int)
+                history = detector.get_predictions_history(hours=hours)
+                
+                return jsonify({
+                    'history': history,
+                    'count': len(history)
+                })
+            except Exception as e:
+                logger.error(f"Error getting forgotten light history: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/chart')
+        def api_lighting_forgotten_chart():
+            """API: Chart-Daten für vergessene Lampen"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                days = request.args.get('days', 7, type=int)
+                chart_data = detector.get_chart_data(days=days)
+                
+                return jsonify(chart_data)
+            except Exception as e:
+                logger.error(f"Error getting forgotten light chart data: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/settings', methods=['GET', 'POST'])
+        def api_lighting_forgotten_settings():
+            """API: Einstellungen für vergessene Lampen"""
+            if request.method == 'GET':
+                # Lade aktuelle Einstellungen
+                settings = self.config.get('forgotten_light', {})
+                return jsonify({
+                    'no_motion_threshold': settings.get('no_motion_threshold', 30),
+                    'sleep_hour_start': settings.get('sleep_hour_start', 23),
+                    'sleep_hour_end': settings.get('sleep_hour_end', 6),
+                    'daylight_lux_threshold': settings.get('daylight_lux_threshold', 200),
+                    'min_on_duration': settings.get('min_on_duration', 15),
+                    'check_interval': settings.get('check_interval', 60)
+                })
+            else:
+                # Speichere Einstellungen
+                try:
+                    data = request.json
+                    
+                    # Update config
+                    if 'forgotten_light' not in self.config:
+                        self.config['forgotten_light'] = {}
+                    
+                    for key in ['no_motion_threshold', 'sleep_hour_start', 'sleep_hour_end',
+                               'daylight_lux_threshold', 'min_on_duration', 'check_interval']:
+                        if key in data:
+                            self.config['forgotten_light'][key] = data[key]
+                    
+                    # Speichere in config.yaml
+                    config_path = Path('config/config.yaml')
+                    if config_path.exists():
+                        import yaml
+                        with open(config_path, 'r') as f:
+                            yaml_config = yaml.safe_load(f) or {}
+                        yaml_config['forgotten_light'] = self.config['forgotten_light']
+                        with open(config_path, 'w') as f:
+                            yaml.dump(yaml_config, f, default_flow_style=False, allow_unicode=True)
+                    
+                    return jsonify({'success': True})
+                except Exception as e:
+                    logger.error(f"Error saving forgotten light settings: {e}")
+                    return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/predictions')
         def api_predictions():
