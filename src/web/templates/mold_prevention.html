@@ -16,6 +16,11 @@
 
 <!-- Übersicht Tab -->
 <div id="overview-tab" class="tab-content active">
+    <!-- Außenbedingungen Header -->
+    <div id="outdoor-header" class="outdoor-header">
+        <div class="outdoor-loading">🌤️ Lade Außenbedingungen...</div>
+    </div>
+    
     <!-- Status-Header -->
     <div id="status-header" class="status-header">
         <div class="status-loading">🍄 Berechne Schimmelrisiko...</div>
@@ -139,6 +144,41 @@
 }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+
+/* Outdoor Header */
+.outdoor-header {
+    background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+    color: white;
+    padding: 1.25rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+}
+.outdoor-header h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1em;
+    color: white;
+}
+.outdoor-info {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    font-size: 1em;
+}
+.outdoor-info .item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.outdoor-info .value {
+    font-weight: bold;
+    font-size: 1.2em;
+}
+.outdoor-loading {
+    text-align: center;
+    padding: 0.75rem;
+    opacity: 0.9;
+}
 
 /* Status Header */
 .status-header {
@@ -279,6 +319,43 @@
     border-radius: 6px;
     font-size: 0.85em;
     color: #E65100;
+}
+
+/* Smart Action Recommendation */
+.smart-action {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.smart-action.ventilate {
+    background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+    color: #1565C0;
+    border: 1px solid #90CAF9;
+}
+.smart-action.heat {
+    background: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%);
+    color: #E65100;
+    border: 1px solid #FFB74D;
+}
+.smart-action.optimal {
+    background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+    color: #2E7D32;
+    border: 1px solid #A5D6A7;
+}
+.smart-action .action-icon {
+    font-size: 1.3em;
+}
+.smart-action .action-text {
+    flex: 1;
+}
+.smart-action .action-reason {
+    font-size: 0.85em;
+    opacity: 0.85;
+    margin-top: 0.2rem;
 }
 
 /* Settings Styles */
@@ -496,6 +573,7 @@
 <script>
 // Globale Daten
 let roomsData = {};
+let outdoorData = { temp: null, humidity: null, dewPoint: null };
 let currentRoom = null;
 let roomChart = null;
 let hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
@@ -536,17 +614,114 @@ function getRiskLevel(humidity, dewPoint, temp) {
     }
 }
 
-// Empfehlung basierend auf Risiko
+// Empfehlung basierend auf Risiko (einfache Version für Badge)
 function getRecommendation(risk, humidity, dewPoint, temp) {
     if (risk.level === 'critical') {
-        return { class: 'critical', icon: '🚨', text: 'Sofort lüften! Schimmelgefahr!' };
+        return { class: 'critical', icon: '🚨', text: 'Sofort handeln! Schimmelgefahr!' };
     } else if (risk.level === 'high') {
-        return { class: 'warning', icon: '⚠️', text: 'Lüften empfohlen - Feuchtigkeit zu hoch' };
+        return { class: 'warning', icon: '⚠️', text: 'Handlung empfohlen' };
     } else if (risk.level === 'medium') {
         return { class: 'warning', icon: '💡', text: 'Feuchtigkeit beobachten' };
     } else {
         return { class: 'good', icon: '✅', text: 'Optimale Bedingungen' };
     }
+}
+
+// Intelligente Empfehlung: Lüften vs. Heizen basierend auf Außenluft
+function getSmartAction(roomTemp, roomHumidity, roomDewPoint, outdoorTemp, outdoorHumidity) {
+    // Keine Empfehlung wenn Daten fehlen
+    if (roomHumidity === null || outdoorTemp === null || outdoorHumidity === null) {
+        return null;
+    }
+    
+    // Außen-Taupunkt berechnen
+    const outdoorDewPoint = calculateDewPoint(outdoorTemp, outdoorHumidity);
+    
+    // Absolute Luftfeuchtigkeit berechnen (g/m³)
+    // Formel: AH = 216.7 * (RH/100 * 6.112 * exp(17.62*T/(243.12+T))) / (273.15 + T)
+    function absoluteHumidity(temp, relHumidity) {
+        const saturationPressure = 6.112 * Math.exp((17.62 * temp) / (243.12 + temp));
+        return 216.7 * (relHumidity / 100 * saturationPressure) / (273.15 + temp);
+    }
+    
+    const roomAH = absoluteHumidity(roomTemp, roomHumidity);
+    const outdoorAH = absoluteHumidity(outdoorTemp, outdoorHumidity);
+    
+    // Entscheidungslogik
+    const humidityDiff = roomAH - outdoorAH;
+    const tempDiff = roomTemp - outdoorTemp;
+    
+    // Wenn Raumfeuchtigkeit unter 55% - alles optimal
+    if (roomHumidity < 55) {
+        return {
+            action: 'optimal',
+            icon: '✅',
+            text: 'Keine Maßnahme nötig',
+            reason: 'Luftfeuchtigkeit im optimalen Bereich'
+        };
+    }
+    
+    // Wenn Außenluft deutlich trockener ist (mind. 2 g/m³ weniger absolute Feuchtigkeit)
+    if (humidityDiff > 2) {
+        // Lüften ist effektiv!
+        const efficiency = Math.min(Math.round(humidityDiff / roomAH * 100), 40);
+        
+        // Prüfe ob es draußen nicht zu kalt ist
+        if (outdoorTemp < 0) {
+            return {
+                action: 'ventilate',
+                icon: '🌬️',
+                text: 'Kurz Stoßlüften (3-5 Min)',
+                reason: `Außenluft ${humidityDiff.toFixed(1)} g/m³ trockener, aber kalt (${outdoorTemp.toFixed(0)}°C)`
+            };
+        } else if (outdoorTemp < 10) {
+            return {
+                action: 'ventilate',
+                icon: '🪟',
+                text: 'Stoßlüften empfohlen (5-10 Min)',
+                reason: `Außenluft ${humidityDiff.toFixed(1)} g/m³ trockener - bis zu ${efficiency}% Reduktion möglich`
+            };
+        } else {
+            return {
+                action: 'ventilate',
+                icon: '🪟',
+                text: 'Lüften sehr effektiv (10-15 Min)',
+                reason: `Außenluft ${humidityDiff.toFixed(1)} g/m³ trockener bei ${outdoorTemp.toFixed(0)}°C`
+            };
+        }
+    }
+    
+    // Wenn Außenluft ähnlich feucht oder feuchter ist
+    if (humidityDiff <= 2 && humidityDiff >= -2) {
+        // Heizen ist besser - wärmere Luft kann mehr Feuchtigkeit aufnehmen
+        if (roomHumidity >= 65) {
+            return {
+                action: 'heat',
+                icon: '🔥',
+                text: 'Heizen statt Lüften',
+                reason: `Außenluft ähnlich feucht - Heizen senkt rel. Luftfeuchtigkeit`
+            };
+        } else {
+            return {
+                action: 'optimal',
+                icon: '💡',
+                text: 'Beobachten',
+                reason: 'Außenluft hat ähnliche Feuchtigkeit'
+            };
+        }
+    }
+    
+    // Außenluft ist feuchter als innen
+    if (humidityDiff < -2) {
+        return {
+            action: 'heat',
+            icon: '🔥',
+            text: 'Nicht lüften - Heizen!',
+            reason: `Außenluft ${Math.abs(humidityDiff).toFixed(1)} g/m³ feuchter - Lüften verschlechtert`
+        };
+    }
+    
+    return null;
 }
 
 // Raum-Icon basierend auf Namen
@@ -575,6 +750,52 @@ function getHumidityClass(humidity) {
     return 'humidity-good';
 }
 
+// Außendaten laden
+async function loadOutdoorData() {
+    try {
+        const response = await fetch('/api/ventilation/sensors');
+        const data = await response.json();
+        
+        if (data.success && data.outdoor) {
+            outdoorData.temp = data.outdoor.temperature;
+            outdoorData.humidity = data.outdoor.humidity;
+            if (outdoorData.temp !== null && outdoorData.humidity !== null) {
+                outdoorData.dewPoint = calculateDewPoint(outdoorData.temp, outdoorData.humidity);
+            }
+        }
+        
+        renderOutdoorHeader();
+    } catch (error) {
+        console.error('Error loading outdoor data:', error);
+    }
+}
+
+// Outdoor-Header rendern
+function renderOutdoorHeader() {
+    const header = document.getElementById('outdoor-header');
+    
+    if (outdoorData.temp === null && outdoorData.humidity === null) {
+        header.innerHTML = `
+            <h3>🌤️ Außenbedingungen</h3>
+            <div class="outdoor-info">
+                <div class="item">⚠️ Keine Außensensoren konfiguriert - <a href="/ventilation" style="color: white; text-decoration: underline;">Einrichten</a></div>
+            </div>
+        `;
+        return;
+    }
+    
+    const dewPoint = outdoorData.dewPoint;
+    
+    header.innerHTML = `
+        <h3>🌤️ Außenbedingungen</h3>
+        <div class="outdoor-info">
+            ${outdoorData.temp !== null ? `<div class="item">🌡️ <span class="value">${outdoorData.temp.toFixed(1)}°C</span></div>` : ''}
+            ${outdoorData.humidity !== null ? `<div class="item">💧 <span class="value">${outdoorData.humidity.toFixed(0)}%</span></div>` : ''}
+            ${dewPoint !== null ? `<div class="item">💦 Taupunkt: <span class="value">${dewPoint.toFixed(1)}°C</span></div>` : ''}
+        </div>
+    `;
+}
+
 // Daten laden
 async function loadOverview() {
     try {
@@ -585,6 +806,16 @@ async function loadOverview() {
             document.getElementById('rooms-grid').innerHTML = '<div class="loading-state">❌ Fehler beim Laden</div>';
             return;
         }
+        
+        // Außendaten speichern
+        if (data.outdoor) {
+            outdoorData.temp = data.outdoor.temperature;
+            outdoorData.humidity = data.outdoor.humidity;
+            if (outdoorData.temp !== null && outdoorData.humidity !== null) {
+                outdoorData.dewPoint = calculateDewPoint(outdoorData.temp, outdoorData.humidity);
+            }
+        }
+        renderOutdoorHeader();
         
         // Gruppiere nach Räumen
         roomsData = {};
@@ -727,6 +958,22 @@ function renderRooms() {
                         ⚠️ Taupunkt nur ${(temp - dewPoint).toFixed(1)}°C unter Raumtemperatur - Kondensation möglich!
                     </div>
                 ` : ''}
+                
+                ${(() => {
+                    const smartAction = getSmartAction(temp, humidity, dewPoint, outdoorData.temp, outdoorData.humidity);
+                    if (smartAction && risk.level !== 'low') {
+                        return `
+                            <div class="smart-action ${smartAction.action}">
+                                <span class="action-icon">${smartAction.icon}</span>
+                                <div class="action-text">
+                                    <strong>${smartAction.text}</strong>
+                                    <div class="action-reason">${smartAction.reason}</div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    return '';
+                })()}
             </div>
         `;
     }).join('');
