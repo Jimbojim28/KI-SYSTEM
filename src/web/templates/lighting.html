@@ -31,8 +31,24 @@
         </div>
         <div class="status-info">
             <span id="mode-badge" class="mode-badge test-mode">🧪 Test-Modus</span>
+            <span id="ml-badge" class="ml-badge ml-inactive">📊 Regelbasiert</span>
             <p class="mode-hint">Im Test-Modus wird nur protokolliert, keine Lampen werden ausgeschaltet.</p>
         </div>
+    </div>
+    
+    <!-- ML-Modell Karte -->
+    <div class="ml-card" id="ml-card">
+        <div class="ml-header">
+            <h4>🤖 Machine Learning Modell</h4>
+            <span id="ml-status-badge" class="ml-status-badge">Nicht trainiert</span>
+        </div>
+        <p class="ml-info">Das ML-Modell lernt aus deinen Nutzungsmustern und erkennt vergessene Lampen intelligenter.</p>
+        <div class="ml-stats" id="ml-stats">
+            <!-- Wird dynamisch gefüllt -->
+        </div>
+        <button id="train-ml-btn" class="btn-train" onclick="trainMLModel()">
+            🎓 Modell trainieren
+        </button>
     </div>
     
     <!-- Statistiken -->
@@ -241,8 +257,14 @@
     transition: all 0.3s;
 }
 .btn-primary:hover { transform: scale(1.05); }
-.status-info { margin-top: 1rem; }
-.mode-badge {
+.status-info { 
+    margin-top: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+.mode-badge, .ml-badge {
     display: inline-block;
     padding: 0.3rem 0.8rem;
     border-radius: 12px;
@@ -251,11 +273,75 @@
 }
 .test-mode { background: rgba(255,255,255,0.2); }
 .active-mode { background: #e74c3c; }
+.ml-badge { margin-left: 0.5rem; }
+.ml-active { background: #27ae60; }
+.ml-inactive { background: rgba(255,255,255,0.15); }
 .mode-hint {
+    width: 100%;
     margin-top: 0.5rem;
     font-size: 0.9em;
     opacity: 0.9;
 }
+
+/* ML Card */
+.ml-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-left: 4px solid #667eea;
+}
+.ml-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+.ml-header h4 { margin: 0; color: #333; }
+.ml-status-badge {
+    padding: 0.3rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 500;
+    background: #f5f5f5;
+    color: #666;
+}
+.ml-status-badge.trained {
+    background: #d4edda;
+    color: #155724;
+}
+.ml-info {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 1rem;
+}
+.ml-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.ml-stat {
+    background: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 6px;
+    text-align: center;
+}
+.ml-stat-value { font-weight: 600; color: #667eea; }
+.ml-stat-label { font-size: 0.75em; color: #888; }
+.btn-train {
+    padding: 0.6rem 1.2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+.btn-train:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+.btn-train:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 /* Stats Grid */
 .stats-grid {
@@ -312,6 +398,18 @@
     margin-bottom: 0.5rem;
     border-left: 4px solid #e74c3c;
 }
+.prediction-item.ml-prediction {
+    border-left-color: #667eea;
+    background: linear-gradient(90deg, rgba(102,126,234,0.05) 0%, #f8f9fa 100%);
+}
+.ml-tag {
+    font-size: 0.7em;
+    background: #667eea;
+    color: white;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-left: 0.3rem;
+}
 .prediction-info { flex: 1; }
 .prediction-device {
     font-weight: 600;
@@ -335,10 +433,18 @@
     font-weight: 600;
     color: #e74c3c;
 }
+.ml-prediction .prediction-confidence {
+    color: #667eea;
+}
 .empty-state {
     color: #888;
     text-align: center;
     padding: 2rem;
+}
+.ml-hint {
+    color: #888;
+    font-size: 0.9em;
+    font-style: italic;
 }
 
 /* Chart */
@@ -564,6 +670,16 @@ async function loadStatus() {
             modeBadge.className = 'mode-badge active-mode';
         }
         
+        // ML-Badge
+        const mlBadge = document.getElementById('ml-badge');
+        if (data.statistics?.ml_enabled) {
+            mlBadge.textContent = '🤖 ML-Vorhersage';
+            mlBadge.className = 'ml-badge ml-active';
+        } else {
+            mlBadge.textContent = '📊 Regelbasiert';
+            mlBadge.className = 'ml-badge ml-inactive';
+        }
+        
         // Statistiken
         const stats = data.statistics || {};
         document.getElementById('stat-today').textContent = stats.predictions_today || 0;
@@ -580,8 +696,82 @@ async function loadStatus() {
         // Aktuelle Vorhersagen
         renderCurrentPredictions(data.current_predictions || []);
         
+        // ML Status laden
+        loadMLStatus();
+        
     } catch (error) {
         console.error('Error loading status:', error);
+    }
+}
+
+// ML Status laden
+async function loadMLStatus() {
+    try {
+        const response = await fetch('/api/lighting/forgotten/ml/status');
+        const data = await response.json();
+        
+        const statusBadge = document.getElementById('ml-status-badge');
+        const statsContainer = document.getElementById('ml-stats');
+        
+        if (data.trained) {
+            statusBadge.textContent = '✅ Trainiert';
+            statusBadge.className = 'ml-status-badge trained';
+            
+            statsContainer.innerHTML = `
+                <div class="ml-stat">
+                    <div class="ml-stat-value">v${data.model_version || '1.0'}</div>
+                    <div class="ml-stat-label">Version</div>
+                </div>
+                <div class="ml-stat">
+                    <div class="ml-stat-value">${data.room_stats || 0}</div>
+                    <div class="ml-stat-label">Räume gelernt</div>
+                </div>
+            `;
+        } else {
+            statusBadge.textContent = 'Nicht trainiert';
+            statusBadge.className = 'ml-status-badge';
+            
+            statsContainer.innerHTML = `
+                <p class="ml-hint">Sammle zuerst Daten durch Aktivieren des Detektors. 
+                Nach einigen Tagen kannst du das Modell trainieren.</p>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading ML status:', error);
+    }
+}
+
+// ML Modell trainieren
+async function trainMLModel() {
+    const btn = document.getElementById('train-ml-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Training läuft...';
+    
+    try {
+        const response = await fetch('/api/lighting/forgotten/ml/train', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ ML-Modell erfolgreich trainiert!\n\n` +
+                  `Samples: ${result.samples}\n` +
+                  `Genauigkeit: ${Math.round(result.accuracy * 100)}%\n` +
+                  `Precision: ${Math.round(result.precision * 100)}%\n` +
+                  `Recall: ${Math.round(result.recall * 100)}%`);
+            loadMLStatus();
+            loadStatus();
+        } else {
+            alert(`❌ Training fehlgeschlagen:\n${result.error}`);
+        }
+    } catch (error) {
+        console.error('Error training ML model:', error);
+        alert('❌ Fehler beim Training');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🎓 Modell trainieren';
     }
 }
 
@@ -595,9 +785,9 @@ function renderCurrentPredictions(predictions) {
     }
     
     container.innerHTML = predictions.map(p => `
-        <div class="prediction-item">
+        <div class="prediction-item ${p.ml_prediction ? 'ml-prediction' : ''}">
             <div class="prediction-info">
-                <div class="prediction-device">💡 ${p.device_name}</div>
+                <div class="prediction-device">💡 ${p.device_name} ${p.ml_prediction ? '<span class="ml-tag">🤖 ML</span>' : ''}</div>
                 <div class="prediction-room">📍 ${p.room_name}</div>
                 <div class="prediction-reasons">${p.reasons.join(' • ')}</div>
             </div>

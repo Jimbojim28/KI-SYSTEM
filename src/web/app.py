@@ -714,6 +714,32 @@ class WebInterface:
                 except Exception as e:
                     logger.error(f"Error saving forgotten light settings: {e}")
                     return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/ml/status')
+        def api_lighting_ml_status():
+            """API: ML-Modell Status"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                return jsonify(detector.get_ml_status())
+            except Exception as e:
+                logger.error(f"Error getting ML status: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/lighting/forgotten/ml/train', methods=['POST'])
+        def api_lighting_ml_train():
+            """API: ML-Modell trainieren"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                result = detector.train_ml_model()
+                
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error training ML model: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
 
         @self.app.route('/api/predictions')
         def api_predictions():

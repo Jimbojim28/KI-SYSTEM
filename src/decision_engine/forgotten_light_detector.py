@@ -30,6 +30,11 @@ class ForgottenLightDetector:
     3. Es ist Schlafenszeit (z.B. nach 23:00)
     4. Tageslicht ist ausreichend (hoher Lux-Wert)
     5. Lampe ist länger als X Minuten an ohne Interaktion
+    
+    Mit aktiviertem ML-Modell:
+    - Lernt aus historischen Mustern
+    - Erkennt raum-spezifische Muster
+    - Verbessert sich mit mehr Daten
     """
     
     def __init__(self, db: Database = None, config: dict = None, test_mode: bool = True):
@@ -48,22 +53,48 @@ class ForgottenLightDetector:
         self.daylight_lux_threshold = settings.get('daylight_lux_threshold', 200)  # Lux für "hell genug"
         self.min_on_duration_minutes = settings.get('min_on_duration', 15)  # Min. an bevor "vergessen"
         self.check_interval = settings.get('check_interval', 60)  # Prüf-Intervall in Sekunden
+        self.use_ml = settings.get('use_ml', True)  # ML-Modell nutzen wenn verfügbar
         
         # Tracking
         self.light_on_times: Dict[str, datetime] = {}  # device_id -> wann eingeschaltet
         self.last_motion_times: Dict[str, datetime] = {}  # room -> letzte Bewegung
         self.predictions: List[Dict] = []  # Aktuelle Vorhersagen
         
+        # Statistiken (vor ML-Modell initialisieren!)
+        self.stats = {
+            'total_predictions': 0,
+            'predictions_today': 0,
+            'last_check': None,
+            'ml_enabled': False
+        }
+        
         # Platform für Geräte-Abfrage
         self.platform = None
         self._init_platform()
         
-        # Statistiken
-        self.stats = {
-            'total_predictions': 0,
-            'predictions_today': 0,
-            'last_check': None
-        }
+        # ML-Modell
+        self.ml_model = None
+        self._init_ml_model()
+        
+    def _init_ml_model(self):
+        """Initialisiert das ML-Modell wenn verfügbar"""
+        if not self.use_ml:
+            return
+            
+        try:
+            from src.models.forgotten_light_model import ForgottenLightModel
+            self.ml_model = ForgottenLightModel()
+            
+            # Versuche gespeichertes Modell zu laden
+            if self.ml_model.load():
+                logger.info("ML model loaded for forgotten light detection")
+                self.stats['ml_enabled'] = True
+            else:
+                logger.info("No trained ML model found, using rule-based detection")
+                self.stats['ml_enabled'] = False
+        except Exception as e:
+            logger.warning(f"Could not initialize ML model: {e}")
+            self.ml_model = None
         
     def _init_platform(self):
         """Initialisiert die Platform (Homey/HA)"""
@@ -167,25 +198,33 @@ class ForgottenLightDetector:
                     on_duration = now - self.light_on_times[device_id]
                     on_minutes = on_duration.total_seconds() / 60
                     
-                    # Prüfe ob "vergessen"
-                    reasons = self._check_forgotten_reasons(
+                    # Minuten seit letzter Bewegung im Raum
+                    last_motion = self.last_motion_times.get(room_name)
+                    minutes_since_motion = 0
+                    if last_motion:
+                        minutes_since_motion = (now - last_motion).total_seconds() / 60
+                    
+                    # ML-Vorhersage oder Regelbasiert
+                    is_forgotten, confidence, reasons = self._predict_forgotten(
                         device_id=device_id,
                         device_name=device_name,
                         room_name=room_name,
                         on_minutes=on_minutes,
+                        minutes_since_motion=minutes_since_motion,
                         presence_home=presence_home,
                         outdoor_light=outdoor_light,
                         now=now
                     )
                     
-                    if reasons:
+                    if is_forgotten and confidence >= 0.5:
                         self._record_forgotten_prediction(
                             device_id=device_id,
                             device_name=device_name,
                             room_name=room_name,
                             on_minutes=on_minutes,
                             reasons=reasons,
-                            confidence=self._calculate_confidence(reasons)
+                            confidence=confidence,
+                            ml_prediction=self.ml_model is not None and self.ml_model.is_trained
                         )
                 else:
                     # Lampe ist aus - entferne aus Tracking
@@ -194,6 +233,66 @@ class ForgottenLightDetector:
                         
         except Exception as e:
             logger.error(f"Error checking forgotten lights: {e}")
+    
+    def _predict_forgotten(self, device_id: str, device_name: str, room_name: str,
+                           on_minutes: float, minutes_since_motion: float,
+                           presence_home: bool, outdoor_light: float, 
+                           now: datetime) -> Tuple[bool, float, List[str]]:
+        """
+        Vorhersage ob Lampe vergessen wurde.
+        Nutzt ML-Modell wenn verfügbar, sonst Regeln.
+        
+        Returns:
+            (is_forgotten, confidence, reasons)
+        """
+        # Mindest-Einschaltdauer
+        if on_minutes < self.min_on_duration_minutes:
+            return False, 0.0, []
+        
+        # ML-Vorhersage wenn Modell verfügbar
+        if self.ml_model and self.ml_model.is_trained:
+            conditions = {
+                'hour_of_day': now.hour,
+                'day_of_week': now.weekday(),
+                'is_weekend': 1 if now.weekday() >= 5 else 0,
+                'on_duration_minutes': on_minutes,
+                'minutes_since_motion': minutes_since_motion,
+                'presence_home': 1 if presence_home else 0,
+                'outdoor_light': outdoor_light or 50,
+                'room_name': room_name
+            }
+            
+            is_forgotten, confidence = self.ml_model.predict(conditions)
+            
+            # Generiere Erklärungen für UI
+            reasons = []
+            if is_forgotten:
+                reasons.append("🤖 ML-Vorhersage")
+                if minutes_since_motion > 30:
+                    reasons.append(f"Keine Bewegung seit {int(minutes_since_motion)} Min.")
+                if not presence_home:
+                    reasons.append("Niemand zu Hause")
+                if on_minutes > 60:
+                    reasons.append(f"Seit {int(on_minutes)} Min. an")
+            
+            return is_forgotten, confidence, reasons
+        
+        # Fallback: Regelbasiert
+        reasons = self._check_forgotten_reasons(
+            device_id=device_id,
+            device_name=device_name,
+            room_name=room_name,
+            on_minutes=on_minutes,
+            presence_home=presence_home,
+            outdoor_light=outdoor_light,
+            now=now
+        )
+        
+        if reasons:
+            confidence = self._calculate_confidence(reasons)
+            return True, confidence, reasons
+        
+        return False, 0.0, []
     
     def _check_forgotten_reasons(self, device_id: str, device_name: str, room_name: str,
                                   on_minutes: float, presence_home: bool, 
@@ -262,7 +361,8 @@ class ForgottenLightDetector:
     
     def _record_forgotten_prediction(self, device_id: str, device_name: str, 
                                       room_name: str, on_minutes: float,
-                                      reasons: List[str], confidence: float):
+                                      reasons: List[str], confidence: float,
+                                      ml_prediction: bool = False):
         """Speichert Vorhersage in DB"""
         now = datetime.now()
         
@@ -283,7 +383,8 @@ class ForgottenLightDetector:
             'reasons': reasons,
             'confidence': round(confidence, 2),
             'would_turn_off': True,
-            'test_mode': self.test_mode
+            'test_mode': self.test_mode,
+            'ml_prediction': ml_prediction
         }
         
         # In Memory speichern
@@ -616,6 +717,43 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.error(f"Error getting chart data: {e}")
             return {'data_points': [], 'by_room': [], 'heatmap': []}
+    
+    def train_ml_model(self) -> Dict:
+        """
+        Trainiert das ML-Modell mit gesammelten Daten.
+        Kann manuell oder automatisch aufgerufen werden.
+        """
+        try:
+            from src.models.forgotten_light_model import ForgottenLightModel
+            
+            if self.ml_model is None:
+                self.ml_model = ForgottenLightModel()
+            
+            # Trainiere mit Daten aus DB
+            result = self.ml_model.train(db=self.db)
+            
+            if result.get('success'):
+                # Speichere Modell
+                self.ml_model.save()
+                self.stats['ml_enabled'] = True
+                logger.info(f"ML model trained successfully: {result}")
+            else:
+                logger.warning(f"ML model training failed: {result}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error training ML model: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def get_ml_status(self) -> Dict:
+        """Gibt Status des ML-Modells zurück"""
+        return {
+            'enabled': self.ml_model is not None,
+            'trained': self.ml_model.is_trained if self.ml_model else False,
+            'model_version': self.ml_model.model_version if self.ml_model else None,
+            'room_stats': len(self.ml_model.room_stats) if self.ml_model else 0
+        }
 
 
 # Globale Instanz
