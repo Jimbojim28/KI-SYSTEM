@@ -68,6 +68,9 @@ class ForgottenLightDetector:
             'ml_enabled': False
         }
         
+        # Datenbank-Tabelle sicherstellen
+        self._ensure_table()
+        
         # Platform für Geräte-Abfrage
         self.platform = None
         self._init_platform()
@@ -75,6 +78,30 @@ class ForgottenLightDetector:
         # ML-Modell
         self.ml_model = None
         self._init_ml_model()
+    
+    def _ensure_table(self):
+        """Stellt sicher, dass die Datenbank-Tabelle existiert"""
+        try:
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS forgotten_light_predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    device_id TEXT NOT NULL,
+                    device_name TEXT,
+                    room_name TEXT,
+                    on_duration_minutes REAL,
+                    confidence REAL,
+                    reasons TEXT,
+                    ml_prediction REAL,
+                    action_taken TEXT DEFAULT 'logged'
+                )
+            """)
+            conn.commit()
+            logger.debug("Ensured forgotten_light_predictions table exists")
+        except Exception as e:
+            logger.error(f"Error creating forgotten_light_predictions table: {e}")
         
     def _init_ml_model(self):
         """Initialisiert das ML-Modell wenn verfügbar"""
