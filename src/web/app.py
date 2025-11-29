@@ -2590,16 +2590,36 @@ class WebInterface:
                             data['humidity'].append({'x': ts, 'y': round(row['humidity'], 1)})
                 
                 # Hole CO2-Daten aus sensor_data (falls vorhanden)
-                # Device-Name enthält oft den Raumnamen (z.B. "Temperatur-Wohnzimmer")
+                # Mapping: CO2-Sensor-Namen zu Räumen (da manche Sensoren keine Raum-Info haben)
+                co2_sensor_mapping = {
+                    'Schlafzimmer': ['Meter Pro (CO2-Monitor) 29'],
+                    'Wohnzimmer': ['Temperatur-Wohnzimmer', 'Meter Pro 3D'],
+                }
+                
+                # Suche nach Raumnamen oder bekannten Sensoren
+                co2_search_patterns = [
+                    f'%"device_name": "%{base_room_name}%"%',
+                    f'%"room": "%{base_room_name}%"%'
+                ]
+                
+                # Füge bekannte Sensoren für diesen Raum hinzu
+                if base_room_name in co2_sensor_mapping:
+                    for sensor_name in co2_sensor_mapping[base_room_name]:
+                        co2_search_patterns.append(f'%"device_name": "{sensor_name}"%')
+                
                 try:
-                    co2_rows = self.db.execute("""
+                    # Baue dynamische OR-Abfrage
+                    where_clauses = ' OR '.join(['metadata LIKE ?' for _ in co2_search_patterns])
+                    query = f"""
                         SELECT timestamp, value, metadata FROM sensor_data
                         WHERE sensor_type = 'co2' 
-                        AND (metadata LIKE ? OR metadata LIKE ?)
+                        AND ({where_clauses})
                         AND datetime(timestamp) >= datetime(?)
                         ORDER BY timestamp ASC
                         LIMIT 2000
-                    """, (f'%"device_name": "%{base_room_name}%"%', f'%"room": "%{base_room_name}%"%', cutoff_str))
+                    """
+                    params = co2_search_patterns + [cutoff_str]
+                    co2_rows = self.db.execute(query, params)
                     
                     if co2_rows:
                         for row in co2_rows:
