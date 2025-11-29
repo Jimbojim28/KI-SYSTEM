@@ -2534,10 +2534,35 @@ class WebInterface:
                     except Exception as e:
                         logger.warning(f"Could not load Home Assistant sensors: {e}")
 
+                # Außensensor-Daten ermitteln
+                outdoor = None
+                outdoor_temp = None
+                outdoor_humidity = None
+                
+                # Suche nach Sensoren mit "Außen" oder "Outdoor" im Namen
+                for s in sensors:
+                    if s['current_value'] is None:
+                        continue
+                    name_lower = s['name'].lower()
+                    if 'außen' in name_lower or 'outdoor' in name_lower or 'aussen' in name_lower:
+                        if s['type'] == 'temperature' and outdoor_temp is None:
+                            # Prüfe ob realistischer Außenwert (nicht >50°C)
+                            if s['current_value'] < 50:
+                                outdoor_temp = s['current_value']
+                        elif s['type'] == 'humidity' and outdoor_humidity is None:
+                            outdoor_humidity = s['current_value']
+                
+                if outdoor_temp is not None or outdoor_humidity is not None:
+                    outdoor = {
+                        'temperature': outdoor_temp,
+                        'humidity': outdoor_humidity
+                    }
+
                 return jsonify({
                     'success': True,
                     'sensors': sensors,
-                    'count': len(sensors)
+                    'count': len(sensors),
+                    'outdoor': outdoor
                 })
 
             except Exception as e:
