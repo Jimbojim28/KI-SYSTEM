@@ -154,5 +154,10 @@
     "f1c70840-49ce-417b-9e6d-71143b717df6": "88d3fb3c-aca0-47e2-ae3b-9016f31eeae9",
     "f35f92a1-fc3a-456e-8d0d-67ddb6118a55": "ebc1bb3e-f084-4903-8117-a885d913d1a7"
   },
-  "hidden": []
+  "hidden": [
+    "Garage",
+    "Heim",
+    "Nachtlicht",
+    "Wohn/Haustür"
+  ]
 }
