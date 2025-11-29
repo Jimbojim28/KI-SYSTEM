@@ -2,74 +2,74 @@
   "rooms": [
     {
       "id": "2afb1924-dfa4-4440-a73f-28c84c6f5f66",
-      "name": "Wohn/Haust\u00fcr",
-      "icon": "\ud83c\udfe0",
+      "name": "Wohn/Haustür",
+      "icon": "🏠",
       "type": "homey"
     },
     {
       "id": "386addb0-b660-4bf1-8e8a-3c16ea103947",
       "name": "Wohnzimmer",
-      "icon": "\ud83d\udecb\ufe0f",
+      "icon": "🛋️",
       "type": "homey"
     },
     {
       "id": "50771c58-0809-4283-ba79-784dfc25a5ca",
       "name": "Heim",
-      "icon": "\ud83c\udfe0",
+      "icon": "🏠",
       "type": "homey"
     },
     {
       "id": "6406529f-91c0-4a23-b76d-02e2d3eb81d6",
-      "name": "K\u00fcche",
-      "icon": "\ud83c\udf73",
+      "name": "Küche",
+      "icon": "🍳",
       "type": "homey"
     },
     {
       "id": "71949a08-629d-4972-ace5-cbf283fd3719",
       "name": "Nachtlicht",
-      "icon": "\ud83d\udca1",
+      "icon": "💡",
       "type": "homey"
     },
     {
       "id": "78318d11-1874-4ec6-a6fa-6e8024d9d67f",
       "name": "Keller",
-      "icon": "\ud83d\udeaa",
+      "icon": "🚪",
       "type": "homey"
     },
     {
       "id": "88d3fb3c-aca0-47e2-ae3b-9016f31eeae9",
       "name": "Schlafzimmer (Doppelbett)",
-      "icon": "\ud83d\udecf\ufe0f",
+      "icon": "🛏️",
       "type": "homey"
     },
     {
       "id": "8db9bdc0-9d13-4729-a962-c436a36347aa",
       "name": "Arbeitszimmer",
-      "icon": "\ud83c\udfae",
+      "icon": "🎮",
       "type": "homey"
     },
     {
       "id": "c205cd59-9606-4b3b-8e67-adda57916740",
       "name": "Abstellraum",
-      "icon": "\ud83c\udfe0",
+      "icon": "🏠",
       "type": "homey"
     },
     {
       "id": "cb3adf56-d58a-4bf0-925a-f3020f99b01e",
       "name": "Flur",
-      "icon": "\ud83d\udeaa",
+      "icon": "🚪",
       "type": "homey"
     },
     {
       "id": "da467f46-491c-4389-8f28-a60e139e36db",
       "name": "Garage",
-      "icon": "\ud83c\udfe0",
+      "icon": "🏠",
       "type": "homey"
     },
     {
       "id": "ebc1bb3e-f084-4903-8117-a885d913d1a7",
       "name": "Badezimmer",
-      "icon": "\ud83d\udebf",
+      "icon": "🚿",
       "type": "homey"
     }
   ],
@@ -153,5 +153,6 @@
     "e99477a5-38c8-4890-af82-af50c866459f": "386addb0-b660-4bf1-8e8a-3c16ea103947",
     "f1c70840-49ce-417b-9e6d-71143b717df6": "88d3fb3c-aca0-47e2-ae3b-9016f31eeae9",
     "f35f92a1-fc3a-456e-8d0d-67ddb6118a55": "ebc1bb3e-f084-4903-8117-a885d913d1a7"
-  }
+  },
+  "hidden": []
 }

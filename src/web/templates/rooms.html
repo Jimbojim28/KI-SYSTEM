@@ -754,13 +754,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Alle Daten laden
 async function loadAllData() {
     try {
-        const [sensorsRes, mappingRes] = await Promise.all([
+        const [sensorsRes, mappingRes, hiddenRes] = await Promise.all([
             fetch('/api/ventilation/sensors'),
-            fetch('/api/ventilation/sensor-mapping')
+            fetch('/api/ventilation/sensor-mapping'),
+            fetch('/api/rooms/hidden')
         ]);
         
         const sensorsData = await sensorsRes.json();
         const mappingData = await mappingRes.json();
+        const hiddenData = await hiddenRes.json();
         
         if (sensorsData.success) {
             allSensors = sensorsData.sensors;
@@ -771,6 +773,11 @@ async function loadAllData() {
             outdoorSensors = mappingData.outdoor_sensors || {};
         }
         
+        // Versteckte Räume vom Server laden (zentrale Einstellung)
+        if (hiddenData.success) {
+            hiddenRooms = hiddenData.hidden || [];
+        }
+        
         // Räume aus Sensoren extrahieren
         const roomSet = new Set();
         allSensors.forEach(s => {
@@ -779,9 +786,6 @@ async function loadAllData() {
             }
         });
         allRooms = Array.from(roomSet).sort();
-        
-        // Versteckte Räume aus localStorage
-        hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
         
     } catch (error) {
         console.error('Error loading data:', error);
@@ -1046,21 +1050,29 @@ function loadVisibility() {
     }).join('');
 }
 
-// Raumsichtbarkeit umschalten
-function toggleRoomVisibility(room, isVisible) {
-    if (isVisible) {
-        hiddenRooms = hiddenRooms.filter(r => r !== room);
-    } else {
-        if (!hiddenRooms.includes(room)) {
-            hiddenRooms.push(room);
+// Raumsichtbarkeit umschalten - Speichert auf Server (zentrale Einstellung)
+async function toggleRoomVisibility(room, isVisible) {
+    try {
+        const action = isVisible ? 'show' : 'hide';
+        const response = await fetch('/api/rooms/hidden', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, room })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            hiddenRooms = data.hidden;
+            renderOverview();
+            loadVisibility();
+            showNotification(isVisible ? `${room} wird angezeigt` : `${room} ausgeblendet`, 'success');
+        } else {
+            showNotification('Fehler beim Speichern', 'error');
         }
+    } catch (error) {
+        console.error('Error toggling room visibility:', error);
+        showNotification('Fehler beim Speichern', 'error');
     }
-    
-    localStorage.setItem('hiddenRooms', JSON.stringify(hiddenRooms));
-    renderOverview();
-    loadVisibility();
-    
-    showNotification(isVisible ? `${room} wird angezeigt` : `${room} ausgeblendet`, 'success');
 }
 
 // Raum Modal öffnen
@@ -1249,13 +1261,20 @@ async function resetAllSettings() {
     }
     
     try {
+        // Sensor-Mapping zurücksetzen
         await fetch('/api/ventilation/sensor-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ rooms: {}, outdoor_sensors: {} })
         });
         
-        localStorage.removeItem('hiddenRooms');
+        // Versteckte Räume auf Server zurücksetzen
+        await fetch('/api/rooms/hidden', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set', rooms: [] })
+        });
+        
         hiddenRooms = [];
         sensorMapping = {};
         outdoorSensors = {};

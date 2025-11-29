@@ -576,7 +576,21 @@ let roomsData = {};
 let outdoorData = { temp: null, humidity: null, dewPoint: null };
 let currentRoom = null;
 let roomChart = null;
-let hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
+let hiddenRooms = [];
+
+// Versteckte Räume vom Server laden (zentrale Einstellung aus /rooms)
+async function loadHiddenRooms() {
+    try {
+        const response = await fetch('/api/rooms/hidden');
+        const data = await response.json();
+        if (data.success) {
+            hiddenRooms = data.hidden || [];
+        }
+    } catch (error) {
+        console.error('Error loading hidden rooms:', error);
+        hiddenRooms = [];
+    }
+}
 
 // Tab-Wechsel
 function switchTab(tab) {
@@ -798,6 +812,9 @@ function renderOutdoorHeader() {
 
 // Daten laden
 async function loadOverview() {
+    // Erst versteckte Räume vom Server laden
+    await loadHiddenRooms();
+    
     try {
         // Lade Sensoren und Sensor-Mapping parallel
         const [sensorsResponse, mappingResponse] = await Promise.all([

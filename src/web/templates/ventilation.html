@@ -554,7 +554,21 @@
 let roomsData = {};
 let outdoorConfig = {};
 let allSensors = [];
-let hiddenRooms = JSON.parse(localStorage.getItem('hiddenRooms') || '[]');
+let hiddenRooms = [];
+
+// Versteckte Räume vom Server laden (zentrale Einstellung aus /rooms)
+async function loadHiddenRooms() {
+    try {
+        const response = await fetch('/api/rooms/hidden');
+        const data = await response.json();
+        if (data.success) {
+            hiddenRooms = data.hidden || [];
+        }
+    } catch (error) {
+        console.error('Error loading hidden rooms:', error);
+        hiddenRooms = [];
+    }
+}
 
 // Tab-Wechsel
 function switchTab(tab) {
@@ -571,6 +585,9 @@ function switchTab(tab) {
 
 // Daten laden und Übersicht anzeigen
 async function loadOverview() {
+    // Erst versteckte Räume laden
+    await loadHiddenRooms();
+    
     try {
         const response = await fetch('/api/ventilation/sensors');
         const data = await response.json();
@@ -756,25 +773,47 @@ function getCO2Class(co2) {
     return 'co2-critical';
 }
 
-// Raum ausblenden
-function hideRoom(roomName) {
-    if (!hiddenRooms.includes(roomName)) {
-        hiddenRooms.push(roomName);
-        localStorage.setItem('hiddenRooms', JSON.stringify(hiddenRooms));
-        displayRooms();
-        displayOutdoorHeader();
-        showToast(`${roomName} ausgeblendet`, 'info');
+// Raum ausblenden - Speichert zentral auf Server (gilt für alle Seiten)
+async function hideRoom(roomName) {
+    try {
+        const response = await fetch('/api/rooms/hidden', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'hide', room: roomName })
+        });
+        const data = await response.json();
+        if (data.success) {
+            hiddenRooms = data.hidden;
+            displayRooms();
+            displayOutdoorHeader();
+            showToast(`${roomName} ausgeblendet (gilt für alle Seiten)`, 'info');
+        }
+    } catch (error) {
+        console.error('Error hiding room:', error);
+        showToast('Fehler beim Ausblenden', 'error');
     }
 }
 
-// Raum wieder einblenden
-function showRoom(roomName) {
-    hiddenRooms = hiddenRooms.filter(r => r !== roomName);
-    localStorage.setItem('hiddenRooms', JSON.stringify(hiddenRooms));
-    displayRooms();
-    displayOutdoorHeader();
-    loadSettings();
-    showToast(`${roomName} wieder eingeblendet`, 'success');
+// Raum wieder einblenden - Speichert zentral auf Server
+async function showRoom(roomName) {
+    try {
+        const response = await fetch('/api/rooms/hidden', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'show', room: roomName })
+        });
+        const data = await response.json();
+        if (data.success) {
+            hiddenRooms = data.hidden;
+            displayRooms();
+            displayOutdoorHeader();
+            loadSettings();
+            showToast(`${roomName} wieder eingeblendet`, 'success');
+        }
+    } catch (error) {
+        console.error('Error showing room:', error);
+        showToast('Fehler beim Einblenden', 'error');
+    }
 }
 
 // Ausgeblendete Räume anzeigen

@@ -3582,6 +3582,85 @@ class WebInterface:
                 logger.error(f"Error deleting room: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/rooms/hidden', methods=['GET', 'POST'])
+        def api_rooms_hidden():
+            """API: Versteckte Räume verwalten - zentrale Einstellung für alle Seiten"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'rooms': [], 'assignments': {}, 'hidden': []}
+                
+                # Sicherstellen dass 'hidden' existiert
+                if 'hidden' not in rooms_data:
+                    rooms_data['hidden'] = []
+                
+                if request.method == 'GET':
+                    return jsonify({
+                        'success': True,
+                        'hidden': rooms_data.get('hidden', [])
+                    })
+                
+                elif request.method == 'POST':
+                    data = request.json
+                    action = data.get('action')  # 'hide', 'show', 'set'
+                    room = data.get('room')
+                    rooms = data.get('rooms', [])  # für 'set'
+                    
+                    if action == 'hide' and room:
+                        if room not in rooms_data['hidden']:
+                            rooms_data['hidden'].append(room)
+                        logger.info(f"Room hidden: {room}")
+                    
+                    elif action == 'show' and room:
+                        rooms_data['hidden'] = [r for r in rooms_data['hidden'] if r != room]
+                        logger.info(f"Room shown: {room}")
+                    
+                    elif action == 'set':
+                        rooms_data['hidden'] = rooms
+                        logger.info(f"Hidden rooms set: {rooms}")
+                    
+                    # Speichern
+                    with open(rooms_file, 'w') as f:
+                        json.dump(rooms_data, f, indent=2, ensure_ascii=False)
+                    
+                    return jsonify({
+                        'success': True,
+                        'hidden': rooms_data['hidden']
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error managing hidden rooms: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/settings', methods=['GET'])
+        def api_rooms_settings():
+            """API: Alle Raum-Einstellungen für Frontend - zentrale Datenquelle"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'rooms': [], 'assignments': {}, 'hidden': []}
+                
+                return jsonify({
+                    'success': True,
+                    'rooms': rooms_data.get('rooms', []),
+                    'hidden': rooms_data.get('hidden', []),
+                    'assignments': rooms_data.get('assignments', {})
+                })
+                
+            except Exception as e:
+                logger.error(f"Error getting room settings: {e}")
+                return jsonify({'error': str(e)}), 500
+
         # === Analytics API Endpunkte ===
 
         @self.app.route('/api/analytics/temperature')
