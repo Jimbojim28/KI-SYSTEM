@@ -30,6 +30,8 @@ function initTabs() {
                 loadMLStatus();
             } else if (targetTab === 'system') {
                 loadVersion();
+            } else if (targetTab === 'notifications') {
+                loadNotificationConfig();
             }
         });
     });
@@ -1509,10 +1511,15 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (savedTab === 'system') {
         loadVersion();
         checkForUpdates();
+    } else if (savedTab === 'notifications') {
+        loadNotificationConfig();
     }
     
     // Init connection tab event listeners
     initConnectionTab();
+    
+    // Init notifications tab event listeners
+    initNotificationsTab();
 });
 
 // ===== CONNECTION TAB FUNCTIONS =====
@@ -2207,3 +2214,303 @@ async function saveDataCollectionConfig() {
     }
 }
 
+
+// ===== NOTIFICATIONS TAB FUNCTIONS =====
+
+// Globale Funktion für Prompt-Vorschläge
+function setPrompt(text) {
+    const textarea = document.getElementById('chatgpt-custom-prompt');
+    if (textarea) {
+        if (text === '') {
+            textarea.value = '';
+        } else if (textarea.value.trim() === '') {
+            textarea.value = text;
+        } else {
+            // Füge zum bestehenden Text hinzu
+            textarea.value = textarea.value.trim() + ' ' + text;
+        }
+        textarea.focus();
+    }
+}
+
+function initNotificationsTab() {
+    // Test Pushover Button
+    document.getElementById('test-pushover')?.addEventListener('click', testPushover);
+    
+    // Test ChatGPT Button
+    document.getElementById('test-chatgpt')?.addEventListener('click', testChatGPT);
+    
+    // Preview Text Button
+    document.getElementById('preview-text')?.addEventListener('click', previewText);
+    
+    // Save Notifications Button
+    document.getElementById('save-notifications')?.addEventListener('click', saveNotificationConfig);
+}
+
+async function loadNotificationConfig() {
+    try {
+        const response = await fetch('/api/notifications/config');
+        const data = await response.json();
+        
+        if (data.success && data.config) {
+            const config = data.config;
+            
+            // Pushover
+            document.getElementById('pushover-enabled').checked = config.pushover?.enabled || false;
+            if (config.pushover?.has_credentials) {
+                document.getElementById('pushover-api-token').value = '***';
+                document.getElementById('pushover-user-key').value = '***';
+            }
+            
+            // OpenAI
+            document.getElementById('openai-enabled').checked = config.openai?.enabled || false;
+            if (config.openai?.has_credentials) {
+                document.getElementById('openai-api-key').value = '***';
+            }
+            document.getElementById('openai-model').value = config.openai?.model || 'gpt-4o-mini';
+            document.getElementById('chatgpt-style').value = config.chatgpt_style || 'freundlich';
+            document.getElementById('chatgpt-max-length').value = config.max_text_length || 100;
+            document.getElementById('chatgpt-custom-prompt').value = config.custom_prompt || '';
+            
+            // Einstellungen
+            document.getElementById('default-priority').value = config.default_priority || 0;
+            document.getElementById('quiet-hours-start').value = config.quiet_hours_start || '22:00';
+            document.getElementById('quiet-hours-end').value = config.quiet_hours_end || '07:00';
+            
+            // Events
+            if (config.events) {
+                document.getElementById('event-window-open').checked = config.events.window_open_long?.enabled ?? true;
+                document.getElementById('event-window-threshold').value = config.events.window_open_long?.threshold_minutes || 15;
+                
+                document.getElementById('event-temperature').checked = config.events.temperature_alert?.enabled ?? true;
+                document.getElementById('event-temp-deviation').value = config.events.temperature_alert?.threshold_deviation || 3;
+                
+                document.getElementById('event-humidity').checked = config.events.humidity_alert?.enabled ?? true;
+                
+                document.getElementById('event-co2').checked = config.events.co2_alert?.enabled ?? true;
+                document.getElementById('event-co2-threshold').value = config.events.co2_alert?.threshold_ppm || 1200;
+                
+                document.getElementById('event-mold-risk').checked = config.events.mold_risk?.enabled ?? true;
+                document.getElementById('event-ventilation').checked = config.events.ventilation_complete?.enabled ?? false;
+                document.getElementById('event-morning').checked = config.events.morning_summary?.enabled ?? false;
+                document.getElementById('event-morning-time').value = config.events.morning_summary?.time || '07:00';
+            }
+            
+            // Test Verbindung
+            testNotificationConnection();
+        }
+    } catch (error) {
+        console.error('Error loading notification config:', error);
+    }
+}
+
+async function testNotificationConnection() {
+    try {
+        const response = await fetch('/api/notifications/test-connection');
+        const data = await response.json();
+        
+        // Pushover Status
+        const pushoverStatus = document.getElementById('pushover-status');
+        if (data.pushover?.configured) {
+            if (data.pushover.working) {
+                pushoverStatus.innerHTML = '✅ Pushover verbunden';
+                pushoverStatus.style.background = '#d1fae5';
+                pushoverStatus.style.color = '#065f46';
+            } else {
+                pushoverStatus.innerHTML = '⚠️ Pushover konfiguriert, aber Verbindung fehlgeschlagen';
+                pushoverStatus.style.background = '#fef3c7';
+                pushoverStatus.style.color = '#92400e';
+            }
+            pushoverStatus.style.display = 'block';
+        }
+        
+        // OpenAI Status
+        const openaiStatus = document.getElementById('openai-status');
+        if (data.openai?.configured) {
+            if (data.openai.working) {
+                openaiStatus.innerHTML = '✅ OpenAI API verbunden';
+                openaiStatus.style.background = '#d1fae5';
+                openaiStatus.style.color = '#065f46';
+            } else {
+                openaiStatus.innerHTML = '⚠️ API Key konfiguriert, aber Verbindung fehlgeschlagen';
+                openaiStatus.style.background = '#fef3c7';
+                openaiStatus.style.color = '#92400e';
+            }
+            openaiStatus.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error testing connection:', error);
+    }
+}
+
+async function testPushover() {
+    const resultEl = document.getElementById('notification-result');
+    resultEl.textContent = 'Sende Test-Benachrichtigung...';
+    resultEl.className = 'action-result loading';
+    resultEl.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/notifications/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'simple' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            resultEl.textContent = '✅ Test-Benachrichtigung gesendet! Prüfe dein Smartphone.';
+            resultEl.className = 'action-result success';
+        } else {
+            resultEl.textContent = `❌ Fehler: ${data.error}`;
+            resultEl.className = 'action-result error';
+        }
+    } catch (error) {
+        resultEl.textContent = `❌ Fehler: ${error.message}`;
+        resultEl.className = 'action-result error';
+    }
+}
+
+async function testChatGPT() {
+    const resultEl = document.getElementById('notification-result');
+    resultEl.textContent = 'Sende ChatGPT-Benachrichtigung...';
+    resultEl.className = 'action-result loading';
+    resultEl.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/notifications/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'chatgpt' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            resultEl.textContent = '✅ ChatGPT-Benachrichtigung gesendet! Prüfe den Text auf deinem Smartphone.';
+            resultEl.className = 'action-result success';
+        } else {
+            resultEl.textContent = `❌ Fehler: ${data.error}`;
+            resultEl.className = 'action-result error';
+        }
+    } catch (error) {
+        resultEl.textContent = `❌ Fehler: ${error.message}`;
+        resultEl.className = 'action-result error';
+    }
+}
+
+async function previewText() {
+    const container = document.getElementById('text-preview-container');
+    const content = document.getElementById('preview-text-content');
+    const source = document.getElementById('preview-source');
+    
+    content.textContent = 'Generiere Text...';
+    container.style.display = 'block';
+    
+    try {
+        const style = document.getElementById('chatgpt-style').value;
+        
+        const response = await fetch('/api/notifications/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event_type: 'morning_summary',
+                context: {
+                    avg_indoor_temp: 21.5,
+                    outdoor_temp: 8.3,
+                    weather: 'bewölkt mit Auflockerungen',
+                    open_windows: 0
+                },
+                style: style
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            content.textContent = data.text;
+            source.textContent = data.used_chatgpt ? '🤖 Generiert von ChatGPT' : '📝 Standard-Text (ChatGPT nicht aktiv)';
+        } else {
+            content.textContent = `Fehler: ${data.error}`;
+        }
+    } catch (error) {
+        content.textContent = `Fehler: ${error.message}`;
+    }
+}
+
+async function saveNotificationConfig() {
+    const resultEl = document.getElementById('notification-result');
+    resultEl.textContent = 'Speichere Konfiguration...';
+    resultEl.className = 'action-result loading';
+    resultEl.style.display = 'block';
+    
+    try {
+        const config = {
+            pushover: {
+                enabled: document.getElementById('pushover-enabled').checked,
+                api_token: document.getElementById('pushover-api-token').value,
+                user_key: document.getElementById('pushover-user-key').value
+            },
+            openai: {
+                enabled: document.getElementById('openai-enabled').checked,
+                api_key: document.getElementById('openai-api-key').value,
+                model: document.getElementById('openai-model').value
+            },
+            default_priority: parseInt(document.getElementById('default-priority').value),
+            quiet_hours_start: document.getElementById('quiet-hours-start').value,
+            quiet_hours_end: document.getElementById('quiet-hours-end').value,
+            chatgpt_style: document.getElementById('chatgpt-style').value,
+            max_text_length: parseInt(document.getElementById('chatgpt-max-length').value),
+            custom_prompt: document.getElementById('chatgpt-custom-prompt').value,
+            events: {
+                window_open_long: {
+                    enabled: document.getElementById('event-window-open').checked,
+                    threshold_minutes: parseInt(document.getElementById('event-window-threshold').value)
+                },
+                temperature_alert: {
+                    enabled: document.getElementById('event-temperature').checked,
+                    threshold_deviation: parseFloat(document.getElementById('event-temp-deviation').value)
+                },
+                humidity_alert: {
+                    enabled: document.getElementById('event-humidity').checked
+                },
+                co2_alert: {
+                    enabled: document.getElementById('event-co2').checked,
+                    threshold_ppm: parseInt(document.getElementById('event-co2-threshold').value)
+                },
+                mold_risk: {
+                    enabled: document.getElementById('event-mold-risk').checked
+                },
+                ventilation_complete: {
+                    enabled: document.getElementById('event-ventilation').checked
+                },
+                morning_summary: {
+                    enabled: document.getElementById('event-morning').checked,
+                    time: document.getElementById('event-morning-time').value
+                }
+            }
+        };
+        
+        const response = await fetch('/api/notifications/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            resultEl.textContent = '✅ Konfiguration gespeichert!';
+            resultEl.className = 'action-result success';
+            
+            // Teste Verbindung neu
+            setTimeout(testNotificationConnection, 500);
+        } else {
+            resultEl.textContent = `❌ Fehler: ${data.error}`;
+            resultEl.className = 'action-result error';
+        }
+    } catch (error) {
+        resultEl.textContent = `❌ Fehler: ${error.message}`;
+        resultEl.className = 'action-result error';
+    }
+}

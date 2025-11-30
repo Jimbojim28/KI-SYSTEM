@@ -23,6 +23,7 @@ from src.web.blueprints import (
     ml_bp, init_ml_blueprint,
     ventilation_bp, init_ventilation_blueprint
 )
+from src.web.blueprints.api_notifications import notifications_bp, init_notifications_blueprint
 
 import src  # Für Zugriff auf __version__
 from src.decision_engine.engine import DecisionEngine
@@ -286,13 +287,15 @@ class WebInterface:
             init_config_blueprint(self.engine, self.db, self.config)
             init_ml_blueprint(self.engine, self.db)  # model_path ist optional
             init_ventilation_blueprint(self.engine, self.db, self.config)
+            init_notifications_blueprint(self.engine, self.db, self.config)
             
             # Registriere Blueprints bei der Flask App
             self.app.register_blueprint(config_bp)
             self.app.register_blueprint(ml_bp)
             self.app.register_blueprint(ventilation_bp)
+            self.app.register_blueprint(notifications_bp)
             
-            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp")
+            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp")
         except Exception as e:
             logger.error(f"Failed to register blueprints: {e}")
 

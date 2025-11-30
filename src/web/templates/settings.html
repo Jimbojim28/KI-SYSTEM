@@ -6,65 +6,16 @@
 <div class="settings-page">
     <h2>Einstellungen</h2>
 
-    <!-- Was ist neu Banner -->
-    <div class="card" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-left: 4px solid #0ea5e9; margin-bottom: 25px;">
-        <div style="display: flex; justify-content: space-between; align-items: start;">
-            <div style="flex: 1;">
-                <h3 style="margin: 0 0 10px 0; color: #0c4a6e; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 1.5em;">🎉</span>
-                    Was ist neu in v0.9?
-                </h3>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
-                    <div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 5px;">⚙️ Live-Konfiguration</div>
-                        <div style="font-size: 0.9em; color: #64748b;">Änderungen werden sofort übernommen - ohne Neustart!</div>
-                    </div>
-                    <div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 5px;">📊 Live Training Progress</div>
-                        <div style="font-size: 0.9em; color: #64748b;">Echtzeit-Anzeige des ML-Trainingsfortschritts</div>
-                    </div>
-                    <div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 5px;">🧹 Datenmanagement</div>
-                        <div style="font-size: 0.9em; color: #64748b;">Alte Daten löschen & Datenbank optimieren</div>
-                    </div>
-                    <div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 5px;">🏠 Raumspezifische Heizpläne</div>
-                        <div style="font-size: 0.9em; color: #64748b;">Individuelle Zeitpläne für jeden Raum</div>
-                    </div>
-                    <div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 5px;">🔧 Erweiterte Heizungssteuerung</div>
-                        <div style="font-size: 0.9em; color: #64748b;">
-                            • Monitoring-Modus<br>
-                            • Fenster-Statistiken<br>
-                            • Live-Temperaturverlauf<br>
-                            • Optimierungsvorschläge<br>
-                            • KI-basierte Insights
-                        </div>
-                    </div>
-                    <div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 5px;">🎯 Verbessertes UX</div>
-                        <div style="font-size: 0.9em; color: #64748b;">Schnellere Ladezeiten & intuitivere Bedienung</div>
-                    </div>
-                </div>
-                <div style="margin-top: 15px; padding: 12px; background: rgba(14, 165, 233, 0.1); border-radius: 6px; font-size: 0.9em; color: #0c4a6e;">
-                    <strong>🛡️ Neu:</strong> Automatische Schimmelprävention mit Taupunkt-Berechnung und intelligenter Luftentfeuchter-Steuerung!
-                </div>
-            </div>
-            <button id="dismiss-whats-new" class="btn btn-sm" style="background: transparent; color: #0c4a6e; border: 1px solid #0ea5e9; padding: 6px 12px; margin-left: 15px;">
-                ✕ Schließen
-            </button>
-        </div>
-    </div>
-
     <!-- Tab Navigation -->
     <div class="settings-tabs">
-        <button class="tab-button active" data-tab="general">Allgemein</button>
-        <button class="tab-button" data-tab="connection">Verbindung</button>
-        <button class="tab-button" data-tab="sensors">Sensoren</button>
-        <button class="tab-button" data-tab="heating">Heizung</button>
-        <button class="tab-button" data-tab="database">Datenbank</button>
-        <button class="tab-button" data-tab="ml">ML Training</button>
-        <button class="tab-button" data-tab="system">System</button>
+        <button class="tab-button active" data-tab="general">⚙️ Allgemein</button>
+        <button class="tab-button" data-tab="connection">🔌 Verbindung</button>
+        <button class="tab-button" data-tab="notifications">📲 Benachrichtigungen</button>
+        <button class="tab-button" data-tab="sensors">📡 Sensoren</button>
+        <button class="tab-button" data-tab="heating">🔥 Heizung</button>
+        <button class="tab-button" data-tab="database">💾 Datenbank</button>
+        <button class="tab-button" data-tab="ml">🧠 ML Training</button>
+        <button class="tab-button" data-tab="system">🖥️ System</button>
     </div>
 
     <!-- Tab: Allgemein -->
@@ -696,6 +647,239 @@
         </div>
     </div>
     <!-- Ende Tab: ML Training -->
+
+    <!-- Tab: Benachrichtigungen -->
+    <div class="tab-content" id="tab-notifications">
+        <div class="settings-sections">
+        
+        <!-- Pushover Konfiguration -->
+        <div class="card settings-card">
+            <h3>📲 Pushover Konfiguration</h3>
+            <p class="card-description">
+                Erhalte Push-Benachrichtigungen auf dein Smartphone. 
+                <a href="https://pushover.net/" target="_blank">Pushover Account erstellen</a>
+            </p>
+            <form class="settings-form">
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="pushover-enabled">
+                        Pushover aktivieren
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="pushover-api-token">API Token:</label>
+                    <input type="password" id="pushover-api-token" placeholder="Dein Pushover API Token">
+                    <small>Von <a href="https://pushover.net/apps/build" target="_blank">pushover.net/apps</a></small>
+                </div>
+                <div class="form-group">
+                    <label for="pushover-user-key">User Key:</label>
+                    <input type="password" id="pushover-user-key" placeholder="Dein Pushover User Key">
+                    <small>Von deinem <a href="https://pushover.net/" target="_blank">Pushover Dashboard</a></small>
+                </div>
+                <div id="pushover-status" style="margin: 10px 0; padding: 10px; border-radius: 6px; display: none;"></div>
+            </form>
+        </div>
+
+        <!-- ChatGPT / OpenAI Konfiguration -->
+        <div class="card settings-card">
+            <h3>🤖 ChatGPT Integration</h3>
+            <p class="card-description">
+                Lasse intelligente, natürlich klingende Benachrichtigungstexte von ChatGPT generieren.
+            </p>
+            <form class="settings-form">
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="openai-enabled">
+                        ChatGPT für Texte aktivieren
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="openai-api-key">OpenAI API Key:</label>
+                    <input type="password" id="openai-api-key" placeholder="sk-...">
+                    <small>Von <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a></small>
+                </div>
+                <div class="form-group">
+                    <label for="openai-model">Modell:</label>
+                    <select id="openai-model">
+                        <option value="gpt-4o-mini">GPT-4o Mini (günstig, schnell)</option>
+                        <option value="gpt-4o">GPT-4o (beste Qualität)</option>
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (sehr günstig)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="chatgpt-style">Schreibstil:</label>
+                    <select id="chatgpt-style">
+                        <option value="freundlich">😊 Freundlich</option>
+                        <option value="kurz">📝 Kurz & Knapp</option>
+                        <option value="technisch">🔧 Technisch</option>
+                        <option value="witzig">😄 Witzig</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="chatgpt-max-length">Maximale Textlänge:</label>
+                    <select id="chatgpt-max-length">
+                        <option value="50">📱 Sehr kurz (max. 50 Zeichen)</option>
+                        <option value="100" selected>📝 Kurz (max. 100 Zeichen)</option>
+                        <option value="200">📄 Mittel (max. 200 Zeichen)</option>
+                        <option value="500">📃 Lang (max. 500 Zeichen)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="chatgpt-custom-prompt">Eigener Prompt (optional):</label>
+                    <textarea id="chatgpt-custom-prompt" rows="3" placeholder="z.B.: Antworte immer auf Schwäbisch. Verwende keine Emojis. Sei sehr direkt." style="width: 100%; font-family: inherit; padding: 8px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+                    <small>Dieser Text wird dem ChatGPT-Prompt hinzugefügt. Lass leer für Standard-Verhalten.</small>
+                    
+                    <!-- Prompt-Vorschläge -->
+                    <div style="margin-top: 12px; padding: 12px; background: #f8fafc; border-radius: 8px;">
+                        <div style="font-weight: 600; margin-bottom: 10px; color: #334155;">💡 Prompt-Vorschläge (klicken zum Übernehmen):</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Maximal 1 Satz. Keine Emojis. Nur die wichtigste Info.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                📝 Kurz & Praktisch
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Gib immer einen konkreten Tipp was zu tun ist.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                💡 Mit Handlungsempfehlung
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Nenne immer genaue Werte mit Einheiten. Keine Floskeln.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                🔧 Technisch präzise
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Nenne mich Chef. Sei respektvoll aber direkt.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                👔 Persönlich (Chef)
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Antworte auf Schwäbisch.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                🥨 Schwäbisch
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Antworte auf Bayerisch.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                🦌 Bayerisch
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('Formuliere es als Frage an mich.')" style="padding: 6px 12px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                ❓ Als Frage
+                            </button>
+                            <button type="button" class="prompt-suggestion" onclick="setPrompt('')" style="padding: 6px 12px; background: #fee2e2; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em;">
+                                🗑️ Löschen
+                            </button>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 0.8em; color: #64748b;">
+                            <strong>Tipp:</strong> Kombiniere mehrere Anweisungen, z.B.: "Maximal 1 Satz. Nenne mich Chef. Gib einen Tipp."
+                        </div>
+                    </div>
+                </div>
+                <div id="openai-status" style="margin: 10px 0; padding: 10px; border-radius: 6px; display: none;"></div>
+            </form>
+        </div>
+
+        <!-- Benachrichtigungs-Einstellungen -->
+        <div class="card settings-card">
+            <h3>⚙️ Einstellungen</h3>
+            <form class="settings-form">
+                <div class="form-group">
+                    <label for="default-priority">Standard-Priorität:</label>
+                    <select id="default-priority">
+                        <option value="-2">🔇 Keine Benachrichtigung (nur in App)</option>
+                        <option value="-1">🔕 Leise (kein Sound)</option>
+                        <option value="0" selected>🔔 Normal</option>
+                        <option value="1">📢 Hohe Priorität</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display: flex; gap: 20px;">
+                    <div style="flex: 1;">
+                        <label for="quiet-hours-start">Ruhezeit Start:</label>
+                        <input type="time" id="quiet-hours-start" value="22:00">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="quiet-hours-end">Ruhezeit Ende:</label>
+                        <input type="time" id="quiet-hours-end" value="07:00">
+                    </div>
+                </div>
+                <small>Während der Ruhezeit werden Benachrichtigungen automatisch auf "leise" gesetzt.</small>
+            </form>
+        </div>
+
+        <!-- Event-Benachrichtigungen -->
+        <div class="card settings-card">
+            <h3>🔔 Event-Benachrichtigungen</h3>
+            <p class="card-description">Wähle, bei welchen Ereignissen du benachrichtigt werden möchtest.</p>
+            <form class="settings-form">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-window-open" checked>
+                            🪟 Fenster zu lange offen
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 5px;">
+                            <label style="font-size: 0.85em;">Nach <input type="number" id="event-window-threshold" value="15" min="5" max="120" style="width: 60px;"> Minuten</label>
+                        </div>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-temperature" checked>
+                            🌡️ Temperaturwarnung
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 5px;">
+                            <label style="font-size: 0.85em;">Bei <input type="number" id="event-temp-deviation" value="3" min="1" max="10" style="width: 60px;">°C Abweichung</label>
+                        </div>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-humidity" checked>
+                            💧 Luftfeuchtigkeit kritisch
+                        </label>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-co2" checked>
+                            🌬️ CO2 erhöht
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 5px;">
+                            <label style="font-size: 0.85em;">Ab <input type="number" id="event-co2-threshold" value="1200" min="800" max="2000" step="100" style="width: 70px;"> ppm</label>
+                        </div>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-mold-risk" checked>
+                            ⚠️ Schimmelrisiko
+                        </label>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-ventilation">
+                            ✅ Lüftung beendet
+                        </label>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                        <label>
+                            <input type="checkbox" id="event-morning">
+                            ☀️ Morgenzusammenfassung
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 5px;">
+                            <label style="font-size: 0.85em;">Um <input type="time" id="event-morning-time" value="07:00" style="width: 90px;"></label>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Test & Speichern -->
+        <div class="card settings-card">
+            <h3>🧪 Testen & Speichern</h3>
+            <div class="action-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-secondary" id="test-pushover">📲 Pushover testen</button>
+                <button class="btn btn-secondary" id="test-chatgpt">🤖 ChatGPT testen</button>
+                <button class="btn btn-secondary" id="preview-text">👀 Text-Vorschau</button>
+                <button class="btn btn-primary" id="save-notifications">💾 Speichern</button>
+            </div>
+            <div id="notification-result" class="action-result" style="margin-top: 15px;"></div>
+            
+            <!-- Text-Vorschau -->
+            <div id="text-preview-container" style="display: none; margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0;">📝 Generierter Text:</h4>
+                <div id="preview-text-content" style="font-style: italic; padding: 10px; background: white; border-radius: 6px; border-left: 4px solid #0ea5e9;"></div>
+                <small id="preview-source" style="display: block; margin-top: 8px; color: #666;"></small>
+            </div>
+        </div>
+
+        </div>
+    </div>
+    <!-- Ende Tab: Benachrichtigungen -->
 
     <!-- Tab: System -->
     <div class="tab-content" id="tab-system">
