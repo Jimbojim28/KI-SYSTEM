@@ -8,10 +8,16 @@ Analysiert:
 - Tageslicht + Lampe an
 
 Im Test-Modus: Protokolliert nur, schaltet nicht aus
+
+Respektiert device_types aus /rooms Konfiguration:
+- Geräte mit device_type="device" werden ignoriert
+- Nur Geräte mit device_type="light" oder ohne Eintrag werden geprüft
 """
 
+import json
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Thread
 from typing import Dict, List, Optional, Tuple
 from loguru import logger
@@ -55,6 +61,10 @@ class ForgottenLightDetector:
         self.check_interval = settings.get('check_interval', 60)  # Prüf-Intervall in Sekunden
         self.use_ml = settings.get('use_ml', True)  # ML-Modell nutzen wenn verfügbar
         
+        # Device Types aus rooms.json
+        self.device_types: Dict[str, str] = {}
+        self._load_device_types()
+        
         # Tracking
         self.light_on_times: Dict[str, datetime] = {}  # device_id -> wann eingeschaltet
         self.last_motion_times: Dict[str, datetime] = {}  # room -> letzte Bewegung
@@ -78,6 +88,18 @@ class ForgottenLightDetector:
         # ML-Modell
         self.ml_model = None
         self._init_ml_model()
+    
+    def _load_device_types(self):
+        """Lädt device_types aus rooms.json"""
+        try:
+            rooms_file = Path('data/rooms.json')
+            if rooms_file.exists():
+                with open(rooms_file, 'r') as f:
+                    data = json.load(f)
+                    self.device_types = data.get('device_types', {})
+        except Exception as e:
+            logger.warning(f"Could not load device_types from rooms.json: {e}")
+            self.device_types = {}
     
     def _ensure_table(self):
         """Stellt sicher, dass die Datenbank-Tabelle existiert"""
@@ -170,6 +192,8 @@ class ForgottenLightDetector:
         """Hauptloop für Erkennung"""
         while self.running:
             try:
+                # Device types neu laden (falls geändert in /rooms)
+                self._load_device_types()
                 self._check_for_forgotten_lights()
                 self.stats['last_check'] = datetime.now().isoformat()
             except Exception as e:
@@ -558,7 +582,28 @@ class ForgottenLightDetector:
             return 10  # Nacht
     
     def _is_light_device(self, device: Dict) -> bool:
-        """Prüft ob Gerät eine Lampe ist"""
+        """
+        Prüft ob Gerät eine Lampe ist.
+        
+        Respektiert device_types aus /rooms:
+        - device_type="device" -> wird ignoriert (return False)
+        - device_type="light" -> wird als Lampe behandelt
+        - kein Eintrag -> wird nach Homey-Klasse geprüft
+        """
+        device_id = device.get('id', '')
+        device_name = device.get('name', '')
+        
+        # 1. Prüfe ob in rooms.json als "device" markiert
+        configured_type = self.device_types.get(device_id)
+        if configured_type == 'device':
+            # Explizit als "nicht Lampe" markiert
+            return False
+        
+        if configured_type == 'light':
+            # Explizit als Lampe markiert
+            return True
+        
+        # 2. Fallback: Homey-Klasse prüfen
         device_class = device.get('class', '').lower()
         capabilities = device.get('capabilities', [])
         

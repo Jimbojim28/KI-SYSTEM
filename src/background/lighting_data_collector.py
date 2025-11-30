@@ -3,8 +3,10 @@ Background Service: Sammelt Beleuchtungsdaten für ML-Training
 Läuft kontinuierlich und speichert jeden Zustandswechsel
 """
 
+import json
 import time
 from datetime import datetime
+from pathlib import Path
 from threading import Thread
 from loguru import logger
 from typing import Dict, Set
@@ -22,6 +24,10 @@ class LightingDataCollector:
     - Alle Zustandsänderungen von Lampen
     - Helligkeitsänderungen
     - Zeitstempel und Kontext (Tageszeit, Anwesenheit, etc.)
+    
+    Respektiert device_types aus /rooms Konfiguration:
+    - Geräte mit device_type="device" werden ignoriert
+    - Nur Geräte mit device_type="light" oder ohne Eintrag werden gesammelt
     """
     
     def __init__(self, db: Database = None, config: dict = None, engine=None):
@@ -37,6 +43,10 @@ class LightingDataCollector:
         self.last_collection_success = None
         self.last_error = None
         self.total_events_collected = 0
+        
+        # Device Types aus rooms.json (Geräte die als "device" markiert sind, werden ignoriert)
+        self.device_types: Dict[str, str] = {}
+        self._load_device_types()
         
         # Platform-spezifische Collector basierend auf platform.type
         self.collectors = []
@@ -88,11 +98,32 @@ class LightingDataCollector:
             self.thread.join(timeout=5)
         logger.info("LightingDataCollector stopped")
     
+    def _load_device_types(self):
+        """Lädt device_types aus rooms.json"""
+        try:
+            rooms_file = Path('data/rooms.json')
+            if rooms_file.exists():
+                with open(rooms_file, 'r') as f:
+                    data = json.load(f)
+                    self.device_types = data.get('device_types', {})
+                    
+                    # Zähle wie viele als "device" markiert sind
+                    devices_count = sum(1 for v in self.device_types.values() if v == 'device')
+                    lights_count = sum(1 for v in self.device_types.values() if v == 'light')
+                    
+                    if devices_count > 0:
+                        logger.info(f"Loaded device_types: {devices_count} devices excluded, {lights_count} lights")
+        except Exception as e:
+            logger.warning(f"Could not load device_types from rooms.json: {e}")
+            self.device_types = {}
+    
     def _collection_loop(self):
         """Hauptloop für Datensammlung"""
         while self.running:
             try:
                 self.last_collection_time = datetime.now()
+                # Lade device_types neu bei jedem Loop (falls geändert)
+                self._load_device_types()
                 self._collect_lighting_data()
                 self.last_collection_success = True
                 self.last_error = None
@@ -179,7 +210,29 @@ class LightingDataCollector:
                 logger.error(f"Error collecting from {platform_name}: {error_msg}")
     
     def _is_light_device(self, device: Dict) -> bool:
-        """Prüft ob Gerät eine Lampe ist"""
+        """
+        Prüft ob Gerät eine Lampe ist.
+        
+        Respektiert device_types aus /rooms:
+        - device_type="device" -> wird ignoriert (return False)
+        - device_type="light" -> wird als Lampe behandelt
+        - kein Eintrag -> wird nach Homey-Klasse geprüft
+        """
+        device_id = device.get('id', '')
+        device_name = device.get('name', '')
+        
+        # 1. Prüfe ob in rooms.json als "device" markiert
+        configured_type = self.device_types.get(device_id)
+        if configured_type == 'device':
+            # Explizit als "nicht Lampe" markiert
+            logger.debug(f"Skipping {device_name} - marked as 'device' in rooms config")
+            return False
+        
+        if configured_type == 'light':
+            # Explizit als Lampe markiert
+            return True
+        
+        # 2. Fallback: Homey-Klasse prüfen
         device_class = device.get('class', '').lower()
         capabilities = device.get('capabilities', [])
         
@@ -187,7 +240,7 @@ class LightingDataCollector:
         if 'light' in device_class:
             return True
         
-        # Capability-basiert
+        # Capability-basiert (nur wenn dim oder light_hue vorhanden)
         if 'onoff' in capabilities and ('dim' in capabilities or 'light_hue' in capabilities):
             return True
         
