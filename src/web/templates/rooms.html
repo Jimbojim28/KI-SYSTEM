@@ -1227,19 +1227,60 @@ function loadOutdoorSensorConfig() {
     const tempSensors = allSensors.filter(s => s.type === 'temperature');
     const humiditySensors = allSensors.filter(s => s.type === 'humidity');
     
-    tempSelect.innerHTML = '<option value="">-- Automatisch erkennen --</option>' +
-        tempSensors.map(s => `
-            <option value="${s.device_id}" ${outdoorSensors.temperature === s.device_id ? 'selected' : ''}>
-                ${s.name} ${s.current_value !== null ? `(${s.current_value.toFixed(1)}°C)` : ''}
-            </option>
-        `).join('');
+    // Sensoren nach Räumen gruppieren
+    const buildGroupedSensorOptions = (sensors, type, selectedId) => {
+        let html = '<option value="">-- Automatisch erkennen --</option>';
+        
+        // Sensoren nach Raum gruppieren
+        const byRoom = {};
+        sensors.forEach(s => {
+            const room = s.room || 'Unbekannt';
+            if (!byRoom[room]) byRoom[room] = [];
+            byRoom[room].push(s);
+        });
+        
+        // Außen-Sensoren zuerst (typische Keywords)
+        const outdoorKeywords = ['außen', 'outdoor', 'aussen', 'draußen', 'garten', 'balkon', 'terrasse'];
+        const outdoorRooms = Object.keys(byRoom).filter(room => 
+            outdoorKeywords.some(kw => room.toLowerCase().includes(kw))
+        );
+        const indoorRooms = Object.keys(byRoom).filter(room => 
+            !outdoorKeywords.some(kw => room.toLowerCase().includes(kw))
+        ).sort();
+        
+        // Außen-Räume zuerst
+        if (outdoorRooms.length > 0) {
+            html += '<optgroup label="🌳 Außenbereiche">';
+            outdoorRooms.forEach(room => {
+                byRoom[room].forEach(s => {
+                    const valueStr = s.current_value !== null 
+                        ? (type === 'temperature' ? `(${s.current_value.toFixed(1)}°C)` : `(${Math.round(s.current_value)}%)`)
+                        : '';
+                    html += `<option value="${s.device_id}" ${selectedId === s.device_id ? 'selected' : ''}>${s.name} ${valueStr}</option>`;
+                });
+            });
+            html += '</optgroup>';
+        }
+        
+        // Innen-Räume
+        if (indoorRooms.length > 0) {
+            html += '<optgroup label="🏠 Innenräume">';
+            indoorRooms.forEach(room => {
+                byRoom[room].forEach(s => {
+                    const valueStr = s.current_value !== null 
+                        ? (type === 'temperature' ? `(${s.current_value.toFixed(1)}°C)` : `(${Math.round(s.current_value)}%)`)
+                        : '';
+                    html += `<option value="${s.device_id}" ${selectedId === s.device_id ? 'selected' : ''}>${s.name} - ${room} ${valueStr}</option>`;
+                });
+            });
+            html += '</optgroup>';
+        }
+        
+        return html;
+    };
     
-    humiditySelect.innerHTML = '<option value="">-- Automatisch erkennen --</option>' +
-        humiditySensors.map(s => `
-            <option value="${s.device_id}" ${outdoorSensors.humidity === s.device_id ? 'selected' : ''}>
-                ${s.name} ${s.current_value !== null ? `(${Math.round(s.current_value)}%)` : ''}
-            </option>
-        `).join('');
+    tempSelect.innerHTML = buildGroupedSensorOptions(tempSensors, 'temperature', outdoorSensors.temperature);
+    humiditySelect.innerHTML = buildGroupedSensorOptions(humiditySensors, 'humidity', outdoorSensors.humidity);
 }
 
 // Außensensoren speichern
