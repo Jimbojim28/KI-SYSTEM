@@ -11,6 +11,7 @@
 <!-- Tab Navigation -->
 <div class="tabs">
     <button class="tab-button active" onclick="switchTab('overview')">📊 Übersicht</button>
+    <button class="tab-button" onclick="switchTab('collection')">📥 Datensammlung</button>
     <button class="tab-button" onclick="switchTab('history')">📜 Historie</button>
     <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
 </div>
@@ -102,6 +103,85 @@
         <h3>🏠 Vergessene Lampen nach Raum</h3>
         <div class="chart-container small">
             <canvas id="room-chart"></canvas>
+        </div>
+    </div>
+    
+</div>
+
+<!-- Datensammlung Tab -->
+<div id="collection-tab" class="tab-content">
+    
+    <!-- Collector Status -->
+    <div class="status-card collector-status">
+        <div class="status-header">
+            <h3>📥 Lighting Data Collector</h3>
+            <span id="collector-status-badge" class="status-badge status-inactive">Prüfe...</span>
+        </div>
+        <p class="collector-info">Sammelt automatisch alle Lampenzustände für ML-Training.</p>
+        
+        <div class="collector-stats-grid">
+            <div class="collector-stat">
+                <div class="stat-icon">📊</div>
+                <div class="stat-value" id="coll-total-events">-</div>
+                <div class="stat-label">Gesamt Events</div>
+            </div>
+            <div class="collector-stat">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-value" id="coll-session-events">-</div>
+                <div class="stat-label">Diese Session</div>
+            </div>
+            <div class="collector-stat">
+                <div class="stat-icon">💡</div>
+                <div class="stat-value" id="coll-tracked-lights">-</div>
+                <div class="stat-label">Erkannte Lampen</div>
+            </div>
+            <div class="collector-stat">
+                <div class="stat-icon">🕐</div>
+                <div class="stat-value" id="coll-last-collection">-</div>
+                <div class="stat-label">Letzte Sammlung</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ML Training Status -->
+    <div class="section-card ml-training-status">
+        <h3>🎓 ML Training Status</h3>
+        <div class="training-progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="training-progress-bar" style="width: 0%"></div>
+            </div>
+            <div class="progress-text">
+                <span id="training-progress-text">0 / 100 Events</span>
+                <span class="progress-hint">(Mindestens 100 für Training)</span>
+            </div>
+        </div>
+        <div class="training-ready-info" id="training-ready-info" style="display: none;">
+            <span class="ready-badge">✅ Bereit für Training!</span>
+            <button class="btn-train" onclick="trainMLModel()">🎓 Jetzt trainieren</button>
+        </div>
+    </div>
+    
+    <!-- Letzte Events -->
+    <div class="section-card">
+        <h3>📋 Letzte gesammelte Events</h3>
+        <p class="section-hint">Die letzten 20 Lampenzustandsänderungen:</p>
+        <div id="recent-events-list" class="events-list">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Lade Events...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Lampen Statistik -->
+    <div class="section-card">
+        <h3>💡 Lampen Statistik</h3>
+        <p class="section-hint">Welche Lampen werden am meisten genutzt:</p>
+        <div id="light-stats-list" class="light-stats-list">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Lade Statistik...</p>
+            </div>
         </div>
     </div>
     
@@ -618,6 +698,243 @@
         border-color: #555;
     }
 }
+
+/* === DATENSAMMLUNG TAB === */
+
+.collector-status {
+    border-left: 4px solid #27ae60;
+}
+
+.collector-info {
+    color: #666;
+    margin: 0.5rem 0 1.5rem;
+}
+
+.collector-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.collector-stat {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.collector-stat .stat-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.3rem;
+}
+
+.collector-stat .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #27ae60;
+}
+
+.collector-stat .stat-label {
+    font-size: 0.85em;
+    color: #666;
+}
+
+/* ML Training Progress */
+.ml-training-status {
+    border-left: 4px solid #667eea;
+}
+
+.training-progress {
+    margin: 1rem 0;
+}
+
+.progress-bar {
+    height: 20px;
+    background: #e0e0e0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: width 0.5s ease;
+}
+
+.progress-text {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.5rem;
+    font-size: 0.9em;
+}
+
+.progress-hint {
+    color: #888;
+}
+
+.training-ready-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(39, 174, 96, 0.1);
+    border-radius: 8px;
+}
+
+.ready-badge {
+    color: #27ae60;
+    font-weight: 600;
+}
+
+/* Events List */
+.events-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.event-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+}
+
+.event-item:last-child {
+    border-bottom: none;
+}
+
+.event-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.event-indicator.on {
+    background: #f39c12;
+    box-shadow: 0 0 8px rgba(243, 156, 18, 0.5);
+}
+
+.event-indicator.off {
+    background: #888;
+}
+
+.event-info {
+    flex: 1;
+}
+
+.event-device {
+    font-weight: 600;
+    display: block;
+}
+
+.event-room {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.event-details {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.event-state {
+    font-size: 0.9em;
+}
+
+.event-brightness {
+    background: #f0f0f0;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.8em;
+    color: #666;
+}
+
+.event-time {
+    font-size: 0.85em;
+    color: #888;
+    white-space: nowrap;
+}
+
+/* Light Stats */
+.light-stats-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.light-stat-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+}
+
+.light-stat-item:hover {
+    background: #f8f9fa;
+}
+
+.light-rank {
+    font-weight: 700;
+    color: #667eea;
+    width: 30px;
+}
+
+.light-info {
+    flex: 1;
+}
+
+.light-name {
+    font-weight: 600;
+    display: block;
+}
+
+.light-room {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.light-counts {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.count-on, .count-off {
+    font-size: 0.9em;
+}
+
+.light-total {
+    font-size: 0.85em;
+    color: #888;
+    white-space: nowrap;
+}
+
+/* Status Badge Pending */
+.status-badge.status-pending {
+    background-color: #f39c12;
+    color: white;
+}
+
+/* Dark Mode Extensions */
+@media (prefers-color-scheme: dark) {
+    .collector-stat {
+        background: #333;
+    }
+    .event-item {
+        border-color: #444;
+    }
+    .light-stat-item {
+        border-color: #444;
+    }
+    .light-stat-item:hover {
+        background: #333;
+    }
+    .progress-bar {
+        background: #444;
+    }
+}
 </style>
 
 <script>
@@ -638,6 +955,10 @@ function switchTab(tabName) {
         loadHistory();
     } else if (tabName === 'settings') {
         loadSettings();
+    } else if (tabName === 'collection') {
+        loadCollectorStatus();
+        loadRecentEvents();
+        loadLightStats();
     }
 }
 
@@ -1030,6 +1351,137 @@ function formatDateTime(isoString) {
         day: '2-digit', month: '2-digit',
         hour: '2-digit', minute: '2-digit' 
     });
+}
+
+// === DATENSAMMLUNG TAB FUNKTIONEN ===
+
+// Collector-Status laden
+async function loadCollectorStatus() {
+    try {
+        const response = await fetch('/api/lighting/collector/status');
+        const data = await response.json();
+        
+        // Status Badge
+        const badge = document.getElementById('collector-status-badge');
+        if (data.running) {
+            badge.textContent = '✅ Läuft';
+            badge.className = 'status-badge status-active';
+        } else if (data.collectors_available) {
+            badge.textContent = '⏸️ Bereit';
+            badge.className = 'status-badge status-pending';
+        } else {
+            badge.textContent = '❌ Keine Platform';
+            badge.className = 'status-badge status-inactive';
+        }
+        
+        // Stats
+        document.getElementById('coll-total-events').textContent = data.total_events?.toLocaleString() || '0';
+        document.getElementById('coll-session-events').textContent = data.session_events?.toLocaleString() || '0';
+        document.getElementById('coll-tracked-lights').textContent = data.tracked_lights || '0';
+        
+        if (data.last_collection) {
+            const lastTime = new Date(data.last_collection);
+            const now = new Date();
+            const diffSecs = Math.floor((now - lastTime) / 1000);
+            if (diffSecs < 60) {
+                document.getElementById('coll-last-collection').textContent = `vor ${diffSecs}s`;
+            } else if (diffSecs < 3600) {
+                document.getElementById('coll-last-collection').textContent = `vor ${Math.floor(diffSecs/60)}m`;
+            } else {
+                document.getElementById('coll-last-collection').textContent = formatTime(data.last_collection);
+            }
+        }
+        
+        // Training Progress
+        updateTrainingProgress(data.total_events || 0);
+        
+    } catch (error) {
+        console.error('Error loading collector status:', error);
+    }
+}
+
+// Training Progress aktualisieren
+function updateTrainingProgress(eventCount) {
+    const minRequired = 100;
+    const progress = Math.min(100, (eventCount / minRequired) * 100);
+    
+    document.getElementById('training-progress-bar').style.width = `${progress}%`;
+    document.getElementById('training-progress-text').textContent = `${eventCount} / ${minRequired} Events`;
+    
+    const readyInfo = document.getElementById('training-ready-info');
+    if (eventCount >= minRequired) {
+        readyInfo.style.display = 'flex';
+    } else {
+        readyInfo.style.display = 'none';
+    }
+}
+
+// Letzte Events laden
+async function loadRecentEvents() {
+    const container = document.getElementById('recent-events-list');
+    
+    try {
+        const response = await fetch('/api/lighting/events/recent?limit=20');
+        const data = await response.json();
+        
+        if (!data.events || data.events.length === 0) {
+            container.innerHTML = '<p class="empty-state">Noch keine Events gesammelt.</p>';
+            return;
+        }
+        
+        container.innerHTML = data.events.map(e => `
+            <div class="event-item ${e.state === 'on' ? 'event-on' : 'event-off'}">
+                <div class="event-indicator ${e.state}"></div>
+                <div class="event-info">
+                    <span class="event-device">${e.device_name}</span>
+                    <span class="event-room">${e.room_name || 'Unbekannt'}</span>
+                </div>
+                <div class="event-details">
+                    <span class="event-state">${e.state === 'on' ? '💡 Ein' : '🌙 Aus'}</span>
+                    ${e.brightness ? `<span class="event-brightness">${e.brightness}%</span>` : ''}
+                </div>
+                <div class="event-time">${formatDateTime(e.timestamp)}</div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading recent events:', error);
+        container.innerHTML = '<p class="empty-state">Fehler beim Laden.</p>';
+    }
+}
+
+// Lampen-Statistik laden
+async function loadLightStats() {
+    const container = document.getElementById('light-stats-list');
+    
+    try {
+        const response = await fetch('/api/lighting/events/stats');
+        const data = await response.json();
+        
+        if (!data.stats || data.stats.length === 0) {
+            container.innerHTML = '<p class="empty-state">Noch keine Statistik verfügbar.</p>';
+            return;
+        }
+        
+        container.innerHTML = data.stats.map((s, i) => `
+            <div class="light-stat-item">
+                <div class="light-rank">#${i + 1}</div>
+                <div class="light-info">
+                    <span class="light-name">${s.device_name}</span>
+                    <span class="light-room">${s.room_name || 'Unbekannt'}</span>
+                </div>
+                <div class="light-counts">
+                    <span class="count-on" title="Eingeschaltet">💡 ${s.on_count}</span>
+                    <span class="count-off" title="Ausgeschaltet">🌙 ${s.off_count}</span>
+                </div>
+                <div class="light-total">${s.total_events} Events</div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading light stats:', error);
+        container.innerHTML = '<p class="empty-state">Fehler beim Laden.</p>';
+    }
 }
 
 // Auto-Refresh

@@ -741,6 +741,108 @@ class WebInterface:
                 logger.error(f"Error training ML model: {e}")
                 return jsonify({'success': False, 'error': str(e)}), 500
 
+        @self.app.route('/api/lighting/collector/status')
+        def api_lighting_collector_status():
+            """API: Status des Lighting Data Collectors"""
+            try:
+                result = {
+                    'running': False,
+                    'total_events': 0,
+                    'session_events': 0,
+                    'tracked_lights': 0,
+                    'last_collection': None,
+                    'collectors_available': False
+                }
+                
+                # Hole Collector-Status
+                if self.lighting_collector:
+                    stats = self.lighting_collector.get_stats()
+                    result = {
+                        'running': stats.get('running', False),
+                        'total_events': stats.get('total_events', 0),
+                        'session_events': stats.get('events_this_session', 0),
+                        'tracked_lights': stats.get('tracked_devices', 0),
+                        'last_collection': stats.get('last_collection'),
+                        'last_success': stats.get('last_success'),
+                        'last_error': stats.get('last_error'),
+                        'collectors_available': stats.get('collectors_count', 0) > 0,
+                        'interval': stats.get('interval', 60)
+                    }
+                
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error getting collector status: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/lighting/events/recent')
+        def api_lighting_events_recent():
+            """API: Letzte Lighting Events"""
+            try:
+                limit = request.args.get('limit', 20, type=int)
+                
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT timestamp, device_name, room_name, state, brightness
+                    FROM lighting_events
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (limit,))
+                
+                events = []
+                for row in cursor.fetchall():
+                    events.append({
+                        'timestamp': row[0],
+                        'device_name': row[1],
+                        'room_name': row[2],
+                        'state': row[3],
+                        'brightness': row[4]
+                    })
+                
+                return jsonify({'events': events})
+            except Exception as e:
+                logger.error(f"Error getting recent events: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/lighting/events/stats')
+        def api_lighting_events_stats():
+            """API: Statistik pro Lampe"""
+            try:
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT device_name, room_name, COUNT(*) as events,
+                           SUM(CASE WHEN state='on' THEN 1 ELSE 0 END) as on_count,
+                           SUM(CASE WHEN state='off' THEN 1 ELSE 0 END) as off_count,
+                           MAX(timestamp) as last_event
+                    FROM lighting_events
+                    GROUP BY device_id
+                    ORDER BY events DESC
+                    LIMIT 20
+                """)
+                
+                stats = []
+                for row in cursor.fetchall():
+                    stats.append({
+                        'device_name': row[0],
+                        'room_name': row[1],
+                        'total_events': row[2],
+                        'on_count': row[3],
+                        'off_count': row[4],
+                        'last_event': row[5]
+                    })
+                
+                # Gesamt
+                cursor.execute("SELECT COUNT(*) FROM lighting_events")
+                total = cursor.fetchone()[0]
+                
+                return jsonify({'stats': stats, 'total_events': total})
+            except Exception as e:
+                logger.error(f"Error getting event stats: {e}")
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/predictions')
         def api_predictions():
             """API: KI-Vorhersagen und Empfehlungen"""
