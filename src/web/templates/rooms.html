@@ -12,7 +12,6 @@
     <!-- Tab Navigation -->
     <div class="tabs">
         <button class="tab-button active" onclick="switchTab('overview')">📋 Übersicht</button>
-        <button class="tab-button" onclick="switchTab('sensors')">🌡️ Sensoren</button>
         <button class="tab-button" onclick="switchTab('visibility')">👁️ Sichtbarkeit</button>
         <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
     </div>
@@ -26,20 +25,6 @@
             <span class="hint-icon">👁️‍🗨️</span>
             <span class="hint-text"></span>
             <button class="hint-link" onclick="switchTab('visibility')">Räume verwalten</button>
-        </div>
-    </div>
-
-    <!-- Tab: Sensoren -->
-    <div id="sensors-tab" class="tab-content">
-        <div class="sensor-management">
-            <div class="sensor-info-box">
-                <h4>ℹ️ Sensor-Zuordnung</h4>
-                <p>Hier können Sie für jeden Raum festlegen, welche Sensoren für Temperatur, Luftfeuchtigkeit und CO₂ verwendet werden sollen. Diese Einstellungen werden auf allen Seiten (Ventilation, Schimmelprävention, etc.) verwendet.</p>
-            </div>
-            
-            <div class="room-sensor-list" id="room-sensor-list">
-                <div class="loading-state">Lade Sensor-Zuordnungen...</div>
-            </div>
         </div>
     </div>
 
@@ -497,12 +482,8 @@
     color: white;
 }
 
-/* Sensor Management Tab */
-.sensor-management {
-    max-width: 900px;
-}
-
-.sensor-info-box, .visibility-info-box {
+/* Visibility Tab */
+.visibility-info-box {
     background: #E3F2FD;
     border-left: 4px solid #2196F3;
     padding: 1rem;
@@ -510,46 +491,17 @@
     margin-bottom: 1.5rem;
 }
 
-.sensor-info-box h4, .visibility-info-box h4 {
+.visibility-info-box h4 {
     margin: 0 0 0.5rem 0;
     color: #1565C0;
 }
 
-.sensor-info-box p, .visibility-info-box p {
+.visibility-info-box p {
     margin: 0;
     color: #333;
 }
 
-.room-sensor-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.room-sensor-item {
-    background: white;
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-}
-
-.room-sensor-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    padding-bottom: 0.8rem;
-    border-bottom: 1px solid #eee;
-}
-
-.room-sensor-title {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
+/* Sensor Selects (für Einstellungen & Modals) */
 .sensor-selects {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -571,14 +523,6 @@
     font-size: 0.95rem;
 }
 
-.sensor-preview {
-    display: block;
-    margin-top: 0.3rem;
-    color: #4CAF50;
-    font-size: 0.85rem;
-}
-
-/* Visibility Tab */
 .visibility-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1019,9 +963,7 @@ function switchTab(tab) {
     document.getElementById(tab + '-tab').classList.add('active');
     
     // Daten laden wenn Tab gewechselt wird
-    if (tab === 'sensors') {
-        loadSensorManagement();
-    } else if (tab === 'visibility') {
+    if (tab === 'visibility') {
         loadVisibility();
     } else if (tab === 'settings') {
         loadOutdoorSensorConfig();
@@ -1250,69 +1192,6 @@ function getRoomIcon(roomName) {
     return '🏠';
 }
 
-// Sensor-Management Tab laden
-function loadSensorManagement() {
-    const container = document.getElementById('room-sensor-list');
-    
-    container.innerHTML = allRooms.map(room => {
-        const roomId = room.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '');
-        const config = sensorMapping[roomId] || {};
-        const roomSensors = allSensors.filter(s => s.room === room);
-        
-        // Alle Sensoren für Dropdowns (auch aus anderen Räumen)
-        const tempSensors = allSensors.filter(s => s.type === 'temperature');
-        const humiditySensors = allSensors.filter(s => s.type === 'humidity');
-        const co2Sensors = allSensors.filter(s => s.type === 'co2');
-        
-        return `
-            <div class="room-sensor-item">
-                <div class="room-sensor-header">
-                    <div class="room-sensor-title">
-                        <span>${getRoomIcon(room)}</span>
-                        <span>${room}</span>
-                    </div>
-                    <span style="color: #888; font-size: 0.85rem;">${roomSensors.length} Sensoren im Raum</span>
-                </div>
-                <div class="sensor-selects">
-                    <div class="sensor-select-group">
-                        <label>🌡️ Temperatur:</label>
-                        <select onchange="saveSensorMapping('${roomId}', '${room.replace(/'/g, "\\'")}', 'temperature', this.value)">
-                            <option value="">-- Automatisch --</option>
-                            ${tempSensors.map(s => `
-                                <option value="${s.device_id}" ${config.temperature === s.device_id ? 'selected' : ''}>
-                                    ${s.name} ${s.current_value !== null ? `(${s.current_value.toFixed(1)}°C)` : ''}
-                                </option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    <div class="sensor-select-group">
-                        <label>💧 Feuchtigkeit:</label>
-                        <select onchange="saveSensorMapping('${roomId}', '${room.replace(/'/g, "\\'")}', 'humidity', this.value)">
-                            <option value="">-- Automatisch --</option>
-                            ${humiditySensors.map(s => `
-                                <option value="${s.device_id}" ${config.humidity === s.device_id ? 'selected' : ''}>
-                                    ${s.name} ${s.current_value !== null ? `(${Math.round(s.current_value)}%)` : ''}
-                                </option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    <div class="sensor-select-group">
-                        <label>🌬️ CO₂:</label>
-                        <select onchange="saveSensorMapping('${roomId}', '${room.replace(/'/g, "\\'")}', 'co2', this.value)">
-                            <option value="">-- Kein CO₂ --</option>
-                            ${co2Sensors.map(s => `
-                                <option value="${s.device_id}" ${config.co2 === s.device_id ? 'selected' : ''}>
-                                    ${s.name} ${s.current_value !== null ? `(${s.current_value} ppm)` : ''}
-                                </option>
-                            `).join('')}
-                        </select>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
 // Sensor-Mapping speichern
 async function saveSensorMapping(roomId, roomName, sensorType, deviceId) {
     try {
@@ -1450,23 +1329,57 @@ function openRoomModal(room) {
     // Geräte für diesen Raum anzeigen (mit Kategorisierung)
     renderRoomDevices(room);
     
-    // Sensor-Dropdowns füllen
+    // Sensor-Dropdowns füllen - gruppiert nach Raum
     const tempSelect = document.getElementById('edit-temp-sensor');
     const humiditySelect = document.getElementById('edit-humidity-sensor');
     const co2Select = document.getElementById('edit-co2-sensor');
     
-    const tempSensors = allSensors.filter(s => s.type === 'temperature');
-    const humiditySensors = allSensors.filter(s => s.type === 'humidity');
-    const co2Sensors = allSensors.filter(s => s.type === 'co2');
+    // Sensoren nach Raum gruppieren
+    const tempSensorsThisRoom = allSensors.filter(s => s.type === 'temperature' && s.room === room);
+    const tempSensorsOther = allSensors.filter(s => s.type === 'temperature' && s.room !== room);
+    const humiditySensorsThisRoom = allSensors.filter(s => s.type === 'humidity' && s.room === room);
+    const humiditySensorsOther = allSensors.filter(s => s.type === 'humidity' && s.room !== room);
+    const co2SensorsThisRoom = allSensors.filter(s => s.type === 'co2' && s.room === room);
+    const co2SensorsOther = allSensors.filter(s => s.type === 'co2' && s.room !== room);
     
-    tempSelect.innerHTML = '<option value="">-- Automatisch --</option>' +
-        tempSensors.map(s => `<option value="${s.device_id}" ${config.temperature === s.device_id ? 'selected' : ''}>${s.name} (${s.room})</option>`).join('');
+    // Hilfsfunktion für gruppierte Optionen
+    const buildGroupedOptions = (sensorsThisRoom, sensorsOther, type, configValue, defaultLabel) => {
+        let html = `<option value="">${defaultLabel}</option>`;
+        
+        if (sensorsThisRoom.length > 0) {
+            html += `<optgroup label="📍 ${room}">`;
+            sensorsThisRoom.forEach(s => {
+                const val = s.current_value;
+                const valueStr = val !== null 
+                    ? (type === 'temperature' ? `(${val.toFixed(1)}°C)` 
+                       : type === 'humidity' ? `(${Math.round(val)}%)`
+                       : `(${val} ppm)`)
+                    : '';
+                html += `<option value="${s.device_id}" ${configValue === s.device_id ? 'selected' : ''}>${s.name} ${valueStr}</option>`;
+            });
+            html += '</optgroup>';
+        }
+        
+        if (sensorsOther.length > 0) {
+            html += `<optgroup label="🏠 Andere Räume">`;
+            sensorsOther.forEach(s => {
+                const val = s.current_value;
+                const valueStr = val !== null 
+                    ? (type === 'temperature' ? `(${val.toFixed(1)}°C)` 
+                       : type === 'humidity' ? `(${Math.round(val)}%)`
+                       : `(${val} ppm)`)
+                    : '';
+                html += `<option value="${s.device_id}" ${configValue === s.device_id ? 'selected' : ''}>${s.name} - ${s.room} ${valueStr}</option>`;
+            });
+            html += '</optgroup>';
+        }
+        
+        return html;
+    };
     
-    humiditySelect.innerHTML = '<option value="">-- Automatisch --</option>' +
-        humiditySensors.map(s => `<option value="${s.device_id}" ${config.humidity === s.device_id ? 'selected' : ''}>${s.name} (${s.room})</option>`).join('');
-    
-    co2Select.innerHTML = '<option value="">-- Kein CO₂ --</option>' +
-        co2Sensors.map(s => `<option value="${s.device_id}" ${config.co2 === s.device_id ? 'selected' : ''}>${s.name} (${s.room})</option>`).join('');
+    tempSelect.innerHTML = buildGroupedOptions(tempSensorsThisRoom, tempSensorsOther, 'temperature', config.temperature, '-- Automatisch --');
+    humiditySelect.innerHTML = buildGroupedOptions(humiditySensorsThisRoom, humiditySensorsOther, 'humidity', config.humidity, '-- Automatisch --');
+    co2Select.innerHTML = buildGroupedOptions(co2SensorsThisRoom, co2SensorsOther, 'co2', config.co2, '-- Kein CO₂ --');
     
     // Preview aktualisieren
     updateSensorPreviews();
