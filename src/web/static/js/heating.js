@@ -3,6 +3,7 @@
 let allHeaters = [];
 let allWindows = [];
 let allRooms = [];
+let hiddenRooms = [];  // Versteckte Räume aus zentraler /rooms Konfiguration
 let zoneNameMap = {};
 let currentFilter = 'all';
 let currentRoomFilter = 'all';
@@ -16,7 +17,10 @@ let windowFrequencyChart = null;
 let windowTrendsChart = null;
 
 // Lade alle Heizgeräte beim Seitenaufruf
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Zuerst versteckte Räume laden (aus zentraler /rooms Konfiguration)
+    await loadHiddenRooms();
+    
     loadHeaters();
     loadHeatingMode();
     setupEventListeners();
@@ -40,6 +44,21 @@ document.addEventListener('DOMContentLoaded', () => {
     loadVentilationRecommendations();
     loadShowerPredictions();
 });
+
+// Versteckte Räume aus zentraler Konfiguration laden
+async function loadHiddenRooms() {
+    try {
+        const response = await fetch('/api/rooms/hidden');
+        if (response.ok) {
+            const data = await response.json();
+            hiddenRooms = data.hidden || [];
+            console.log('Hidden rooms loaded:', hiddenRooms);
+        }
+    } catch (error) {
+        console.error('Error loading hidden rooms:', error);
+        hiddenRooms = [];
+    }
+}
 
 // Event Listeners einrichten
 function setupEventListeners() {
@@ -158,6 +177,12 @@ async function loadHeaters() {
         console.log('Loaded devices:', allDevices.length);
         console.log('Climate devices:', allDevices.filter(d => d.domain === 'climate'));
 
+        // Erstelle Zone-ID zu Name Mapping
+        zoneNameMap = {};
+        allRooms.forEach(room => {
+            zoneNameMap[room.id] = room.name;
+        });
+
         // Filtere nur Heizgeräte (climate domain)
         allHeaters = allDevices.filter(d => {
             // Climate domain ist der Hauptindikator
@@ -175,22 +200,23 @@ async function loadHeaters() {
             return false;
         });
 
-        console.log('Filtered heaters:', allHeaters.length);
-        if (allHeaters.length > 0) {
-            console.log('First heater example:', allHeaters[0]);
-        }
-
-        // Erstelle Zone-ID zu Name Mapping
-        zoneNameMap = {};
-        allRooms.forEach(room => {
-            zoneNameMap[room.id] = room.name;
-        });
-
         // Füge Raumnamen zu Heizgeräten hinzu
         allHeaters.forEach(heater => {
             const zoneId = heater.attributes?.zone || heater.zone;
             heater.zoneName = zoneId ? zoneNameMap[zoneId] : 'Ohne Raum';
         });
+
+        // Filtere Heizgeräte aus versteckten Räumen (aus zentraler /rooms Konfiguration)
+        if (hiddenRooms.length > 0) {
+            const beforeCount = allHeaters.length;
+            allHeaters = allHeaters.filter(h => !hiddenRooms.includes(h.zoneName));
+            console.log(`Filtered out ${beforeCount - allHeaters.length} heaters from hidden rooms`);
+        }
+
+        console.log('Filtered heaters:', allHeaters.length);
+        if (allHeaters.length > 0) {
+            console.log('First heater example:', allHeaters[0]);
+        }
 
         updateStatistics();
         populateRoomFilter();
@@ -1216,6 +1242,7 @@ async function fetchJSON(url) {
 
 /**
  * Lädt und zeigt ALLE Fenster mit ihrem aktuellen Status
+ * (respektiert versteckte Räume aus zentraler /rooms Konfiguration)
  */
 async function loadAllWindowStatuses() {
     try {
@@ -1233,9 +1260,25 @@ async function loadAllWindowStatuses() {
             return;
         }
 
+        // Filtere Fenster aus versteckten Räumen
+        let windowData = response.data;
+        if (hiddenRooms.length > 0) {
+            windowData = windowData.filter(w => !hiddenRooms.includes(w.room_name));
+        }
+
+        if (windowData.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 20px; background: #f3f4f6; border-radius: 8px;">
+                    <div style="font-size: 2em; margin-bottom: 10px;">🪟</div>
+                    <p style="margin: 0; color: #6b7280;">Keine Fenster-Sensoren in sichtbaren Räumen</p>
+                </div>
+            `;
+            return;
+        }
+
         // Zähle offene Fenster
-        const openWindows = response.data.filter(w => w.is_open);
-        const closedWindows = response.data.filter(w => !w.is_open);
+        const openWindows = windowData.filter(w => w.is_open);
+        const closedWindows = windowData.filter(w => !w.is_open);
 
         // Header mit Zusammenfassung
         let headerHTML = '';
@@ -1270,7 +1313,7 @@ async function loadAllWindowStatuses() {
         }
 
         // Zeige alle Fenster in einem Grid
-        const windowsHTML = response.data.map(window => {
+        const windowsHTML = windowData.map(window => {
             const isOpen = window.is_open;
             const icon = isOpen ? '🔴' : '🟢';
             const statusText = isOpen ? '⚠️ Geöffnet' : '✓ Geschlossen';
