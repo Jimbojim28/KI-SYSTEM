@@ -1968,6 +1968,369 @@ class Database:
         logger.info(f"Deleted {deleted_count} old window observations (older than {retention_days} days)")
         return deleted_count
 
+    # ===== Ventilation Events Methods (Lüftungszyklen) =====
+
+    def start_ventilation_event(self, device_id: str, device_name: str = None,
+                                 room_name: str = None, temp_start: float = None,
+                                 humidity_start: float = None, co2_start: int = None,
+                                 outdoor_temp: float = None, outdoor_humidity: float = None) -> int:
+        """Startet ein neues Lüftungs-Event (Fenster wurde geöffnet)"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        now = datetime.now()
+        
+        # Bestimme Jahreszeit
+        month = now.month
+        if month in [12, 1, 2]:
+            season = 'winter'
+        elif month in [3, 4, 5]:
+            season = 'spring'
+        elif month in [6, 7, 8]:
+            season = 'summer'
+        else:
+            season = 'autumn'
+        
+        # Bestimme Tageszeit
+        hour = now.hour
+        if 6 <= hour < 12:
+            time_of_day = 'morning'
+        elif 12 <= hour < 17:
+            time_of_day = 'afternoon'
+        elif 17 <= hour < 21:
+            time_of_day = 'evening'
+        else:
+            time_of_day = 'night'
+        
+        weekday = now.weekday()
+
+        # Lösche altes aktives Event für dieses Gerät (falls vorhanden)
+        cursor.execute("DELETE FROM active_ventilations WHERE device_id = ?", (device_id,))
+
+        # Erstelle neues aktives Event
+        cursor.execute("""
+            INSERT INTO active_ventilations
+            (device_id, device_name, room_name, opened_at, temp_start, humidity_start, 
+             co2_start, outdoor_temp, outdoor_humidity, last_check)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (device_id, device_name, room_name, now, temp_start, humidity_start,
+              co2_start, outdoor_temp, outdoor_humidity, now))
+
+        conn.commit()
+        logger.debug(f"Started ventilation event for {device_name} in {room_name}")
+        return cursor.lastrowid
+
+    def end_ventilation_event(self, device_id: str, temp_end: float = None,
+                               humidity_end: float = None, co2_end: int = None) -> Optional[int]:
+        """Beendet ein Lüftungs-Event (Fenster wurde geschlossen)"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Hole aktives Event
+        cursor.execute("""
+            SELECT * FROM active_ventilations WHERE device_id = ?
+        """, (device_id,))
+        
+        active = cursor.fetchone()
+        if not active:
+            logger.debug(f"No active ventilation found for device {device_id}")
+            return None
+
+        active = dict(active)
+        now = datetime.now()
+        opened_at = datetime.fromisoformat(active['opened_at']) if isinstance(active['opened_at'], str) else active['opened_at']
+        duration_minutes = int((now - opened_at).total_seconds() / 60)
+
+        # Berechne Änderungen
+        temp_change = None
+        humidity_change = None
+        co2_change = None
+
+        if temp_end is not None and active['temp_start'] is not None:
+            temp_change = temp_end - active['temp_start']
+        if humidity_end is not None and active['humidity_start'] is not None:
+            humidity_change = humidity_end - active['humidity_start']
+        if co2_end is not None and active['co2_start'] is not None:
+            co2_change = co2_end - active['co2_start']
+
+        # Bestimme Jahreszeit und Tageszeit
+        month = opened_at.month
+        if month in [12, 1, 2]:
+            season = 'winter'
+        elif month in [3, 4, 5]:
+            season = 'spring'
+        elif month in [6, 7, 8]:
+            season = 'summer'
+        else:
+            season = 'autumn'
+        
+        hour = opened_at.hour
+        if 6 <= hour < 12:
+            time_of_day = 'morning'
+        elif 12 <= hour < 17:
+            time_of_day = 'afternoon'
+        elif 17 <= hour < 21:
+            time_of_day = 'evening'
+        else:
+            time_of_day = 'night'
+        
+        weekday = opened_at.weekday()
+
+        # Berechne Effektivitäts-Score (für ML-Training)
+        effectiveness = self._calculate_ventilation_effectiveness(
+            duration_minutes, temp_change, co2_change, humidity_change, active['outdoor_temp']
+        )
+
+        # Speichere in ventilation_events
+        cursor.execute("""
+            INSERT INTO ventilation_events
+            (device_id, device_name, room_name, opened_at, closed_at, duration_minutes,
+             temp_start, humidity_start, co2_start, temp_end, humidity_end, co2_end,
+             temp_change, humidity_change, co2_change, outdoor_temp, outdoor_humidity,
+             season, time_of_day, weekday, effectiveness_score, was_optimal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            device_id, active['device_name'], active['room_name'],
+            active['opened_at'], now, duration_minutes,
+            active['temp_start'], active['humidity_start'], active['co2_start'],
+            temp_end, humidity_end, co2_end,
+            temp_change, humidity_change, co2_change,
+            active['outdoor_temp'], active['outdoor_humidity'],
+            season, time_of_day, weekday,
+            effectiveness, effectiveness > 0.6 if effectiveness else None
+        ))
+
+        event_id = cursor.lastrowid
+
+        # Lösche aktives Event
+        cursor.execute("DELETE FROM active_ventilations WHERE device_id = ?", (device_id,))
+        
+        conn.commit()
+        logger.info(f"Ended ventilation event for {active['device_name']}: {duration_minutes}min, "
+                   f"temp_change={temp_change}, co2_change={co2_change}")
+        return event_id
+
+    def _calculate_ventilation_effectiveness(self, duration: int, temp_change: float,
+                                             co2_change: int, humidity_change: float,
+                                             outdoor_temp: float) -> Optional[float]:
+        """Berechnet einen Effektivitäts-Score für die Lüftung (0-1)"""
+        if duration is None or duration < 1:
+            return None
+        
+        score = 0.0
+        factors = 0
+        
+        # CO2-Reduktion ist positiv (CO2 sinkt = negatives change)
+        if co2_change is not None:
+            if co2_change < -300:
+                score += 1.0
+            elif co2_change < -150:
+                score += 0.7
+            elif co2_change < -50:
+                score += 0.4
+            else:
+                score += 0.1
+            factors += 1
+        
+        # Temperatur-Änderung bewerten (abhängig von Außentemp)
+        if temp_change is not None and outdoor_temp is not None:
+            # Im Winter: Wenig Temperaturverlust bei effektiver CO2-Reduktion ist gut
+            if outdoor_temp < 10:  # Kalte Jahreszeit
+                if temp_change > -1:  # Kaum Wärmeverlust
+                    score += 1.0
+                elif temp_change > -3:
+                    score += 0.6
+                else:
+                    score += 0.2
+            else:  # Warme Jahreszeit: Temperaturanpassung ist OK
+                score += 0.7
+            factors += 1
+        
+        # Luftfeuchtigkeit-Änderung
+        if humidity_change is not None:
+            if humidity_change < -10:  # Deutliche Reduktion
+                score += 0.9
+            elif humidity_change < -5:
+                score += 0.6
+            else:
+                score += 0.4
+            factors += 1
+        
+        return score / factors if factors > 0 else None
+
+    def get_active_ventilations(self) -> List[Dict]:
+        """Holt alle aktiven Lüftungen (offene Fenster)"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT 
+                device_id, device_name, room_name, opened_at,
+                temp_start, humidity_start, co2_start,
+                outdoor_temp, outdoor_humidity,
+                CAST((julianday('now') - julianday(opened_at)) * 24 * 60 AS INTEGER) as minutes_open
+            FROM active_ventilations
+            ORDER BY opened_at ASC
+        """)
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_ventilation_events(self, room_name: str = None, days_back: int = 7,
+                                limit: int = 100) -> List[Dict]:
+        """Holt abgeschlossene Lüftungs-Events"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT *
+            FROM ventilation_events
+            WHERE closed_at IS NOT NULL
+              AND opened_at >= datetime('now', ?)
+        """
+        params = [f'-{days_back} days']
+
+        if room_name:
+            query += " AND room_name = ?"
+            params.append(room_name)
+
+        query += " ORDER BY opened_at DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_ventilation_stats_by_room(self, days_back: int = 7) -> List[Dict]:
+        """Holt Lüftungsstatistiken pro Raum"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                room_name,
+                COUNT(*) as total_events,
+                ROUND(AVG(duration_minutes), 1) as avg_duration,
+                ROUND(SUM(duration_minutes), 0) as total_duration,
+                ROUND(AVG(temp_change), 2) as avg_temp_change,
+                ROUND(AVG(humidity_change), 2) as avg_humidity_change,
+                ROUND(AVG(co2_change), 0) as avg_co2_change,
+                ROUND(AVG(outdoor_temp), 1) as avg_outdoor_temp,
+                ROUND(AVG(effectiveness_score), 2) as avg_effectiveness,
+                MAX(opened_at) as last_ventilation
+            FROM ventilation_events
+            WHERE closed_at IS NOT NULL
+              AND opened_at >= datetime('now', ?)
+            GROUP BY room_name
+            ORDER BY total_events DESC
+        """, (f'-{days_back} days',))
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_ventilation_ml_training_data(self, min_samples: int = 10) -> List[Dict]:
+        """Holt Trainingsdaten für ML-Modell (optimale Lüftungsdauer)"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                room_name,
+                outdoor_temp,
+                duration_minutes,
+                temp_start,
+                temp_change,
+                co2_start,
+                co2_change,
+                humidity_start,
+                humidity_change,
+                season,
+                time_of_day,
+                weekday,
+                effectiveness_score,
+                was_optimal
+            FROM ventilation_events
+            WHERE closed_at IS NOT NULL
+              AND duration_minutes IS NOT NULL
+              AND duration_minutes > 0
+              AND duration_minutes < 120  -- Max 2 Stunden
+              AND outdoor_temp IS NOT NULL
+        """)
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_optimal_ventilation_duration(self, outdoor_temp: float, room_name: str = None) -> Optional[Dict]:
+        """Berechnet optimale Lüftungsdauer basierend auf historischen Daten"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Suche ähnliche Bedingungen (Außentemperatur ±3°C)
+        query = """
+            SELECT
+                ROUND(AVG(duration_minutes), 0) as recommended_duration,
+                ROUND(AVG(temp_change), 2) as expected_temp_change,
+                ROUND(AVG(co2_change), 0) as expected_co2_change,
+                COUNT(*) as sample_count,
+                ROUND(AVG(effectiveness_score), 2) as avg_effectiveness
+            FROM ventilation_events
+            WHERE closed_at IS NOT NULL
+              AND outdoor_temp BETWEEN ? AND ?
+              AND effectiveness_score > 0.5
+              AND duration_minutes > 2
+              AND duration_minutes < 60
+        """
+        params = [outdoor_temp - 3, outdoor_temp + 3]
+
+        if room_name:
+            query += " AND room_name = ?"
+            params.append(room_name)
+
+        cursor.execute(query, params)
+        result = cursor.fetchone()
+
+        if result and result['sample_count'] >= 5:
+            return dict(result)
+        return None
+
+    def get_ventilation_effectiveness_by_outdoor_temp(self) -> Dict[str, Dict]:
+        """Holt Lüftungseffektivität gruppiert nach Außentemperatur-Bereichen"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Definiere Temperaturbereiche und berechne Statistiken für jeden
+        temp_ranges = {
+            '<5°C': (-50, 5),
+            '5-10°C': (5, 10),
+            '10-15°C': (10, 15),
+            '15-20°C': (15, 20),
+            '>20°C': (20, 50)
+        }
+        
+        result = {}
+        
+        for range_name, (min_temp, max_temp) in temp_ranges.items():
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as event_count,
+                    ROUND(AVG(duration_minutes), 0) as avg_duration,
+                    ROUND(AVG(effectiveness_score), 2) as avg_effectiveness,
+                    ROUND(AVG(temp_change), 2) as avg_temp_change,
+                    ROUND(AVG(co2_change), 0) as avg_co2_change
+                FROM ventilation_events
+                WHERE closed_at IS NOT NULL
+                  AND outdoor_temp >= ? AND outdoor_temp < ?
+                  AND duration_minutes > 0
+            """, (min_temp, max_temp))
+            
+            row = cursor.fetchone()
+            if row and row['event_count'] > 0:
+                result[range_name] = {
+                    'event_count': row['event_count'],
+                    'avg_duration': row['avg_duration'],
+                    'avg_effectiveness': row['avg_effectiveness'],
+                    'avg_temp_change': row['avg_temp_change'],
+                    'avg_co2_change': row['avg_co2_change']
+                }
+        
+        return result
+
     # ===== Raumspezifisches Lernen Methoden =====
 
     def save_room_learning_parameter(self, room_name: str, parameter_name: str,

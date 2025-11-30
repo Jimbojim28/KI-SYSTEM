@@ -473,4 +473,306 @@ def init_ventilation_blueprint(engine, db, config):
             logger.error(f"Error getting room history: {e}")
             return jsonify({'error': str(e)}), 500
 
+    # ===== Ventilation Events API =====
+
+    @ventilation_bp.route('/ventilation/windows/active', methods=['GET'])
+    def get_active_ventilations():
+        """API: Aktuelle offene Fenster mit Lüftungsdauer"""
+        try:
+            active = db.get_active_ventilations() if db else []
+            
+            # Bereichere mit aktuellen Klimadaten falls möglich
+            for vent in active:
+                room_name = vent.get('room_name')
+                if room_name:
+                    # Hole aktuelle Sensordaten für diesen Raum
+                    sensors = _get_all_sensors()
+                    room_sensors = [s for s in sensors if s.get('room') == room_name]
+                    
+                    for sensor in room_sensors:
+                        if sensor['type'] == 'temperature' and vent.get('temp_current') is None:
+                            vent['temp_current'] = sensor.get('current_value')
+                        elif sensor['type'] == 'co2' and vent.get('co2_current') is None:
+                            vent['co2_current'] = sensor.get('current_value')
+                        elif sensor['type'] == 'humidity' and vent.get('humidity_current') is None:
+                            vent['humidity_current'] = sensor.get('current_value')
+            
+            return jsonify({
+                'success': True,
+                'active_ventilations': active,
+                'count': len(active)
+            })
+        except Exception as e:
+            logger.error(f"Error getting active ventilations: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/events', methods=['GET'])
+    def get_ventilation_events():
+        """API: Abgeschlossene Lüftungs-Events mit Statistiken"""
+        try:
+            room_name = request.args.get('room')
+            days = request.args.get('days', 7, type=int)
+            days = min(max(days, 1), 30)  # 1-30 Tage
+            
+            events = db.get_ventilation_events(room_name=room_name, days_back=days) if db else []
+            
+            return jsonify({
+                'success': True,
+                'events': events,
+                'count': len(events),
+                'room_name': room_name,
+                'days': days
+            })
+        except Exception as e:
+            logger.error(f"Error getting ventilation events: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/stats', methods=['GET'])
+    def get_ventilation_stats():
+        """API: Lüftungsstatistiken pro Raum"""
+        try:
+            days = request.args.get('days', 7, type=int)
+            days = min(max(days, 1), 30)
+            
+            stats = db.get_ventilation_stats_by_room(days_back=days) if db else []
+            
+            return jsonify({
+                'success': True,
+                'stats': stats,
+                'days': days
+            })
+        except Exception as e:
+            logger.error(f"Error getting ventilation stats: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/recommendation/duration', methods=['GET'])
+    def get_optimal_duration():
+        """API: Empfohlene Lüftungsdauer basierend auf ML-Daten"""
+        try:
+            # Hole aktuelle Außentemperatur
+            outdoor_temp = request.args.get('outdoor_temp', type=float)
+            room_name = request.args.get('room')
+            
+            # Falls keine Außentemp angegeben, versuche sie zu ermitteln
+            if outdoor_temp is None:
+                mapping = _load_sensor_mapping()
+                outdoor = mapping.get('outdoor_sensors', {})
+                sensors = _get_all_sensors()
+                
+                for sensor in sensors:
+                    if sensor.get('device_id') == outdoor.get('temperature'):
+                        outdoor_temp = sensor.get('current_value')
+                        break
+            
+            if outdoor_temp is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'Keine Außentemperatur verfügbar'
+                }), 400
+            
+            recommendation = db.get_optimal_ventilation_duration(
+                outdoor_temp=outdoor_temp,
+                room_name=room_name
+            ) if db else None
+            
+            if recommendation:
+                return jsonify({
+                    'success': True,
+                    'outdoor_temp': outdoor_temp,
+                    'room_name': room_name,
+                    'recommendation': {
+                        'duration_minutes': recommendation['recommended_duration'],
+                        'expected_temp_change': recommendation['expected_temp_change'],
+                        'expected_co2_change': recommendation['expected_co2_change'],
+                        'confidence': recommendation['avg_effectiveness'],
+                        'sample_count': recommendation['sample_count']
+                    }
+                })
+            else:
+                # Fallback: Einfache Empfehlung basierend auf Außentemperatur
+                if outdoor_temp < 0:
+                    duration = 5
+                elif outdoor_temp < 10:
+                    duration = 10
+                elif outdoor_temp < 20:
+                    duration = 15
+                else:
+                    duration = 20
+                
+                return jsonify({
+                    'success': True,
+                    'outdoor_temp': outdoor_temp,
+                    'room_name': room_name,
+                    'recommendation': {
+                        'duration_minutes': duration,
+                        'expected_temp_change': None,
+                        'expected_co2_change': None,
+                        'confidence': None,
+                        'sample_count': 0,
+                        'is_fallback': True,
+                        'message': 'Basierend auf Standardwerten (noch keine ML-Daten)'
+                    }
+                })
+        except Exception as e:
+            logger.error(f"Error getting optimal duration: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/ml/training-data', methods=['GET'])
+    def get_ml_training_data():
+        """API: ML-Trainingsdaten für Lüftungsoptimierung"""
+        try:
+            data = db.get_ventilation_ml_training_data() if db else []
+            
+            return jsonify({
+                'success': True,
+                'training_data': data,
+                'sample_count': len(data),
+                'ready_for_training': len(data) >= 50
+            })
+        except Exception as e:
+            logger.error(f"Error getting ML training data: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ==================== NEUE FENSTER-ENDPUNKTE ====================
+
+    @ventilation_bp.route('/ventilation/window-status', methods=['GET'])
+    def get_window_status():
+        """API: Aktueller Status aller Fenster"""
+        try:
+            # Hole Fenster aus der Datenbank (window_observations Tabelle)
+            if not db:
+                return jsonify({'success': False, 'error': 'Database not available'}), 500
+            
+            conn = db._get_connection()
+            cursor = conn.cursor()
+            
+            # Hole den letzten Status jedes Fensters (neuester Eintrag pro device_id)
+            cursor.execute('''
+                SELECT wo.device_id, wo.device_name, wo.room_name, wo.is_open, wo.timestamp
+                FROM window_observations wo
+                INNER JOIN (
+                    SELECT device_id, MAX(timestamp) as max_ts
+                    FROM window_observations
+                    GROUP BY device_id
+                ) latest ON wo.device_id = latest.device_id AND wo.timestamp = latest.max_ts
+                ORDER BY wo.room_name, wo.device_name
+            ''')
+            
+            windows = []
+            for row in cursor.fetchall():
+                device_id = row[0]
+                device_name = row[1] or row[0]
+                db_room_name = row[2]  # Könnte None, '', oder 'Unbekannt' sein
+                is_open = bool(row[3])
+                
+                # Standardmäßig aus dem Gerätenamen ableiten
+                room_name = None
+                if device_name:
+                    # Extrahiere Raum aus "Küche Fenster", "Bad Fenster", "Wohnzimmer 2 Fenster", etc.
+                    import re
+                    name_lower = device_name.lower()
+                    if 'fenster' in name_lower:
+                        room_name = device_name.replace(' Fenster', '').replace(' fenster', '').strip()
+                    elif 'tür' in name_lower or 'door' in name_lower:
+                        room_name = device_name.replace(' Tür', '').replace(' Door', '').replace(' tür', '').replace(' door', '').strip()
+                    else:
+                        room_name = device_name
+                    
+                    # Entferne Nummerierung am Ende (z.B. "Wohnzimmer 2" -> "Wohnzimmer")
+                    if room_name:
+                        room_name = re.sub(r'\s+\d+$', '', room_name).strip()
+                
+                # Verwende DB-Wert nur wenn er sinnvoll ist
+                if db_room_name and db_room_name.strip() and db_room_name not in ('Unbekannt', 'None', 'null'):
+                    room_name = db_room_name
+                
+                # Wenn Fenster offen ist, finde den Zeitpunkt seit wann es kontinuierlich offen ist
+                open_since = None
+                if is_open:
+                    # Finde den letzten Zustandswechsel von geschlossen zu offen
+                    cursor.execute('''
+                        SELECT timestamp FROM window_observations
+                        WHERE device_id = ? AND is_open = 0
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    ''', (device_id,))
+                    last_closed = cursor.fetchone()
+                    
+                    if last_closed:
+                        # Finde den ersten "offen" Eintrag nach dem letzten "geschlossen"
+                        cursor.execute('''
+                            SELECT MIN(timestamp) FROM window_observations
+                            WHERE device_id = ? AND is_open = 1 AND timestamp > ?
+                        ''', (device_id, last_closed[0]))
+                        first_open = cursor.fetchone()
+                        if first_open and first_open[0]:
+                            open_since = first_open[0]
+                    else:
+                        # Fenster war nie geschlossen, nimm den ältesten offenen Eintrag
+                        cursor.execute('''
+                            SELECT MIN(timestamp) FROM window_observations
+                            WHERE device_id = ? AND is_open = 1
+                        ''', (device_id,))
+                        first_open = cursor.fetchone()
+                        if first_open and first_open[0]:
+                            open_since = first_open[0]
+                
+                windows.append({
+                    'device_id': device_id,
+                    'name': device_name,
+                    'room': room_name or 'Unbekannt',
+                    'is_open': is_open,
+                    'open_since': open_since
+                })
+            
+            return jsonify({
+                'success': True,
+                'windows': windows,
+                'count': len(windows)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting window status: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/window-events', methods=['GET'])
+    def get_window_events():
+        """API: Lüftungsereignisse für Frontend"""
+        try:
+            room = request.args.get('room')
+            hours = int(request.args.get('hours', 168))  # Default: 1 Woche
+            days_back = max(1, hours // 24)  # Konvertiere Stunden zu Tagen
+            
+            events = db.get_ventilation_events(room_name=room, days_back=days_back) if db else []
+            
+            return jsonify({
+                'success': True,
+                'events': events,
+                'count': len(events),
+                'hours': hours
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting window events: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/effectiveness', methods=['GET'])
+    def get_ventilation_effectiveness():
+        """API: Effektivitätsdaten für KI-Empfehlungen"""
+        try:
+            if not db:
+                return jsonify({'success': False, 'error': 'Database not available'}), 500
+            
+            effectiveness = db.get_ventilation_effectiveness_by_outdoor_temp()
+            
+            return jsonify({
+                'success': True,
+                'effectiveness': effectiveness
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting effectiveness: {e}")
+            return jsonify({'error': str(e)}), 500
+
     return ventilation_bp
+

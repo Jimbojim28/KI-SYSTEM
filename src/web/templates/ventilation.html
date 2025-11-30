@@ -11,6 +11,7 @@
 <!-- Tab Navigation -->
 <div class="tabs">
     <button class="tab-button active" onclick="switchTab('overview')">🏠 Übersicht</button>
+    <button class="tab-button" onclick="switchTab('windows')">🪟 Fenster</button>
     <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
 </div>
 
@@ -26,6 +27,78 @@
         <div class="loading-state">
             <div class="spinner"></div>
             <p>Lade Raumdaten aus Homey...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Fenster Tab -->
+<div id="windows-tab" class="tab-content">
+    <!-- Aktueller Fensterstatus -->
+    <div class="section-header">
+        <h3>🪟 Aktuelle Fensterstatus</h3>
+        <p class="section-info">Übersicht aller Fenster und ihrer aktuellen Zustände</p>
+    </div>
+    
+    <div id="windows-grid" class="windows-grid">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Fensterstatus...</p>
+        </div>
+    </div>
+    
+    <!-- Lüftungsstatistiken -->
+    <div class="section-header" style="margin-top: 2rem;">
+        <h3>📊 Lüftungsstatistiken</h3>
+        <p class="section-info">Wie lange waren Fenster geöffnet und wie effektiv war die Lüftung?</p>
+    </div>
+    
+    <div class="stats-filter">
+        <label>Zeitraum:</label>
+        <select id="stats-hours" onchange="loadWindowStatistics()">
+            <option value="24">Letzte 24 Stunden</option>
+            <option value="48">Letzte 48 Stunden</option>
+            <option value="168" selected>Letzte Woche</option>
+            <option value="720">Letzte 30 Tage</option>
+        </select>
+    </div>
+    
+    <div id="ventilation-stats" class="ventilation-stats">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Statistiken...</p>
+        </div>
+    </div>
+    
+    <!-- Lüftungshistorie Chart -->
+    <div class="chart-section">
+        <h4>📈 Lüftungsdauer pro Raum</h4>
+        <div class="chart-container-medium">
+            <canvas id="ventilation-duration-chart"></canvas>
+        </div>
+    </div>
+    
+    <!-- KI-Empfehlungen basierend auf Außentemperatur -->
+    <div class="section-header" style="margin-top: 2rem;">
+        <h3>🤖 KI-Lüftungsempfehlungen</h3>
+        <p class="section-info">Optimale Lüftungsdauer basierend auf Außentemperatur (aus Ihren Daten gelernt)</p>
+    </div>
+    
+    <div id="ai-recommendations" class="ai-recommendations">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Analysiere Lüftungsdaten...</p>
+        </div>
+    </div>
+    
+    <!-- Letzte Lüftungsereignisse -->
+    <div class="section-header" style="margin-top: 2rem;">
+        <h3>📜 Letzte Lüftungsereignisse</h3>
+    </div>
+    
+    <div id="recent-events" class="recent-events">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Ereignisse...</p>
         </div>
     </div>
 </div>
@@ -471,6 +544,263 @@
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
 }
+
+/* Fenster Tab Styles */
+.section-header {
+    margin-bottom: 1rem;
+}
+.section-header h3 {
+    margin: 0 0 0.25rem 0;
+    color: #333;
+}
+.section-info {
+    color: #666;
+    margin: 0;
+    font-size: 0.9em;
+}
+
+/* Fenster Grid */
+.windows-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.window-tile {
+    background: white;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-left: 4px solid #667eea;
+    transition: transform 0.2s;
+}
+.window-tile:hover {
+    transform: translateY(-2px);
+}
+.window-tile.open {
+    border-left-color: #4CAF50;
+    background: linear-gradient(135deg, #fff 0%, #e8f5e9 100%);
+}
+.window-tile.closed {
+    border-left-color: #9e9e9e;
+}
+.window-tile .room-name {
+    font-size: 0.85em;
+    color: #666;
+    margin-bottom: 0.25rem;
+}
+.window-tile .window-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    margin-bottom: 0.75rem;
+}
+.window-tile .status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.1em;
+}
+.window-tile .status-icon {
+    font-size: 1.3em;
+}
+.window-tile .open-duration {
+    font-size: 0.85em;
+    color: #4CAF50;
+    margin-top: 0.5rem;
+    font-weight: 500;
+}
+
+/* Statistik Filter */
+.stats-filter {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.stats-filter label {
+    font-weight: 500;
+}
+.stats-filter select {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1em;
+}
+
+/* Statistik Cards */
+.ventilation-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.stat-card .room-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #f0f0f0;
+}
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0;
+}
+.stat-row .label {
+    color: #666;
+    font-size: 0.9em;
+}
+.stat-row .value {
+    font-weight: 600;
+    color: #333;
+}
+.stat-row .value.positive {
+    color: #4CAF50;
+}
+.stat-row .value.negative {
+    color: #f44336;
+}
+
+/* Chart Section */
+.chart-section {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 1.5rem;
+}
+.chart-section h4 {
+    margin: 0 0 1rem 0;
+    color: #333;
+}
+.chart-container-medium {
+    position: relative;
+    height: 300px;
+}
+
+/* KI Empfehlungen */
+.ai-recommendations {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.ai-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+}
+.ai-card .temp-range {
+    font-size: 0.9em;
+    opacity: 0.9;
+    margin-bottom: 0.5rem;
+}
+.ai-card .recommendation {
+    font-size: 1.8em;
+    font-weight: bold;
+    margin: 0.5rem 0;
+}
+.ai-card .events-count {
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+.ai-card .effectiveness {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    font-size: 0.9em;
+}
+.ai-card.cold {
+    background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 100%);
+}
+.ai-card.cool {
+    background: linear-gradient(135deg, #81d4fa 0%, #4fc3f7 100%);
+}
+.ai-card.mild {
+    background: linear-gradient(135deg, #aed581 0%, #8bc34a 100%);
+}
+.ai-card.warm {
+    background: linear-gradient(135deg, #ffb74d 0%, #ff9800 100%);
+}
+.ai-card.hot {
+    background: linear-gradient(135deg, #ff8a65 0%, #f44336 100%);
+}
+
+/* Letzte Ereignisse */
+.recent-events {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    overflow: hidden;
+}
+.event-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 1rem;
+}
+.event-item:last-child {
+    border-bottom: none;
+}
+.event-icon {
+    font-size: 1.5em;
+    width: 40px;
+    text-align: center;
+}
+.event-details {
+    flex: 1;
+}
+.event-details .title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+.event-details .subtitle {
+    font-size: 0.85em;
+    color: #666;
+}
+.event-meta {
+    text-align: right;
+}
+.event-meta .duration {
+    font-weight: 600;
+    color: #667eea;
+}
+.event-meta .time {
+    font-size: 0.85em;
+    color: #999;
+}
+.event-changes {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.85em;
+}
+.event-change {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.event-change.positive { color: #4CAF50; }
+.event-change.negative { color: #f44336; }
+.no-events {
+    padding: 2rem;
+    text-align: center;
+    color: #666;
+}
 </style>
 
 <script>
@@ -505,6 +835,8 @@ function switchTab(tab) {
     
     if (tab === 'settings') {
         loadSettings();
+    } else if (tab === 'windows') {
+        loadWindowsTab();
     }
 }
 
@@ -988,6 +1320,433 @@ function renderChart(data, hours) {
             }
         }
     });
+}
+
+// ==================== FENSTER TAB FUNKTIONEN ====================
+
+let ventilationDurationChart = null;
+
+// Fenster-Tab laden
+async function loadWindowsTab() {
+    await Promise.all([
+        loadWindowStatus(),
+        loadWindowStatistics(),
+        loadAIRecommendations(),
+        loadRecentEvents()
+    ]);
+}
+
+// Aktueller Fensterstatus laden
+async function loadWindowStatus() {
+    const container = document.getElementById('windows-grid');
+    
+    try {
+        const response = await fetch('/api/ventilation/window-status');
+        const data = await response.json();
+        
+        if (!data.success || !data.windows || data.windows.length === 0) {
+            container.innerHTML = `
+                <div class="no-events" style="grid-column: 1/-1;">
+                    <p>🪟 Keine Fenstersensoren gefunden</p>
+                    <p style="font-size: 0.9em; color: #999;">Fenster-/Türsensoren aus Homey werden hier angezeigt</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Gruppiere nach Raum
+        const windowsByRoom = {};
+        data.windows.forEach(w => {
+            const room = w.room || 'Unbekannt';
+            if (!windowsByRoom[room]) windowsByRoom[room] = [];
+            windowsByRoom[room].push(w);
+        });
+        
+        let html = '';
+        
+        // Sortiere Räume und zeige offene zuerst
+        const sortedRooms = Object.keys(windowsByRoom).sort((a, b) => {
+            const aOpen = windowsByRoom[a].some(w => w.is_open);
+            const bOpen = windowsByRoom[b].some(w => w.is_open);
+            if (aOpen && !bOpen) return -1;
+            if (!aOpen && bOpen) return 1;
+            return a.localeCompare(b);
+        });
+        
+        sortedRooms.forEach(room => {
+            windowsByRoom[room].forEach(w => {
+                const statusClass = w.is_open ? 'open' : 'closed';
+                const statusIcon = w.is_open ? '🟢' : '⚪';
+                const statusText = w.is_open ? 'Offen' : 'Geschlossen';
+                
+                let durationHtml = '';
+                if (w.is_open && w.open_since) {
+                    const openSince = new Date(w.open_since);
+                    const minutes = Math.floor((Date.now() - openSince.getTime()) / 60000);
+                    if (minutes < 60) {
+                        durationHtml = `<div class="open-duration">⏱️ Offen seit ${minutes} Min.</div>`;
+                    } else {
+                        const hours = Math.floor(minutes / 60);
+                        const mins = minutes % 60;
+                        durationHtml = `<div class="open-duration">⏱️ Offen seit ${hours}h ${mins}m</div>`;
+                    }
+                }
+                
+                html += `
+                    <div class="window-tile ${statusClass}">
+                        <div class="room-name">📍 ${room}</div>
+                        <div class="window-name">${w.name}</div>
+                        <div class="status">
+                            <span class="status-icon">${statusIcon}</span>
+                            <span>${statusText}</span>
+                        </div>
+                        ${durationHtml}
+                    </div>
+                `;
+            });
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Fensterstatus:', error);
+        container.innerHTML = '<div class="no-events" style="grid-column: 1/-1;">❌ Fehler beim Laden</div>';
+    }
+}
+
+// Lüftungsstatistiken laden
+async function loadWindowStatistics() {
+    const container = document.getElementById('ventilation-stats');
+    const hours = parseInt(document.getElementById('stats-hours').value) || 168;
+    
+    try {
+        const response = await fetch(`/api/ventilation/window-events?hours=${hours}`);
+        const data = await response.json();
+        
+        if (!data.success || !data.events || data.events.length === 0) {
+            container.innerHTML = `
+                <div class="no-events" style="grid-column: 1/-1;">
+                    <p>📊 Noch keine Lüftungsereignisse aufgezeichnet</p>
+                    <p style="font-size: 0.9em; color: #999;">Daten werden gesammelt, sobald Fenster geöffnet und geschlossen werden</p>
+                </div>
+            `;
+            updateDurationChart([]);
+            return;
+        }
+        
+        // Statistiken pro Raum berechnen
+        const statsByRoom = {};
+        data.events.filter(e => e.is_complete).forEach(event => {
+            const room = event.room_name;
+            if (!statsByRoom[room]) {
+                statsByRoom[room] = {
+                    totalDuration: 0,
+                    eventCount: 0,
+                    tempChanges: [],
+                    humidityChanges: [],
+                    co2Changes: []
+                };
+            }
+            
+            const stats = statsByRoom[room];
+            stats.totalDuration += event.duration_minutes || 0;
+            stats.eventCount++;
+            
+            if (event.temperature_before !== null && event.temperature_after !== null) {
+                stats.tempChanges.push(event.temperature_after - event.temperature_before);
+            }
+            if (event.humidity_before !== null && event.humidity_after !== null) {
+                stats.humidityChanges.push(event.humidity_after - event.humidity_before);
+            }
+            if (event.co2_before !== null && event.co2_after !== null) {
+                stats.co2Changes.push(event.co2_after - event.co2_before);
+            }
+        });
+        
+        let html = '';
+        
+        Object.keys(statsByRoom).sort().forEach(room => {
+            const stats = statsByRoom[room];
+            const avgDuration = stats.eventCount > 0 ? Math.round(stats.totalDuration / stats.eventCount) : 0;
+            
+            // Durchschnittliche Änderungen berechnen
+            const avgTempChange = stats.tempChanges.length > 0 
+                ? (stats.tempChanges.reduce((a, b) => a + b, 0) / stats.tempChanges.length).toFixed(1)
+                : null;
+            const avgHumidityChange = stats.humidityChanges.length > 0
+                ? (stats.humidityChanges.reduce((a, b) => a + b, 0) / stats.humidityChanges.length).toFixed(1)
+                : null;
+            const avgCo2Change = stats.co2Changes.length > 0
+                ? Math.round(stats.co2Changes.reduce((a, b) => a + b, 0) / stats.co2Changes.length)
+                : null;
+            
+            html += `
+                <div class="stat-card">
+                    <div class="room-name">🏠 ${room}</div>
+                    <div class="stat-row">
+                        <span class="label">Lüftungsereignisse</span>
+                        <span class="value">${stats.eventCount}×</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="label">Gesamtdauer</span>
+                        <span class="value">${formatDuration(stats.totalDuration)}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="label">Ø Dauer pro Lüftung</span>
+                        <span class="value">${avgDuration} Min.</span>
+                    </div>
+                    ${avgTempChange !== null ? `
+                        <div class="stat-row">
+                            <span class="label">Ø Temperaturänderung</span>
+                            <span class="value ${parseFloat(avgTempChange) < 0 ? 'negative' : ''}">${avgTempChange > 0 ? '+' : ''}${avgTempChange}°C</span>
+                        </div>
+                    ` : ''}
+                    ${avgHumidityChange !== null ? `
+                        <div class="stat-row">
+                            <span class="label">Ø Feuchtigkeitsänderung</span>
+                            <span class="value ${parseFloat(avgHumidityChange) < 0 ? 'positive' : 'negative'}">${avgHumidityChange > 0 ? '+' : ''}${avgHumidityChange}%</span>
+                        </div>
+                    ` : ''}
+                    ${avgCo2Change !== null ? `
+                        <div class="stat-row">
+                            <span class="label">Ø CO₂-Änderung</span>
+                            <span class="value ${avgCo2Change < 0 ? 'positive' : 'negative'}">${avgCo2Change > 0 ? '+' : ''}${avgCo2Change} ppm</span>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html || '<div class="no-events" style="grid-column: 1/-1;">Keine abgeschlossenen Lüftungen gefunden</div>';
+        
+        // Chart aktualisieren
+        const chartData = Object.entries(statsByRoom).map(([room, stats]) => ({
+            room,
+            duration: stats.totalDuration,
+            count: stats.eventCount
+        }));
+        updateDurationChart(chartData);
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Statistiken:', error);
+        container.innerHTML = '<div class="no-events" style="grid-column: 1/-1;">❌ Fehler beim Laden</div>';
+    }
+}
+
+// Dauer formatieren
+function formatDuration(minutes) {
+    if (minutes < 60) return `${minutes} Min.`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours < 24) return `${hours}h ${mins}m`;
+    const days = Math.floor(hours / 24);
+    const h = hours % 24;
+    return `${days}d ${h}h`;
+}
+
+// Dauer-Chart aktualisieren
+function updateDurationChart(data) {
+    const ctx = document.getElementById('ventilation-duration-chart');
+    if (!ctx) return;
+    
+    if (ventilationDurationChart) {
+        ventilationDurationChart.destroy();
+    }
+    
+    if (data.length === 0) {
+        return;
+    }
+    
+    // Sortiere nach Dauer absteigend
+    data.sort((a, b) => b.duration - a.duration);
+    
+    ventilationDurationChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.room),
+            datasets: [{
+                label: 'Lüftungsdauer (Minuten)',
+                data: data.map(d => d.duration),
+                backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                borderColor: 'rgb(102, 126, 234)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            return `${data[context.dataIndex].count} Lüftungen`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Gesamtdauer (Minuten)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// KI-Empfehlungen laden
+async function loadAIRecommendations() {
+    const container = document.getElementById('ai-recommendations');
+    
+    try {
+        const response = await fetch('/api/ventilation/effectiveness');
+        const data = await response.json();
+        
+        if (!data.success || !data.effectiveness || Object.keys(data.effectiveness).length === 0) {
+            container.innerHTML = `
+                <div class="no-events" style="grid-column: 1/-1;">
+                    <p>🤖 Noch nicht genug Daten für KI-Empfehlungen</p>
+                    <p style="font-size: 0.9em; color: #999;">Nach einigen Lüftungsereignissen werden hier optimale Lüftungsdauern angezeigt</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        // Temperaturbereichs-Konfiguration
+        const tempRanges = [
+            { key: '<5°C', label: '❄️ Sehr kalt', sublabel: 'unter 5°C', class: 'cold' },
+            { key: '5-10°C', label: '🌬️ Kalt', sublabel: '5 bis 10°C', class: 'cool' },
+            { key: '10-15°C', label: '🍃 Kühl', sublabel: '10 bis 15°C', class: 'mild' },
+            { key: '15-20°C', label: '☀️ Mild', sublabel: '15 bis 20°C', class: 'warm' },
+            { key: '>20°C', label: '🌡️ Warm', sublabel: 'über 20°C', class: 'hot' }
+        ];
+        
+        tempRanges.forEach(range => {
+            const eff = data.effectiveness[range.key];
+            if (eff && eff.event_count > 0) {
+                html += `
+                    <div class="ai-card ${range.class}">
+                        <div class="temp-range">${range.label}<br>${range.sublabel}</div>
+                        <div class="recommendation">${Math.round(eff.avg_duration)} Min.</div>
+                        <div class="events-count">basierend auf ${eff.event_count} Lüftungen</div>
+                        ${eff.avg_effectiveness !== null ? `
+                            <div class="effectiveness">
+                                Effektivität: ${(eff.avg_effectiveness * 100).toFixed(0)}%
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+        });
+        
+        if (html === '') {
+            container.innerHTML = `
+                <div class="no-events" style="grid-column: 1/-1;">
+                    <p>🤖 Noch nicht genug Daten für KI-Empfehlungen</p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = html;
+        }
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der KI-Empfehlungen:', error);
+        container.innerHTML = '<div class="no-events" style="grid-column: 1/-1;">❌ Fehler beim Laden</div>';
+    }
+}
+
+// Letzte Ereignisse laden
+async function loadRecentEvents() {
+    const container = document.getElementById('recent-events');
+    
+    try {
+        const response = await fetch('/api/ventilation/window-events?hours=72');
+        const data = await response.json();
+        
+        if (!data.success || !data.events || data.events.length === 0) {
+            container.innerHTML = '<div class="no-events">📭 Keine aktuellen Lüftungsereignisse</div>';
+            return;
+        }
+        
+        // Zeige die letzten 10 abgeschlossenen Ereignisse
+        const completedEvents = data.events
+            .filter(e => e.is_complete)
+            .sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))
+            .slice(0, 10);
+        
+        if (completedEvents.length === 0) {
+            container.innerHTML = '<div class="no-events">📭 Keine abgeschlossenen Lüftungen in den letzten 72 Stunden</div>';
+            return;
+        }
+        
+        let html = '';
+        
+        completedEvents.forEach(event => {
+            const closedAt = new Date(event.closed_at);
+            const timeAgo = formatTimeAgo(closedAt);
+            
+            let changesHtml = '';
+            if (event.temperature_before !== null && event.temperature_after !== null) {
+                const tempDiff = (event.temperature_after - event.temperature_before).toFixed(1);
+                const tempClass = parseFloat(tempDiff) < 0 ? 'negative' : '';
+                changesHtml += `<span class="event-change ${tempClass}">🌡️ ${tempDiff > 0 ? '+' : ''}${tempDiff}°C</span>`;
+            }
+            if (event.humidity_before !== null && event.humidity_after !== null) {
+                const humDiff = (event.humidity_after - event.humidity_before).toFixed(0);
+                const humClass = parseFloat(humDiff) < 0 ? 'positive' : 'negative';
+                changesHtml += `<span class="event-change ${humClass}">💧 ${humDiff > 0 ? '+' : ''}${humDiff}%</span>`;
+            }
+            if (event.co2_before !== null && event.co2_after !== null) {
+                const co2Diff = event.co2_after - event.co2_before;
+                const co2Class = co2Diff < 0 ? 'positive' : 'negative';
+                changesHtml += `<span class="event-change ${co2Class}">💨 ${co2Diff > 0 ? '+' : ''}${co2Diff} ppm</span>`;
+            }
+            
+            html += `
+                <div class="event-item">
+                    <div class="event-icon">🪟</div>
+                    <div class="event-details">
+                        <div class="title">${event.room_name}</div>
+                        <div class="subtitle">Außentemperatur: ${event.outdoor_temperature !== null ? event.outdoor_temperature.toFixed(1) + '°C' : 'unbekannt'}</div>
+                        ${changesHtml ? `<div class="event-changes">${changesHtml}</div>` : ''}
+                    </div>
+                    <div class="event-meta">
+                        <div class="duration">${event.duration_minutes} Min.</div>
+                        <div class="time">${timeAgo}</div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Ereignisse:', error);
+        container.innerHTML = '<div class="no-events">❌ Fehler beim Laden</div>';
+    }
+}
+
+// Zeit formatieren (z.B. "vor 2 Stunden")
+function formatTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'gerade eben';
+    if (diffMins < 60) return `vor ${diffMins} Min.`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `vor ${diffHours} Std.`;
+    
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'gestern';
+    return `vor ${diffDays} Tagen`;
 }
 
 // Init
