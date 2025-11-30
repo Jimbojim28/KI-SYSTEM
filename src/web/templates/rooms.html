@@ -22,6 +22,11 @@
         <div class="rooms-grid" id="rooms-overview-grid">
             <div class="loading-state">Lade Räume...</div>
         </div>
+        <div id="hidden-rooms-hint" class="hidden-rooms-hint" style="display: none;">
+            <span class="hint-icon">👁️‍🗨️</span>
+            <span class="hint-text"></span>
+            <button class="hint-link" onclick="switchTab('visibility')">Räume verwalten</button>
+        </div>
     </div>
 
     <!-- Tab: Sensoren -->
@@ -250,6 +255,38 @@
     gap: 1rem;
 }
 
+/* Hinweis für ausgeblendete Räume */
+.hidden-rooms-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 1rem;
+    padding: 0.8rem 1.2rem;
+    background: #f5f5f5;
+    border-radius: 8px;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.hidden-rooms-hint .hint-icon {
+    font-size: 1.2rem;
+}
+
+.hidden-rooms-hint .hint-link {
+    margin-left: auto;
+    padding: 0.4rem 0.8rem;
+    background: #e0e0e0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+}
+
+.hidden-rooms-hint .hint-link:hover {
+    background: #d0d0d0;
+}
+
 .room-card {
     background: white;
     border-radius: 12px;
@@ -305,17 +342,59 @@
     font-size: 0.9rem;
 }
 
-.lights-dots {
+.lights-controls {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     margin-left: auto;
 }
 
+.light-control-btn {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.light-control-btn.all-on {
+    background: #FFD54F;
+    color: #333;
+}
+
+.light-control-btn.all-on:hover {
+    background: #FFC107;
+    transform: scale(1.05);
+}
+
+.light-control-btn.all-off {
+    background: #eee;
+    color: #666;
+}
+
+.light-control-btn.all-off:hover {
+    background: #ddd;
+    transform: scale(1.05);
+}
+
+.lights-dots {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+}
+
 .light-dot {
-    width: 10px;
-    height: 10px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     transition: all 0.3s;
+    cursor: pointer;
+    border: 2px solid transparent;
+}
+
+.light-dot:hover {
+    transform: scale(1.2);
+    border-color: #666;
 }
 
 .light-dot.on {
@@ -324,7 +403,7 @@
 }
 
 .light-dot.off {
-    background: #ccc;
+    background: #bbb;
 }
 
 .room-header {
@@ -1041,13 +1120,20 @@ async function loadAllData() {
 function renderOverview() {
     const grid = document.getElementById('rooms-overview-grid');
     
-    if (allRooms.length === 0) {
-        grid.innerHTML = '<div class="loading-state">Keine Räume gefunden. Bitte synchronisieren Sie mit Homey unter "Einstellungen".</div>';
+    // Nur sichtbare Räume anzeigen (ausgeblendete filtern)
+    const visibleRooms = allRooms.filter(room => !hiddenRooms.includes(room));
+    
+    if (visibleRooms.length === 0) {
+        const hiddenCount = hiddenRooms.length;
+        grid.innerHTML = `<div class="loading-state">
+            ${hiddenCount > 0 
+                ? `Alle ${hiddenCount} Räume sind ausgeblendet. Gehe zu "Einstellungen" um Räume einzublenden.` 
+                : 'Keine Räume gefunden. Bitte synchronisieren Sie mit Homey unter "Einstellungen".'}
+        </div>`;
         return;
     }
     
-    grid.innerHTML = allRooms.map(room => {
-        const isHidden = hiddenRooms.includes(room);
+    grid.innerHTML = visibleRooms.map(room => {
         const roomId = room.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '');
         const config = sensorMapping[roomId] || {};
         const isConfigured = config.temperature || config.humidity || config.co2;
@@ -1090,23 +1176,26 @@ function renderOverview() {
         const icon = getRoomIcon(room);
         const sensorCount = roomSensors.length;
         
-        // Lampen-Status HTML
+        // Lampen-Status HTML mit Steuerung
         const lightsHtml = hasLights ? `
-            <div class="room-lights ${lightsOn.length > 0 ? 'lights-on' : 'lights-off'}">
+            <div class="room-lights ${lightsOn.length > 0 ? 'lights-on' : 'lights-off'}" onclick="event.stopPropagation()">
                 <span class="lights-icon">${lightsOn.length > 0 ? '💡' : '🔅'}</span>
                 <span class="lights-count">${lightsOn.length}/${roomLights.length}</span>
+                <div class="lights-controls">
+                    <button class="light-control-btn all-on" onclick="event.stopPropagation(); toggleRoomLights('${room.replace(/'/g, "\\'")}', true)" title="Alle an">☀️</button>
+                    <button class="light-control-btn all-off" onclick="event.stopPropagation(); toggleRoomLights('${room.replace(/'/g, "\\'")}', false)" title="Alle aus">🌙</button>
+                </div>
                 <div class="lights-dots">
-                    ${roomLights.map(l => `<span class="light-dot ${l.state === 'on' || l.state === true ? 'on' : 'off'}" title="${l.name}"></span>`).join('')}
+                    ${roomLights.map(l => `<span class="light-dot ${l.state === 'on' || l.state === true ? 'on' : 'off'}" title="${l.name}" onclick="event.stopPropagation(); toggleSingleLight('${l.id}', ${!(l.state === 'on' || l.state === true)}, '${room.replace(/'/g, "\\'")}')" data-device-id="${l.id}"></span>`).join('')}
                 </div>
             </div>
         ` : '';
         
         return `
-            <div class="room-card ${isHidden ? 'hidden-room' : ''} ${lightsOn.length > 0 ? 'has-lights-on' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
+            <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
                 <div class="room-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${room}</span>
-                    ${isHidden ? '<span class="hidden-badge">Ausgeblendet</span>' : ''}
                 </div>
                 ${lightsHtml}
                 <div class="room-sensors">
@@ -1131,6 +1220,16 @@ function renderOverview() {
             </div>
         `;
     }).join('');
+    
+    // Hinweis für ausgeblendete Räume anzeigen
+    const hintEl = document.getElementById('hidden-rooms-hint');
+    if (hintEl && hiddenRooms.length > 0) {
+        hintEl.style.display = 'flex';
+        hintEl.querySelector('.hint-text').textContent = 
+            `${hiddenRooms.length} ${hiddenRooms.length === 1 ? 'Raum ist' : 'Räume sind'} ausgeblendet`;
+    } else if (hintEl) {
+        hintEl.style.display = 'none';
+    }
 }
 
 // Raum-Icon ermitteln
@@ -1388,12 +1487,45 @@ function renderRoomDevices(room) {
         d.roomName === room && (d.domain === 'light' || d.domain === 'switch' || deviceTypes[d.id])
     );
     
-    if (roomDevices.length === 0) {
+    // Deduplizierung: Geräte mit gleichem Namen zusammenführen
+    // Priorisiere 'light' Domain über 'switch', und bevorzuge konfigurierte Geräte
+    const deviceMap = new Map();
+    roomDevices.forEach(device => {
+        // Normalisiere den Namen für den Vergleich (entferne trailing spaces, etc.)
+        const normalizedName = device.name.trim().toLowerCase();
+        const existing = deviceMap.get(normalizedName);
+        
+        if (!existing) {
+            // Erstes Gerät mit diesem Namen
+            deviceMap.set(normalizedName, device);
+        } else {
+            // Es existiert bereits ein Gerät mit diesem Namen - Priorisierung:
+            // 1. Wenn eines davon konfiguriert ist, nimm das konfigurierte
+            // 2. Sonst bevorzuge 'light' über 'switch'
+            const existingConfigured = deviceTypes[existing.id] && deviceTypes[existing.id] !== 'auto';
+            const newConfigured = deviceTypes[device.id] && deviceTypes[device.id] !== 'auto';
+            
+            if (newConfigured && !existingConfigured) {
+                // Neues Gerät ist konfiguriert, altes nicht - nimm das neue
+                deviceMap.set(normalizedName, device);
+            } else if (!existingConfigured && !newConfigured) {
+                // Keins ist konfiguriert - bevorzuge 'light' über 'switch'
+                if (device.domain === 'light' && existing.domain === 'switch') {
+                    deviceMap.set(normalizedName, device);
+                }
+            }
+            // Wenn beides konfiguriert oder existing bereits 'light' ist, behalte existing
+        }
+    });
+    
+    const uniqueDevices = Array.from(deviceMap.values());
+    
+    if (uniqueDevices.length === 0) {
         container.innerHTML = '<div class="no-devices-message">Keine Geräte in diesem Raum</div>';
         return;
     }
     
-    container.innerHTML = roomDevices.map(device => {
+    container.innerHTML = uniqueDevices.map(device => {
         const configuredType = deviceTypes[device.id] || 'auto';
         const isLamp = configuredType === 'light' || (configuredType === 'auto' && device.domain === 'light');
         const isExcluded = configuredType === 'exclude';
@@ -1495,6 +1627,89 @@ async function toggleLight(deviceId, turnOn, room) {
     } catch (error) {
         console.error('Error toggling light:', error);
         showNotification('Fehler beim Schalten', 'error');
+    }
+}
+
+// Einzelne Lampe von der Übersicht aus schalten
+async function toggleSingleLight(deviceId, turnOn, room) {
+    try {
+        // Visuelles Feedback sofort
+        const dot = document.querySelector(`.light-dot[data-device-id="${deviceId}"]`);
+        if (dot) {
+            dot.style.opacity = '0.5';
+        }
+        
+        const response = await fetch(`/api/devices/${deviceId}/control`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            // Aktualisiere lokale Daten
+            const device = allDevices.find(d => d.id === deviceId);
+            if (device) device.state = turnOn ? 'on' : 'off';
+            
+            const light = allLights.find(l => l.id === deviceId);
+            if (light) light.state = turnOn ? 'on' : 'off';
+            
+            // Nur Übersicht aktualisieren
+            renderOverview();
+        } else {
+            showNotification('Fehler beim Schalten', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling light:', error);
+        showNotification('Fehler beim Schalten', 'error');
+    }
+}
+
+// Alle Lampen in einem Raum schalten
+async function toggleRoomLights(room, turnOn) {
+    const roomLights = allLights.filter(l => l.roomName === room);
+    
+    if (roomLights.length === 0) return;
+    
+    // Visuelles Feedback
+    showNotification(`${turnOn ? 'Schalte alle Lampen ein...' : 'Schalte alle Lampen aus...'}`, 'info');
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Alle Lampen parallel schalten
+    const promises = roomLights.map(async (light) => {
+        try {
+            const response = await fetch(`/api/devices/${light.id}/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Aktualisiere lokale Daten
+                light.state = turnOn ? 'on' : 'off';
+                const device = allDevices.find(d => d.id === light.id);
+                if (device) device.state = turnOn ? 'on' : 'off';
+                successCount++;
+            } else {
+                errorCount++;
+            }
+        } catch (error) {
+            errorCount++;
+        }
+    });
+    
+    await Promise.all(promises);
+    
+    // UI aktualisieren
+    renderOverview();
+    
+    if (errorCount === 0) {
+        showNotification(`${successCount} Lampen ${turnOn ? 'eingeschaltet' : 'ausgeschaltet'}`, 'success');
+    } else {
+        showNotification(`${successCount} OK, ${errorCount} Fehler`, 'warning');
     }
 }
 
