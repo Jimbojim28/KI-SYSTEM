@@ -637,93 +637,168 @@ def init_ventilation_blueprint(engine, db, config):
 
     @ventilation_bp.route('/ventilation/window-status', methods=['GET'])
     def get_window_status():
-        """API: Aktueller Status aller Fenster"""
+        """API: Aktueller LIVE-Status aller Fenster direkt von Homey"""
         try:
-            # Hole Fenster aus der Datenbank (window_observations Tabelle)
-            if not db:
-                return jsonify({'success': False, 'error': 'Database not available'}), 500
-            
-            conn = db._get_connection()
-            cursor = conn.cursor()
-            
-            # Hole den letzten Status jedes Fensters (neuester Eintrag pro device_id)
-            cursor.execute('''
-                SELECT wo.device_id, wo.device_name, wo.room_name, wo.is_open, wo.timestamp
-                FROM window_observations wo
-                INNER JOIN (
-                    SELECT device_id, MAX(timestamp) as max_ts
-                    FROM window_observations
-                    GROUP BY device_id
-                ) latest ON wo.device_id = latest.device_id AND wo.timestamp = latest.max_ts
-                ORDER BY wo.room_name, wo.device_name
-            ''')
-            
+            import re
             windows = []
-            for row in cursor.fetchall():
-                device_id = row[0]
-                device_name = row[1] or row[0]
-                db_room_name = row[2]  # Könnte None, '', oder 'Unbekannt' sein
-                is_open = bool(row[3])
-                
-                # Standardmäßig aus dem Gerätenamen ableiten
-                room_name = None
-                if device_name:
-                    # Extrahiere Raum aus "Küche Fenster", "Bad Fenster", "Wohnzimmer 2 Fenster", etc.
-                    import re
-                    name_lower = device_name.lower()
-                    if 'fenster' in name_lower:
-                        room_name = device_name.replace(' Fenster', '').replace(' fenster', '').strip()
-                    elif 'tür' in name_lower or 'door' in name_lower:
-                        room_name = device_name.replace(' Tür', '').replace(' Door', '').replace(' tür', '').replace(' door', '').strip()
+            
+            # === LIVE-STATUS direkt von Homey abrufen ===
+            if engine and engine.platform:
+                try:
+                    # Hole alle Geräte frisch von Homey
+                    all_devices = []
+                    if hasattr(engine.platform, '_device_cache'):
+                        engine.platform._refresh_device_cache()
+                        cache = engine.platform._device_cache
+                        if isinstance(cache, dict):
+                            all_devices = list(cache.values())
+                        elif isinstance(cache, list):
+                            all_devices = cache
                     else:
-                        room_name = device_name
+                        states = engine.platform.get_states()
+                        if isinstance(states, list):
+                            all_devices = states
                     
-                    # Entferne Nummerierung am Ende (z.B. "Wohnzimmer 2" -> "Wohnzimmer")
-                    if room_name:
-                        room_name = re.sub(r'\s+\d+$', '', room_name).strip()
-                
-                # Verwende DB-Wert nur wenn er sinnvoll ist
-                if db_room_name and db_room_name.strip() and db_room_name not in ('Unbekannt', 'None', 'null'):
-                    room_name = db_room_name
-                
-                # Wenn Fenster offen ist, finde den Zeitpunkt seit wann es kontinuierlich offen ist
-                open_since = None
-                if is_open:
-                    # Finde den letzten Zustandswechsel von geschlossen zu offen
-                    cursor.execute('''
-                        SELECT timestamp FROM window_observations
-                        WHERE device_id = ? AND is_open = 0
-                        ORDER BY timestamp DESC
-                        LIMIT 1
-                    ''', (device_id,))
-                    last_closed = cursor.fetchone()
+                    # Hole Zonen-Mapping
+                    zones = {}
+                    try:
+                        zone_list = engine.platform.get_zones() or []
+                        zones = {z.get('id'): z.get('name') for z in zone_list}
+                    except:
+                        pass
                     
-                    if last_closed:
-                        # Finde den ersten "offen" Eintrag nach dem letzten "geschlossen"
-                        cursor.execute('''
-                            SELECT MIN(timestamp) FROM window_observations
-                            WHERE device_id = ? AND is_open = 1 AND timestamp > ?
-                        ''', (device_id, last_closed[0]))
-                        first_open = cursor.fetchone()
-                        if first_open and first_open[0]:
-                            open_since = first_open[0]
-                    else:
-                        # Fenster war nie geschlossen, nimm den ältesten offenen Eintrag
-                        cursor.execute('''
-                            SELECT MIN(timestamp) FROM window_observations
-                            WHERE device_id = ? AND is_open = 1
-                        ''', (device_id,))
-                        first_open = cursor.fetchone()
-                        if first_open and first_open[0]:
-                            open_since = first_open[0]
+                    # Filtere nach Fenstern (keine Türen)
+                    for device in all_devices:
+                        if not isinstance(device, dict):
+                            continue
+                        
+                        device_name = device.get('name', '').lower()
+                        capabilities = device.get('capabilitiesObj', {})
+                        
+                        # Nur Fenster, keine Türen
+                        is_door = ('door' in device_name or 'tür' in device_name or 
+                                  'tur' in device_name or 'türe' in device_name)
+                        is_window = ('window' in device_name or 'fenster' in device_name)
+                        
+                        if not is_door and is_window and 'alarm_contact' in capabilities:
+                            device_id = device.get('id')
+                            device_display_name = device.get('name', 'Unbekannt')
+                            
+                            # LIVE-Status direkt von Homey
+                            is_open = bool(capabilities['alarm_contact'].get('value', False))
+                            
+                            # Raum aus Zone
+                            room_name = None
+                            zone_id = device.get('zone')
+                            if zone_id and zone_id in zones:
+                                room_name = zones[zone_id]
+                            
+                            # Fallback: Raum aus Gerätenamen extrahieren
+                            if not room_name:
+                                name_lower = device_display_name.lower()
+                                if 'fenster' in name_lower:
+                                    room_name = device_display_name.replace(' Fenster', '').replace(' fenster', '').strip()
+                                else:
+                                    room_name = device_display_name
+                                
+                                # Entferne Nummerierung (z.B. "Wohnzimmer 2" -> "Wohnzimmer")
+                                if room_name:
+                                    room_name = re.sub(r'\s+\d+$', '', room_name).strip()
+                            
+                            # Wenn Fenster offen ist, hole open_since aus DB
+                            open_since = None
+                            if is_open and db:
+                                try:
+                                    conn = db._get_connection()
+                                    cursor = conn.cursor()
+                                    
+                                    # Finde den letzten Zustandswechsel
+                                    cursor.execute('''
+                                        SELECT timestamp FROM window_observations
+                                        WHERE device_id = ? AND is_open = 0
+                                        ORDER BY timestamp DESC
+                                        LIMIT 1
+                                    ''', (device_id,))
+                                    last_closed = cursor.fetchone()
+                                    
+                                    if last_closed:
+                                        cursor.execute('''
+                                            SELECT MIN(timestamp) FROM window_observations
+                                            WHERE device_id = ? AND is_open = 1 AND timestamp > ?
+                                        ''', (device_id, last_closed[0]))
+                                        first_open = cursor.fetchone()
+                                        if first_open and first_open[0]:
+                                            open_since = first_open[0]
+                                    else:
+                                        cursor.execute('''
+                                            SELECT MIN(timestamp) FROM window_observations
+                                            WHERE device_id = ? AND is_open = 1
+                                        ''', (device_id,))
+                                        first_open = cursor.fetchone()
+                                        if first_open and first_open[0]:
+                                            open_since = first_open[0]
+                                except Exception as e:
+                                    logger.debug(f"Could not get open_since for {device_id}: {e}")
+                            
+                            windows.append({
+                                'device_id': device_id,
+                                'name': device_display_name,
+                                'room': room_name or 'Unbekannt',
+                                'is_open': is_open,
+                                'open_since': open_since,
+                                'source': 'live'  # Markiere als Live-Daten
+                            })
+                    
+                    logger.debug(f"Got live window status for {len(windows)} windows")
+                    
+                except Exception as e:
+                    logger.warning(f"Could not get live window status from Homey: {e}")
+            
+            # === FALLBACK: Aus Datenbank wenn keine Live-Daten ===
+            if not windows and db:
+                logger.info("Falling back to database for window status")
+                conn = db._get_connection()
+                cursor = conn.cursor()
                 
-                windows.append({
-                    'device_id': device_id,
-                    'name': device_name,
-                    'room': room_name or 'Unbekannt',
-                    'is_open': is_open,
-                    'open_since': open_since
-                })
+                cursor.execute('''
+                    SELECT wo.device_id, wo.device_name, wo.room_name, wo.is_open, wo.timestamp
+                    FROM window_observations wo
+                    INNER JOIN (
+                        SELECT device_id, MAX(timestamp) as max_ts
+                        FROM window_observations
+                        GROUP BY device_id
+                    ) latest ON wo.device_id = latest.device_id AND wo.timestamp = latest.max_ts
+                    ORDER BY wo.room_name, wo.device_name
+                ''')
+                
+                for row in cursor.fetchall():
+                    device_id = row[0]
+                    device_name = row[1] or row[0]
+                    db_room_name = row[2]
+                    is_open = bool(row[3])
+                    
+                    room_name = None
+                    if device_name:
+                        name_lower = device_name.lower()
+                        if 'fenster' in name_lower:
+                            room_name = device_name.replace(' Fenster', '').replace(' fenster', '').strip()
+                        else:
+                            room_name = device_name
+                        
+                        if room_name:
+                            room_name = re.sub(r'\s+\d+$', '', room_name).strip()
+                    
+                    if db_room_name and db_room_name.strip() and db_room_name not in ('Unbekannt', 'None', 'null'):
+                        room_name = db_room_name
+                    
+                    windows.append({
+                        'device_id': device_id,
+                        'name': device_name,
+                        'room': room_name or 'Unbekannt',
+                        'is_open': is_open,
+                        'open_since': None,
+                        'source': 'database'  # Markiere als DB-Daten
+                    })
             
             return jsonify({
                 'success': True,
