@@ -815,10 +815,15 @@ def init_ventilation_blueprint(engine, db, config):
         """API: Lüftungsereignisse für Frontend"""
         try:
             room = request.args.get('room')
+            device_id = request.args.get('device_id')
             hours = int(request.args.get('hours', 168))  # Default: 1 Woche
             days_back = max(1, hours // 24)  # Konvertiere Stunden zu Tagen
             
             events = db.get_ventilation_events(room_name=room, days_back=days_back) if db else []
+            
+            # Filter nach device_id wenn angegeben
+            if device_id and events:
+                events = [e for e in events if e.get('device_id') == device_id or e.get('device_name') == device_id]
             
             return jsonify({
                 'success': True,
@@ -829,6 +834,141 @@ def init_ventilation_blueprint(engine, db, config):
             
         except Exception as e:
             logger.error(f"Error getting window events: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/history', methods=['GET'])
+    def get_ventilation_history():
+        """API: Detaillierte Lüftungshistorie mit Klimadaten"""
+        try:
+            days = int(request.args.get('days', 7))
+            room = request.args.get('room')
+            
+            if not db:
+                return jsonify({'success': False, 'error': 'Database not available'}), 500
+            
+            # Hole alle abgeschlossenen Lüftungsereignisse
+            query = """
+                SELECT 
+                    id,
+                    device_name,
+                    room_name,
+                    opened_at,
+                    closed_at,
+                    duration_minutes,
+                    temp_start,
+                    temp_end,
+                    temp_change,
+                    humidity_start,
+                    humidity_end,
+                    humidity_change,
+                    co2_start,
+                    co2_end,
+                    co2_change,
+                    outdoor_temp,
+                    outdoor_humidity,
+                    season,
+                    time_of_day,
+                    effectiveness_score
+                FROM ventilation_events
+                WHERE closed_at IS NOT NULL
+                    AND opened_at >= datetime('now', ?)
+            """
+            params = [f'-{days} days']
+            
+            if room:
+                query += " AND room_name = ?"
+                params.append(room)
+            
+            query += " ORDER BY opened_at DESC LIMIT 100"
+            
+            rows = db.execute(query, tuple(params))
+            
+            events = []
+            for row in rows:
+                # Berechne Zeit bis CO2 unter 600 ppm
+                co2_recovery_time = None
+                co2_start = row.get('co2_start')
+                co2_end = row.get('co2_end')
+                duration = row.get('duration_minutes') or 0
+                
+                if co2_start and co2_end:
+                    if co2_start > 600 and co2_end <= 600:
+                        # CO2 ist unter 600 gefallen - berechne geschätzte Zeit
+                        if co2_start > co2_end and duration > 0:
+                            co2_reduction_rate = (co2_start - co2_end) / duration  # ppm pro Minute
+                            if co2_reduction_rate > 0:
+                                co2_to_600 = co2_start - 600
+                                co2_recovery_time = round(co2_to_600 / co2_reduction_rate)
+                    elif co2_end > 600:
+                        # CO2 ist noch über 600
+                        co2_recovery_time = -1  # Signalisiert "nicht erreicht"
+                
+                events.append({
+                    'id': row.get('id'),
+                    'device_name': row.get('device_name'),
+                    'room_name': row.get('room_name'),
+                    'opened_at': row.get('opened_at'),
+                    'closed_at': row.get('closed_at'),
+                    'duration_minutes': row.get('duration_minutes'),
+                    'temp_start': row.get('temp_start'),
+                    'temp_end': row.get('temp_end'),
+                    'temp_change': row.get('temp_change'),
+                    'humidity_start': row.get('humidity_start'),
+                    'humidity_end': row.get('humidity_end'),
+                    'humidity_change': row.get('humidity_change'),
+                    'co2_start': co2_start,
+                    'co2_end': co2_end,
+                    'co2_change': row.get('co2_change'),
+                    'outdoor_temp': row.get('outdoor_temp'),
+                    'outdoor_humidity': row.get('outdoor_humidity'),
+                    'season': row.get('season'),
+                    'time_of_day': row.get('time_of_day'),
+                    'effectiveness_score': row.get('effectiveness_score'),
+                    'co2_recovery_time': co2_recovery_time
+                })
+            
+            # Berechne Statistiken
+            stats = {
+                'total_events': len(events),
+                'avg_duration': 0,
+                'avg_temp_change': 0,
+                'avg_humidity_change': 0,
+                'avg_co2_change': 0,
+                'co2_below_600_count': 0,
+                'avg_co2_recovery_time': 0
+            }
+            
+            if events:
+                durations = [e['duration_minutes'] for e in events if e['duration_minutes']]
+                temp_changes = [e['temp_change'] for e in events if e['temp_change'] is not None]
+                humidity_changes = [e['humidity_change'] for e in events if e['humidity_change'] is not None]
+                co2_changes = [e['co2_change'] for e in events if e['co2_change'] is not None]
+                co2_recovery_times = [e['co2_recovery_time'] for e in events if e['co2_recovery_time'] and e['co2_recovery_time'] > 0]
+                
+                stats['avg_duration'] = round(sum(durations) / len(durations), 1) if durations else 0
+                stats['avg_temp_change'] = round(sum(temp_changes) / len(temp_changes), 2) if temp_changes else 0
+                stats['avg_humidity_change'] = round(sum(humidity_changes) / len(humidity_changes), 1) if humidity_changes else 0
+                stats['avg_co2_change'] = round(sum(co2_changes) / len(co2_changes), 0) if co2_changes else 0
+                stats['co2_below_600_count'] = sum(1 for e in events if e['co2_end'] and e['co2_end'] <= 600)
+                stats['avg_co2_recovery_time'] = round(sum(co2_recovery_times) / len(co2_recovery_times), 1) if co2_recovery_times else 0
+            
+            # Hole alle Räume für Filter
+            rooms_query = "SELECT DISTINCT room_name FROM ventilation_events WHERE room_name IS NOT NULL ORDER BY room_name"
+            rooms_result = db.execute(rooms_query)
+            rooms = [r['room_name'] for r in rooms_result]
+            
+            return jsonify({
+                'success': True,
+                'events': events,
+                'stats': stats,
+                'rooms': rooms,
+                'days': days
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting ventilation history: {e}")
+            import traceback
+            traceback.print_exc()
             return jsonify({'error': str(e)}), 500
 
     @ventilation_bp.route('/ventilation/effectiveness', methods=['GET'])

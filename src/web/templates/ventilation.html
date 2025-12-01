@@ -12,6 +12,7 @@
 <div class="tabs">
     <button class="tab-button active" onclick="switchTab('overview')">🏠 Übersicht</button>
     <button class="tab-button" onclick="switchTab('windows')">🪟 Fenster</button>
+    <button class="tab-button" onclick="switchTab('history')">📊 Lüftungshistorie</button>
     <button class="tab-button" onclick="switchTab('settings')">⚙️ Einstellungen</button>
 </div>
 
@@ -118,6 +119,76 @@
     </div>
 </div>
 
+<!-- Lüftungshistorie Tab -->
+<div id="history-tab" class="tab-content">
+    <!-- Statistik-Karten -->
+    <div class="history-stats-grid">
+        <div class="history-stat-card">
+            <div class="stat-icon">🪟</div>
+            <div class="stat-value" id="hist-total-events">-</div>
+            <div class="stat-label">Lüftungen gesamt</div>
+        </div>
+        <div class="history-stat-card">
+            <div class="stat-icon">⏱️</div>
+            <div class="stat-value" id="hist-avg-duration">-</div>
+            <div class="stat-label">Ø Lüftungsdauer</div>
+        </div>
+        <div class="history-stat-card cooling">
+            <div class="stat-icon">🌡️</div>
+            <div class="stat-value" id="hist-avg-temp">-</div>
+            <div class="stat-label">Ø Temperaturänderung</div>
+        </div>
+        <div class="history-stat-card">
+            <div class="stat-icon">💧</div>
+            <div class="stat-value" id="hist-avg-humidity">-</div>
+            <div class="stat-label">Ø Luftfeuchtigkeit</div>
+        </div>
+        <div class="history-stat-card co2">
+            <div class="stat-icon">💨</div>
+            <div class="stat-value" id="hist-avg-co2">-</div>
+            <div class="stat-label">Ø CO₂-Reduktion</div>
+        </div>
+        <div class="history-stat-card success">
+            <div class="stat-icon">✅</div>
+            <div class="stat-value" id="hist-co2-success">-</div>
+            <div class="stat-label">CO₂ unter 600 ppm</div>
+        </div>
+    </div>
+    
+    <!-- Filter -->
+    <div class="history-filters">
+        <div class="filter-group">
+            <label>Zeitraum:</label>
+            <select id="history-days" onchange="loadVentilationHistory()">
+                <option value="1">Heute</option>
+                <option value="3">3 Tage</option>
+                <option value="7" selected>7 Tage</option>
+                <option value="14">14 Tage</option>
+                <option value="30">30 Tage</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Raum:</label>
+            <select id="history-room" onchange="loadVentilationHistory()">
+                <option value="">Alle Räume</option>
+            </select>
+        </div>
+    </div>
+    
+    <!-- Historie-Liste -->
+    <div class="section-header">
+        <h3>📋 Detaillierte Lüftungsereignisse</h3>
+        <p class="section-info">Vollständige Übersicht aller Lüftungen mit Klimaveränderungen</p>
+    </div>
+    
+    <div id="history-list" class="history-list">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Lüftungshistorie...</p>
+        </div>
+    </div>
+</div>
+
 <!-- Room History Modal -->
 <div id="room-history-modal" class="modal" style="display: none;">
     <div class="modal-content modal-large">
@@ -140,6 +211,24 @@
             <div id="chart-no-data" class="chart-no-data" style="display: none;">
                 <p>📭 Keine historischen Daten für diesen Raum verfügbar.</p>
                 <p class="hint">Daten werden automatisch gesammelt, sobald Sensoren aktiv sind.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Window Events Modal -->
+<div id="window-events-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-medium">
+        <div class="modal-header">
+            <h3 id="window-modal-title">🪟 Fenster-Ereignisse</h3>
+            <button class="modal-close" onclick="closeWindowModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div id="window-events-content">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Lade Ereignisse...</p>
+                </div>
             </div>
         </div>
     </div>
@@ -356,6 +445,9 @@
 }
 .modal-large {
     width: 900px;
+}
+.modal-medium {
+    width: 600px;
 }
 .modal-header {
     display: flex;
@@ -609,6 +701,108 @@
     margin-top: 0.5rem;
     font-weight: 500;
 }
+.window-tile.clickable {
+    cursor: pointer;
+}
+.window-tile.clickable:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateY(-3px);
+}
+.window-tile .click-hint {
+    font-size: 0.75em;
+    color: #999;
+    margin-top: 0.5rem;
+    text-align: right;
+}
+
+/* Fenster-Ereignisse Liste */
+.window-events-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+.window-event-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid #eee;
+    transition: background 0.2s;
+}
+.window-event-item:last-child {
+    border-bottom: none;
+}
+.window-event-item:hover {
+    background: #f8f9fa;
+}
+.window-event-icon {
+    font-size: 1.8em;
+    width: 45px;
+    text-align: center;
+}
+.window-event-details {
+    flex: 1;
+}
+.window-event-action {
+    font-weight: 600;
+    font-size: 1.05em;
+    margin-bottom: 0.25rem;
+}
+.window-event-action.opened {
+    color: #4CAF50;
+}
+.window-event-action.closed {
+    color: #9e9e9e;
+}
+.window-event-time {
+    font-size: 0.9em;
+    color: #666;
+}
+.window-event-duration {
+    text-align: right;
+    padding: 0.5rem 1rem;
+    background: #f0f0f0;
+    border-radius: 20px;
+    font-weight: 500;
+    font-size: 0.9em;
+}
+.window-event-duration.long {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+.window-event-duration.short {
+    background: #fff3e0;
+    color: #e65100;
+}
+.window-stats-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+.window-stat-item {
+    text-align: center;
+}
+.window-stat-value {
+    font-size: 1.5em;
+    font-weight: 700;
+    color: #333;
+}
+.window-stat-label {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.25rem;
+}
+.no-window-events {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+}
+.no-window-events p {
+    margin: 0.5rem 0;
+}
 
 /* Statistik Filter */
 .stats-filter {
@@ -801,6 +995,257 @@
     text-align: center;
     color: #666;
 }
+
+/* === LÜFTUNGSHISTORIE TAB === */
+
+/* Statistik-Grid */
+.history-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.history-stat-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    transition: all 0.25s ease;
+}
+
+.history-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.history-stat-card .stat-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.history-stat-card .stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 0.25rem;
+}
+
+.history-stat-card .stat-label {
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.history-stat-card.cooling .stat-value {
+    color: #3b82f6;
+}
+
+.history-stat-card.co2 .stat-value {
+    color: #10b981;
+}
+
+.history-stat-card.success .stat-value {
+    color: #059669;
+}
+
+/* Filter */
+.history-filters {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.5rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.filter-group label {
+    font-weight: 500;
+    color: #374151;
+}
+
+.filter-group select {
+    padding: 0.5rem 1rem;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-group select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Historie-Liste */
+.history-list {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+}
+
+.history-event {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1.25rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #f3f4f6;
+    transition: all 0.2s;
+    align-items: start;
+}
+
+.history-event:hover {
+    background: #f8fafc;
+}
+
+.history-event:last-child {
+    border-bottom: none;
+}
+
+.history-event-icon {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: white;
+}
+
+.history-event-main {
+    flex: 1;
+}
+
+.history-event-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.history-event-room {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #1f2937;
+}
+
+.history-event-device {
+    font-size: 0.85rem;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+}
+
+.history-event-time {
+    font-size: 0.9rem;
+    color: #6b7280;
+    margin-bottom: 0.75rem;
+}
+
+.history-event-changes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.history-change-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.history-change-badge.temp {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    color: #1e40af;
+}
+
+.history-change-badge.temp.warming {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+}
+
+.history-change-badge.humidity {
+    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+    color: #3730a3;
+}
+
+.history-change-badge.co2 {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    color: #065f46;
+}
+
+.history-change-badge.co2.high {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #92400e;
+}
+
+.history-event-meta {
+    text-align: right;
+    min-width: 100px;
+}
+
+.history-event-duration {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.history-event-duration-label {
+    font-size: 0.8rem;
+    color: #9ca3af;
+}
+
+.history-event-outdoor {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.history-co2-recovery {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: #065f46;
+    display: inline-block;
+}
+
+.history-co2-recovery.not-reached {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #92400e;
+}
+
+.history-empty {
+    padding: 3rem;
+    text-align: center;
+    color: #6b7280;
+}
+
+.history-empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
 </style>
 
 <script>
@@ -837,6 +1282,8 @@ function switchTab(tab) {
         loadSettings();
     } else if (tab === 'windows') {
         loadWindowsTab();
+    } else if (tab === 'history') {
+        loadVentilationHistory();
     }
 }
 
@@ -1392,8 +1839,11 @@ async function loadWindowStatus() {
                     }
                 }
                 
+                const escapedName = w.name.replace(/'/g, "\\'");
+                const escapedId = (w.device_id || w.id || w.name).replace(/'/g, "\\'");
+                
                 html += `
-                    <div class="window-tile ${statusClass}">
+                    <div class="window-tile ${statusClass} clickable" onclick="openWindowEventsModal('${escapedId}', '${escapedName}')">
                         <div class="room-name">📍 ${room}</div>
                         <div class="window-name">${w.name}</div>
                         <div class="status">
@@ -1401,6 +1851,7 @@ async function loadWindowStatus() {
                             <span>${statusText}</span>
                         </div>
                         ${durationHtml}
+                        <div class="click-hint">Klicken für Ereignisse →</div>
                     </div>
                 `;
             });
@@ -1747,6 +2198,385 @@ function formatTimeAgo(date) {
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return 'gestern';
     return `vor ${diffDays} Tagen`;
+}
+
+// === LÜFTUNGSHISTORIE ===
+
+async function loadVentilationHistory() {
+    const container = document.getElementById('history-list');
+    const days = document.getElementById('history-days').value;
+    const room = document.getElementById('history-room').value;
+    
+    container.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Lüftungshistorie...</p>
+        </div>
+    `;
+    
+    try {
+        let url = `/api/ventilation/history?days=${days}`;
+        if (room) {
+            url += `&room=${encodeURIComponent(room)}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!data.success) {
+            container.innerHTML = '<div class="history-empty"><div class="history-empty-icon">❌</div>Fehler beim Laden</div>';
+            return;
+        }
+        
+        // Räume für Filter aktualisieren
+        const roomSelect = document.getElementById('history-room');
+        const currentRoom = roomSelect.value;
+        roomSelect.innerHTML = '<option value="">Alle Räume</option>';
+        data.rooms.forEach(r => {
+            roomSelect.innerHTML += `<option value="${r}" ${r === currentRoom ? 'selected' : ''}>${r}</option>`;
+        });
+        
+        // Statistiken aktualisieren
+        updateHistoryStats(data.stats);
+        
+        if (!data.events || data.events.length === 0) {
+            container.innerHTML = `
+                <div class="history-empty">
+                    <div class="history-empty-icon">📭</div>
+                    <p>Keine Lüftungsereignisse im gewählten Zeitraum</p>
+                    <p style="font-size: 0.9em; margin-top: 0.5rem; color: #9ca3af;">Öffne ein Fenster um Daten zu sammeln</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        data.events.forEach(event => {
+            const openedAt = new Date(event.opened_at);
+            const closedAt = new Date(event.closed_at);
+            
+            // Formatiere Datum/Uhrzeit
+            const dateStr = openedAt.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+            const timeStr = `${openedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} - ${closedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+            
+            // Änderungs-Badges
+            let changesHtml = '';
+            
+            // Temperatur
+            if (event.temp_start !== null && event.temp_end !== null) {
+                const tempChange = event.temp_change || (event.temp_end - event.temp_start);
+                const isWarming = tempChange > 0;
+                changesHtml += `
+                    <span class="history-change-badge temp ${isWarming ? 'warming' : ''}">
+                        🌡️ ${event.temp_start.toFixed(1)}°C → ${event.temp_end.toFixed(1)}°C 
+                        (${tempChange >= 0 ? '+' : ''}${tempChange.toFixed(1)}°C)
+                    </span>
+                `;
+            }
+            
+            // Luftfeuchtigkeit
+            if (event.humidity_start !== null && event.humidity_end !== null) {
+                const humChange = event.humidity_change || (event.humidity_end - event.humidity_start);
+                changesHtml += `
+                    <span class="history-change-badge humidity">
+                        💧 ${event.humidity_start.toFixed(0)}% → ${event.humidity_end.toFixed(0)}% 
+                        (${humChange >= 0 ? '+' : ''}${humChange.toFixed(0)}%)
+                    </span>
+                `;
+            }
+            
+            // CO2
+            if (event.co2_start !== null && event.co2_end !== null) {
+                const co2Change = event.co2_change || (event.co2_end - event.co2_start);
+                const isHigh = event.co2_end > 600;
+                changesHtml += `
+                    <span class="history-change-badge co2 ${isHigh ? 'high' : ''}">
+                        💨 ${event.co2_start} ppm → ${event.co2_end} ppm 
+                        (${co2Change >= 0 ? '+' : ''}${co2Change} ppm)
+                    </span>
+                `;
+            }
+            
+            // CO2 Recovery Info
+            let co2RecoveryHtml = '';
+            if (event.co2_recovery_time !== null) {
+                if (event.co2_recovery_time > 0) {
+                    co2RecoveryHtml = `<div class="history-co2-recovery">✅ CO₂ unter 600 ppm nach ${event.co2_recovery_time} Min.</div>`;
+                } else if (event.co2_recovery_time === -1) {
+                    co2RecoveryHtml = `<div class="history-co2-recovery not-reached">⚠️ CO₂ noch über 600 ppm</div>`;
+                }
+            }
+            
+            html += `
+                <div class="history-event">
+                    <div class="history-event-icon">🪟</div>
+                    <div class="history-event-main">
+                        <div class="history-event-header">
+                            <span class="history-event-room">${event.room_name || 'Unbekannt'}</span>
+                            ${event.device_name ? `<span class="history-event-device">${event.device_name}</span>` : ''}
+                        </div>
+                        <div class="history-event-time">
+                            📅 ${dateStr} &nbsp;|&nbsp; 🕐 ${timeStr}
+                        </div>
+                        <div class="history-event-changes">
+                            ${changesHtml || '<span style="color: #9ca3af;">Keine Klimadaten verfügbar</span>'}
+                        </div>
+                        ${co2RecoveryHtml}
+                    </div>
+                    <div class="history-event-meta">
+                        <div class="history-event-duration">${event.duration_minutes || '?'}</div>
+                        <div class="history-event-duration-label">Minuten</div>
+                        ${event.outdoor_temp !== null ? `<div class="history-event-outdoor">🌡️ ${event.outdoor_temp.toFixed(1)}°C außen</div>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Historie:', error);
+        container.innerHTML = '<div class="history-empty"><div class="history-empty-icon">❌</div>Fehler beim Laden der Historie</div>';
+    }
+}
+
+function updateHistoryStats(stats) {
+    document.getElementById('hist-total-events').textContent = stats.total_events || 0;
+    document.getElementById('hist-avg-duration').textContent = stats.avg_duration ? `${stats.avg_duration} Min` : '-';
+    
+    // Temperatur
+    if (stats.avg_temp_change !== null && stats.avg_temp_change !== 0) {
+        const tempSign = stats.avg_temp_change >= 0 ? '+' : '';
+        document.getElementById('hist-avg-temp').textContent = `${tempSign}${stats.avg_temp_change}°C`;
+    } else {
+        document.getElementById('hist-avg-temp').textContent = '-';
+    }
+    
+    // Luftfeuchtigkeit
+    if (stats.avg_humidity_change !== null && stats.avg_humidity_change !== 0) {
+        const humSign = stats.avg_humidity_change >= 0 ? '+' : '';
+        document.getElementById('hist-avg-humidity').textContent = `${humSign}${stats.avg_humidity_change}%`;
+    } else {
+        document.getElementById('hist-avg-humidity').textContent = '-';
+    }
+    
+    // CO2
+    if (stats.avg_co2_change !== null && stats.avg_co2_change !== 0) {
+        document.getElementById('hist-avg-co2').textContent = `${stats.avg_co2_change} ppm`;
+    } else {
+        document.getElementById('hist-avg-co2').textContent = '-';
+    }
+    
+    // CO2 Erfolge
+    document.getElementById('hist-co2-success').textContent = stats.co2_below_600_count || 0;
+}
+
+// ==================== FENSTER-EREIGNISSE MODAL ====================
+
+let currentWindowId = null;
+let currentWindowName = null;
+
+function openWindowEventsModal(windowId, windowName) {
+    currentWindowId = windowId;
+    currentWindowName = windowName;
+    document.getElementById('window-modal-title').textContent = `🪟 ${windowName} - Ereignisse`;
+    document.getElementById('window-events-modal').style.display = 'flex';
+    loadWindowEvents(windowId, windowName);
+}
+
+function closeWindowModal() {
+    document.getElementById('window-events-modal').style.display = 'none';
+    currentWindowId = null;
+    currentWindowName = null;
+}
+
+// Schließe Modal bei Klick außerhalb
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('window-events-modal');
+    if (e.target === modal) {
+        closeWindowModal();
+    }
+});
+
+// Schließe Modal mit Escape-Taste
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeWindowModal();
+    }
+});
+
+async function loadWindowEvents(windowId, windowName) {
+    const container = document.getElementById('window-events-content');
+    container.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Lade Ereignisse...</p>
+        </div>
+    `;
+    
+    try {
+        // Hole alle Fenster-Ereignisse und filtere lokal
+        const response = await fetch(`/api/ventilation/window-events?hours=168`);
+        const data = await response.json();
+        
+        console.log('Window Events API response:', data);
+        console.log('Filtering for windowId:', windowId, 'windowName:', windowName);
+        
+        if (!data.success || !data.events || data.events.length === 0) {
+            container.innerHTML = `
+                <div class="no-window-events">
+                    <p>📭 Keine Ereignisse gefunden</p>
+                    <p style="font-size: 0.9em;">In den letzten 7 Tagen wurden keine Öffnungs-/Schließ-Ereignisse aufgezeichnet.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Filtere Events für dieses Fenster (nach ID oder Name)
+        // Normalisiere Namen für besseren Vergleich
+        const normalizedWindowName = windowName ? windowName.toLowerCase().trim() : '';
+        const windowNameBase = normalizedWindowName.replace(' fenster', '').replace(/\s+\d+$/, '').trim();
+        
+        const windowEvents = data.events.filter(e => {
+            const eventDeviceId = e.device_id || '';
+            const eventDeviceName = (e.device_name || '').toLowerCase().trim();
+            const eventNameBase = eventDeviceName.replace(' fenster', '').replace(/\s+\d+$/, '').trim();
+            
+            // Exakter ID-Match
+            if (eventDeviceId === windowId) return true;
+            
+            // Exakter Namens-Match
+            if (eventDeviceName === normalizedWindowName) return true;
+            
+            // Basis-Namen Match (z.B. "Wohnzimmer" matched "Wohnzimmer 1 Fenster" und "Wohnzimmer 2 Fenster")
+            if (windowNameBase && eventNameBase && eventNameBase.includes(windowNameBase)) return true;
+            if (windowNameBase && eventNameBase && windowNameBase.includes(eventNameBase)) return true;
+            
+            return false;
+        });
+        
+        console.log('Filtered events:', windowEvents.length);
+        
+        if (windowEvents.length === 0) {
+            container.innerHTML = `
+                <div class="no-window-events">
+                    <p>📭 Keine Ereignisse gefunden</p>
+                    <p style="font-size: 0.9em;">In den letzten 7 Tagen wurden keine Öffnungs-/Schließ-Ereignisse aufgezeichnet.</p>
+                    <p style="font-size: 0.8em; color: #999;">Debug: ${data.events.length} Events insgesamt, ID: ${windowId}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Berechne Statistiken
+        const totalOpenings = windowEvents.filter(e => e.closed_at).length;
+        const durations = windowEvents.filter(e => e.duration_minutes).map(e => e.duration_minutes);
+        const avgDuration = durations.length > 0 
+            ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) 
+            : 0;
+        const totalDuration = durations.reduce((a, b) => a + b, 0);
+        
+        let html = `
+            <div class="window-stats-summary">
+                <div class="window-stat-item">
+                    <div class="window-stat-value">${totalOpenings}</div>
+                    <div class="window-stat-label">Lüftungen (7 Tage)</div>
+                </div>
+                <div class="window-stat-item">
+                    <div class="window-stat-value">${avgDuration} Min.</div>
+                    <div class="window-stat-label">Ø Dauer</div>
+                </div>
+                <div class="window-stat-item">
+                    <div class="window-stat-value">${formatDurationTotal(totalDuration)}</div>
+                    <div class="window-stat-label">Gesamt geöffnet</div>
+                </div>
+            </div>
+            <div class="window-events-list">
+        `;
+        
+        // Zeige letzte 20 Ereignisse
+        windowEvents.slice(0, 20).forEach(event => {
+            const openedAt = new Date(event.opened_at);
+            const closedAt = event.closed_at ? new Date(event.closed_at) : null;
+            const duration = event.duration_minutes || 0;
+            
+            // Formatiere Datum und Zeit
+            const dateStr = openedAt.toLocaleDateString('de-DE', { 
+                weekday: 'short', 
+                day: '2-digit', 
+                month: '2-digit' 
+            });
+            const timeStr = openedAt.toLocaleTimeString('de-DE', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            let durationClass = '';
+            if (duration >= 15) durationClass = 'long';
+            else if (duration > 0 && duration < 5) durationClass = 'short';
+            
+            let durationText = '';
+            if (closedAt) {
+                if (duration < 60) {
+                    durationText = `${duration} Min.`;
+                } else {
+                    const hours = Math.floor(duration / 60);
+                    const mins = duration % 60;
+                    durationText = `${hours}h ${mins}m`;
+                }
+            } else {
+                durationText = 'Noch offen';
+                durationClass = 'long';
+            }
+            
+            const icon = closedAt ? '🔒' : '🔓';
+            const actionText = closedAt ? 'Gelüftet' : 'Geöffnet';
+            const actionClass = closedAt ? 'closed' : 'opened';
+            
+            let closedTimeStr = '';
+            if (closedAt) {
+                closedTimeStr = ` → ${closedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+            }
+            
+            html += `
+                <div class="window-event-item">
+                    <div class="window-event-icon">${icon}</div>
+                    <div class="window-event-details">
+                        <div class="window-event-action ${actionClass}">${actionText}</div>
+                        <div class="window-event-time">${dateStr}, ${timeStr}${closedTimeStr}</div>
+                    </div>
+                    <div class="window-event-duration ${durationClass}">${durationText}</div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Fenster-Ereignisse:', error);
+        container.innerHTML = `
+            <div class="no-window-events">
+                <p>❌ Fehler beim Laden</p>
+                <p style="font-size: 0.9em;">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+function formatDurationTotal(minutes) {
+    if (minutes < 60) {
+        return `${minutes} Min.`;
+    } else if (minutes < 1440) {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${hours}h ${mins}m`;
+    } else {
+        const days = Math.floor(minutes / 1440);
+        const hours = Math.floor((minutes % 1440) / 60);
+        return `${days}d ${hours}h`;
+    }
 }
 
 // Init
