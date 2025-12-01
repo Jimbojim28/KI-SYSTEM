@@ -155,11 +155,19 @@ class WindowDataCollector:
                     if val is not None and 0 <= val <= 100:
                         climate['humidity'] = val
                 
-                # CO2
+                # CO2 - nur verwenden wenn das Gerät WIRKLICH in diesem Raum ist
+                # CO2-Sensoren sind selten, daher strengeres Matching
                 if climate['co2'] is None and 'measure_co2' in caps:
-                    val = caps['measure_co2'].get('value')
-                    if val is not None and 200 < val < 10000:  # Plausibilitätsprüfung
-                        climate['co2'] = val
+                    # Nur wenn Zone-Name exakt passt ODER Gerätename den Raumnamen enthält
+                    co2_room_match = (
+                        device_room == room_lower or  # Exaktes Zone-Match
+                        room_lower == device_room or
+                        (room_lower in device_name and 'co2' in device_name.lower())  # CO2-Monitor mit Raumnamen
+                    )
+                    if co2_room_match:
+                        val = caps['measure_co2'].get('value')
+                        if val is not None and 200 < val < 10000:  # Plausibilitätsprüfung
+                            climate['co2'] = val
             
             # Wenn CO2 noch nicht gefunden, suche nach CO2-Sensor mit passendem Namen
             if climate['co2'] is None:
