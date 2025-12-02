@@ -865,6 +865,18 @@ class WebInterface:
                 conn = self.db._get_connection()
                 cursor = conn.cursor()
                 
+                # Zone-UUID zu Raumname Mapping holen
+                zone_mapping = {}
+                try:
+                    if self.engine and hasattr(self.engine, 'platform') and self.engine.platform:
+                        zones = self.engine.platform.get_zones()
+                        if isinstance(zones, dict):
+                            for zid, zdata in zones.items():
+                                if isinstance(zdata, dict):
+                                    zone_mapping[zid] = zdata.get('name', zid)
+                except Exception as e:
+                    logger.debug(f"Could not get zone mapping for stats: {e}")
+                
                 cursor.execute("""
                     SELECT device_name, room_name, COUNT(*) as events,
                            SUM(CASE WHEN state='on' THEN 1 ELSE 0 END) as on_count,
@@ -878,9 +890,13 @@ class WebInterface:
                 
                 stats = []
                 for row in cursor.fetchall():
+                    room_id = row[1] or ''
+                    # Übersetze Zone-UUID in Raumname
+                    room_name = zone_mapping.get(room_id, room_id) if room_id else 'Unbekannt'
+                    
                     stats.append({
                         'device_name': row[0],
-                        'room_name': row[1],
+                        'room_name': room_name,
                         'total_events': row[2],
                         'on_count': row[3],
                         'off_count': row[4],
@@ -895,6 +911,81 @@ class WebInterface:
             except Exception as e:
                 logger.error(f"Error getting event stats: {e}")
                 return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/lighting/room-stats')
+        def api_lighting_room_stats():
+            """API: Beleuchtungsstatistik pro Raum - wie oft/lange war Licht an"""
+            try:
+                days = int(request.args.get('days', 7))
+                days = min(max(days, 1), 90)
+                
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                
+                # Zone-UUID zu Raumname Mapping holen
+                zone_mapping = {}
+                try:
+                    if self.engine and hasattr(self.engine, 'platform') and self.engine.platform:
+                        zones = self.engine.platform.get_zones()
+                        if isinstance(zones, dict):
+                            for zid, zdata in zones.items():
+                                if isinstance(zdata, dict):
+                                    zone_mapping[zid] = zdata.get('name', zid)
+                except Exception as e:
+                    logger.debug(f"Could not get zone mapping: {e}")
+                
+                # Berechne Lichtdauer pro Raum
+                cursor.execute("""
+                    WITH light_sessions AS (
+                        SELECT 
+                            room_name,
+                            device_id,
+                            device_name,
+                            timestamp,
+                            state,
+                            LEAD(timestamp) OVER (PARTITION BY device_id ORDER BY timestamp) as next_timestamp,
+                            LEAD(state) OVER (PARTITION BY device_id ORDER BY timestamp) as next_state
+                        FROM lighting_events
+                        WHERE timestamp >= datetime('now', ?)
+                    )
+                    SELECT 
+                        room_name,
+                        COUNT(DISTINCT device_id) as light_count,
+                        SUM(CASE WHEN state = 'on' THEN 1 ELSE 0 END) as on_count,
+                        SUM(
+                            CASE 
+                                WHEN state = 'on' AND next_state = 'off' 
+                                THEN (julianday(next_timestamp) - julianday(timestamp)) * 24 * 60
+                                ELSE 0 
+                            END
+                        ) as total_duration_minutes
+                    FROM light_sessions
+                    WHERE room_name IS NOT NULL AND room_name != ''
+                    GROUP BY room_name
+                    ORDER BY total_duration_minutes DESC
+                """, (f'-{days} days',))
+                
+                stats = []
+                for row in cursor.fetchall():
+                    room_id = row[0]
+                    # Übersetze Zone-UUID in Raumname
+                    room_name = zone_mapping.get(room_id, room_id)
+                    
+                    stats.append({
+                        'room_name': room_name,
+                        'light_count': row[1],
+                        'on_count': row[2],
+                        'total_duration_minutes': round(row[3] or 0, 1)
+                    })
+                
+                return jsonify({
+                    'success': True,
+                    'stats': stats,
+                    'days': days
+                })
+            except Exception as e:
+                logger.error(f"Error getting room light stats: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
 
         @self.app.route('/api/predictions')
         def api_predictions():
@@ -3957,6 +4048,49 @@ class WebInterface:
                     
             except Exception as e:
                 logger.error(f"Error managing hidden rooms: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/motion-sensors', methods=['GET', 'POST'])
+        def api_rooms_motion_sensors():
+            """API: Bewegungssensor-Zuordnung verwalten"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'rooms': [], 'assignments': {}}
+                
+                # Sicherstellen dass 'motion_sensors' existiert
+                if 'motion_sensors' not in rooms_data:
+                    rooms_data['motion_sensors'] = {}
+                
+                if request.method == 'GET':
+                    return jsonify({
+                        'success': True,
+                        'motion_sensors': rooms_data.get('motion_sensors', {})
+                    })
+                
+                elif request.method == 'POST':
+                    data = request.json
+                    motion_sensors = data.get('motion_sensors', {})
+                    
+                    rooms_data['motion_sensors'] = motion_sensors
+                    logger.info(f"Motion sensors updated: {len(motion_sensors)} mappings")
+                    
+                    # Speichern
+                    with open(rooms_file, 'w') as f:
+                        json.dump(rooms_data, f, indent=2, ensure_ascii=False)
+                    
+                    return jsonify({
+                        'success': True,
+                        'motion_sensors': rooms_data['motion_sensors']
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error managing motion sensors: {e}")
                 return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/rooms/settings', methods=['GET'])

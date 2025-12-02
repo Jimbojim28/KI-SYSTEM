@@ -61,9 +61,10 @@ class ForgottenLightDetector:
         self.check_interval = settings.get('check_interval', 60)  # Prüf-Intervall in Sekunden
         self.use_ml = settings.get('use_ml', True)  # ML-Modell nutzen wenn verfügbar
         
-        # Device Types aus rooms.json
+        # Device Types und versteckte Räume aus rooms.json
         self.device_types: Dict[str, str] = {}
-        self._load_device_types()
+        self.hidden_rooms: List[str] = []
+        self._load_rooms_config()
         
         # Tracking
         self.light_on_times: Dict[str, datetime] = {}  # device_id -> wann eingeschaltet
@@ -89,17 +90,20 @@ class ForgottenLightDetector:
         self.ml_model = None
         self._init_ml_model()
     
-    def _load_device_types(self):
-        """Lädt device_types aus rooms.json"""
+    def _load_rooms_config(self):
+        """Lädt device_types und hidden_rooms aus rooms.json"""
         try:
             rooms_file = Path('data/rooms.json')
             if rooms_file.exists():
                 with open(rooms_file, 'r') as f:
                     data = json.load(f)
                     self.device_types = data.get('device_types', {})
+                    self.hidden_rooms = data.get('hidden', [])
+                    logger.debug(f"Loaded {len(self.hidden_rooms)} hidden rooms: {self.hidden_rooms}")
         except Exception as e:
-            logger.warning(f"Could not load device_types from rooms.json: {e}")
+            logger.warning(f"Could not load rooms config from rooms.json: {e}")
             self.device_types = {}
+            self.hidden_rooms = []
     
     def _ensure_table(self):
         """Stellt sicher, dass die Datenbank-Tabelle existiert"""
@@ -192,8 +196,8 @@ class ForgottenLightDetector:
         """Hauptloop für Erkennung"""
         while self.running:
             try:
-                # Device types neu laden (falls geändert in /rooms)
-                self._load_device_types()
+                # Raum-Konfiguration neu laden (falls geändert in /rooms)
+                self._load_rooms_config()
                 self._check_for_forgotten_lights()
                 self.stats['last_check'] = datetime.now().isoformat()
             except Exception as e:
@@ -241,6 +245,10 @@ class ForgottenLightDetector:
                     room_name = zone_mapping.get(zone, zone)
                 else:
                     room_name = 'Unknown'
+                
+                # Versteckte Räume überspringen
+                if room_name in self.hidden_rooms:
+                    continue
                 
                 # Ist die Lampe an?
                 state = device.get('capabilitiesObj', {}).get('onoff', {}).get('value')

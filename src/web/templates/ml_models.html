@@ -8,6 +8,29 @@
     <p>Verwaltung und Versionierung der Machine Learning Modelle</p>
 </div>
 
+<!-- Training Controls -->
+<div class="training-controls" style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <strong>🎓 Model Training</strong>
+            <p style="margin: 0.3rem 0 0 0; color: #666; font-size: 0.9em;">
+                Automatisches Training täglich um 2:00 Uhr
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-primary" onclick="trainAllModels()" id="train-all-btn">
+                🚀 Alle Modelle trainieren
+            </button>
+        </div>
+    </div>
+    <div id="training-status" style="margin-top: 1rem; display: none;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="spinner-small"></div>
+            <span id="training-status-text">Training läuft...</span>
+        </div>
+    </div>
+</div>
+
 <!-- Model Cards -->
 <div id="models-container" style="display: grid; gap: 1.5rem;">
     <div class="loading">Lade Modelle...</div>
@@ -19,6 +42,10 @@
     border-radius: 8px;
     padding: 1.5rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.model-card.not-trained {
+    border-left: 4px solid #ff9800;
 }
 
 .model-header {
@@ -42,6 +69,10 @@
     padding: 0.3rem 0.8rem;
     border-radius: 20px;
     font-size: 0.9em;
+}
+
+.model-version-badge.not-trained {
+    background: #ff9800;
 }
 
 .model-metrics {
@@ -135,19 +166,282 @@
     background: #ccc;
     cursor: not-allowed;
 }
+
+.spinner-small {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #4CAF50;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
 </style>
 
 <script>
+// All expected models
+const ALL_MODELS = {
+    'lighting_model': {
+        name: '💡 Lighting Model',
+        description: 'Lernt Beleuchtungsmuster und -präferenzen',
+        metrics: ['accuracy']
+    },
+    'temperature_model': {
+        name: '🌡️ Temperature Model', 
+        description: 'Optimiert Temperatur basierend auf Gewohnheiten',
+        metrics: ['mae', 'r2_score']
+    },
+    'forgotten_light_model': {
+        name: '💡🔍 Forgotten Light Model',
+        description: 'Erkennt vergessene Lampen durch ML',
+        metrics: ['accuracy']
+    }
+};
+
 async function loadModels() {
     try {
-        const response = await fetch('/api/models/versions');
+        // Load both versions and status
+        const [versionsRes, statusRes] = await Promise.all([
+            fetch('/api/models/versions'),
+            fetch('/api/ml/status')
+        ]);
+        
+        const versionsData = await versionsRes.json();
+        const statusData = await statusRes.json();
+        
+        displayModels(versionsData.models || {}, statusData);
+    } catch (error) {
+        console.error('Error loading models:', error);
+        document.getElementById('models-container').innerHTML =
+            '<div class="loading">❌ Fehler beim Laden der Modelle</div>';
+    }
+}
+
+function displayModels(trainedModels, statusData) {
+    const container = document.getElementById('models-container');
+    let html = '';
+    
+    // Show all expected models
+    for (const [modelKey, modelInfo] of Object.entries(ALL_MODELS)) {
+        const trained = trainedModels[modelKey];
+        const isTrained = !!trained;
+        
+        if (isTrained) {
+            // Trained model
+            const currentVersion = trained.current_version || 'N/A';
+            const versionsCount = trained.versions_count || 0;
+            const metrics = trained.current_metrics || {};
+
+            let metricsHTML = '';
+            if (metrics.accuracy !== undefined) {
+                metricsHTML += `
+                    <div class="metric-box">
+                        <div class="metric-label">Accuracy</div>
+                        <div class="metric-value">${(metrics.accuracy * 100).toFixed(1)}%</div>
+                    </div>
+                `;
+            }
+            if (metrics.mae !== undefined) {
+                metricsHTML += `
+                    <div class="metric-box">
+                        <div class="metric-label">MAE</div>
+                        <div class="metric-value">${metrics.mae.toFixed(2)}°C</div>
+                    </div>
+                `;
+            }
+            if (metrics.r2_score !== undefined) {
+                metricsHTML += `
+                    <div class="metric-box">
+                        <div class="metric-label">R² Score</div>
+                        <div class="metric-value">${(metrics.r2_score * 100).toFixed(1)}%</div>
+                    </div>
+                `;
+            }
+            if (metrics.samples_train !== undefined) {
+                metricsHTML += `
+                    <div class="metric-box">
+                        <div class="metric-label">Training Samples</div>
+                        <div class="metric-value">${metrics.samples_train.toLocaleString()}</div>
+                    </div>
+                `;
+            }
+
+            const historyHTML = (trained.history || []).slice(-3).reverse().map((version, idx) => {
+                const isCurrent = idx === 0;
+                const timestamp = new Date(version.timestamp).toLocaleString('de-DE');
+                return `
+                    <div class="version-item ${isCurrent ? 'current' : ''}">
+                        <div class="version-info">
+                            <div class="version-timestamp">${timestamp} ${isCurrent ? '(Aktuell)' : ''}</div>
+                            <div class="version-metrics">${version.notes || ''}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            html += `
+                <div class="model-card">
+                    <div class="model-header">
+                        <div>
+                            <div class="model-title">${modelInfo.name}</div>
+                            <div style="font-size: 0.9em; color: #666;">${modelInfo.description}</div>
+                        </div>
+                        <div class="model-version-badge">✅ v${currentVersion}</div>
+                    </div>
+
+                    ${metricsHTML ? `<div class="model-metrics">${metricsHTML}</div>` : ''}
+
+                    <div style="margin-top: 1rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="trainModel('${modelKey}')">
+                            🔄 Neu trainieren
+                        </button>
+                        <button class="btn btn-danger" onclick="rollbackModel('${modelKey}')" ${versionsCount < 2 ? 'disabled' : ''}>
+                            ↶ Rollback
+                        </button>
+                        <span style="color: #666; font-size: 0.9em; align-self: center;">${versionsCount} Version(en)</span>
+                    </div>
+
+                    ${historyHTML ? `
+                        <div class="version-history">
+                            <h4 style="margin-bottom: 0.5rem;">📜 Letzte Versionen</h4>
+                            ${historyHTML}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        } else {
+            // Not trained model
+            let dataStatus = '';
+            if (modelKey === 'lighting_model' && statusData.lighting) {
+                dataStatus = `${statusData.lighting.data_count || 0} Events gesammelt`;
+            } else if (modelKey === 'temperature_model' && statusData.temperature) {
+                dataStatus = `${statusData.temperature.data_count || 0} Messungen gesammelt`;
+            } else if (modelKey === 'forgotten_light_model') {
+                dataStatus = 'Sammle Daten durch Aktivieren des Detektors';
+            }
+            
+            html += `
+                <div class="model-card not-trained">
+                    <div class="model-header">
+                        <div>
+                            <div class="model-title">${modelInfo.name}</div>
+                            <div style="font-size: 0.9em; color: #666;">${modelInfo.description}</div>
+                        </div>
+                        <div class="model-version-badge not-trained">⚠️ Nicht trainiert</div>
+                    </div>
+                    
+                    <div style="padding: 1.5rem; text-align: center; background: #fff3e0; border-radius: 8px; margin: 1rem 0;">
+                        <p style="margin: 0; color: #e65100;">
+                            ${dataStatus}
+                        </p>
+                    </div>
+
+                    <div style="margin-top: 1rem;">
+                        <button class="btn btn-primary" onclick="trainModel('${modelKey}')">
+                            🎓 Jetzt trainieren
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    container.innerHTML = html || '<div class="loading">Keine Modelle konfiguriert</div>';
+}
+
+async function trainAllModels() {
+    const btn = document.getElementById('train-all-btn');
+    const statusDiv = document.getElementById('training-status');
+    const statusText = document.getElementById('training-status-text');
+    
+    btn.disabled = true;
+    statusDiv.style.display = 'block';
+    statusText.textContent = 'Training läuft... Dies kann einige Minuten dauern.';
+    
+    try {
+        const response = await fetch('/api/ml/train', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: 'all' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success || data.results) {
+            statusText.textContent = '✅ Training abgeschlossen!';
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+                loadModels();
+            }, 2000);
+        } else {
+            statusText.textContent = `❌ Fehler: ${data.error || 'Unbekannter Fehler'}`;
+        }
+    } catch (error) {
+        console.error('Training error:', error);
+        statusText.textContent = '❌ Fehler beim Training';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function trainModel(modelName) {
+    if (!confirm(`Möchtest du ${modelName} trainieren?`)) return;
+    
+    const statusDiv = document.getElementById('training-status');
+    const statusText = document.getElementById('training-status-text');
+    statusDiv.style.display = 'block';
+    statusText.textContent = `Training ${modelName}...`;
+    
+    try {
+        const response = await fetch('/api/ml/train', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelName.replace('_model', '') })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success || data.results) {
+            statusText.textContent = '✅ Training abgeschlossen!';
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+                loadModels();
+            }, 2000);
+        } else {
+            statusText.textContent = `❌ Fehler: ${data.error || 'Unbekannter Fehler'}`;
+        }
+    } catch (error) {
+        console.error('Training error:', error);
+        statusText.textContent = '❌ Fehler beim Training';
+    }
+}
+
+async function rollbackModel(modelName) {
+    if (!confirm(`Möchtest du ${modelName} zur vorherigen Version zurückrollen?`)) return;
+
+    try {
+        const response = await fetch(`/api/models/${modelName}/rollback`, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
-            displayModels(data.models);
+            alert(`✅ ${modelName} erfolgreich zurückgerollt!`);
+            loadModels();
         } else {
-            document.getElementById('models-container').innerHTML =
-                '<div class="loading">❌ Fehler beim Laden der Modelle</div>';
+            alert(`❌ Rollback fehlgeschlagen: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Rollback error:', error);
+        alert('❌ Fehler beim Rollback');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadModels);
+</script>
+{% endblock %}
         }
     } catch (error) {
         console.error('Error loading models:', error);

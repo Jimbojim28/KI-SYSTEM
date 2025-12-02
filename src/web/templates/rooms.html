@@ -162,6 +162,14 @@
                 </select>
                 <small id="edit-co2-preview" class="sensor-preview"></small>
             </div>
+            
+            <div class="form-group">
+                <label>🚶 Bewegungssensor:</label>
+                <select id="edit-motion-sensor">
+                    <option value="">-- Kein Bewegungssensor --</option>
+                </select>
+                <small id="edit-motion-preview" class="sensor-preview"></small>
+            </div>
 
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary">💾 Speichern</button>
@@ -389,6 +397,35 @@
 
 .light-dot.off {
     background: #bbb;
+}
+
+/* Bewegungssensor Anzeige */
+.room-motion {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    margin-bottom: 0.8rem;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #E3F2FD, #BBDEFB);
+    font-size: 0.85rem;
+}
+
+.motion-icon {
+    font-size: 1.1rem;
+}
+
+.motion-name {
+    color: #1565C0;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.motion-badge {
+    font-size: 0.9rem;
+    opacity: 0.7;
 }
 
 .room-header {
@@ -948,8 +985,10 @@ let allRooms = [];
 let allSensors = [];
 let allLights = [];
 let allDevices = [];
+let allMotionSensors = []; // Bewegungssensoren
 let deviceTypes = {};
 let sensorMapping = {};
+let motionSensorMapping = {}; // Bewegungssensor-Zuordnung
 let outdoorSensors = {};
 let hiddenRooms = [];
 let zoneIdToName = {}; // Mapping von Zone-ID zu Raum-Namen
@@ -979,13 +1018,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Alle Daten laden
 async function loadAllData() {
     try {
-        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes] = await Promise.all([
+        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes, motionRes] = await Promise.all([
             fetch('/api/ventilation/sensors'),
             fetch('/api/ventilation/sensor-mapping'),
             fetch('/api/rooms/hidden'),
             fetch('/api/devices'),
             fetch('/api/rooms'),
-            fetch('/api/rooms/device-types')
+            fetch('/api/rooms/device-types'),
+            fetch('/api/rooms/motion-sensors')
         ]);
         
         const sensorsData = await sensorsRes.json();
@@ -994,6 +1034,7 @@ async function loadAllData() {
         const devicesData = await devicesRes.json();
         const roomsData = await roomsRes.json();
         const deviceTypesData = await deviceTypesRes.json();
+        const motionData = await motionRes.json();
         
         if (sensorsData.success) {
             allSensors = sensorsData.sensors;
@@ -1012,6 +1053,14 @@ async function loadAllData() {
         // Geräte-Typen laden
         if (deviceTypesData.success) {
             deviceTypes = deviceTypesData.device_types || {};
+        }
+        
+        // Bewegungssensor-Zuordnung vom Server laden
+        if (motionData.success && motionData.motion_sensors) {
+            motionSensorMapping = motionData.motion_sensors;
+        } else {
+            // Fallback: localStorage
+            motionSensorMapping = JSON.parse(localStorage.getItem('motionSensorMapping') || '{}');
         }
         
         // Zone-ID zu Raum-Namen Mapping erstellen
@@ -1036,6 +1085,29 @@ async function loadAllData() {
             if (deviceTypes[d.id] === 'device' || deviceTypes[d.id] === 'exclude') return false;
             // Sonst: Standard-Erkennung (domain === 'light')
             return d.domain === 'light';
+        });
+        
+        // Bewegungssensoren extrahieren
+        allMotionSensors = allDevices.filter(d => {
+            const caps = d.capabilities || [];
+            const name = (d.name || '').toLowerCase();
+            const deviceClass = (d.class || '').toLowerCase();
+            // Erkennung: alarm_motion Capability, oder "bewegung"/"presence"/"motion" im Namen
+            return caps.includes('alarm_motion') || 
+                   name.includes('bewegung') || 
+                   name.includes('presence') || 
+                   name.includes('motion') ||
+                   deviceClass.includes('sensor');
+        });
+        
+        // Automatische Vorauswahl: Sensoren zu ihren Räumen zuordnen (wenn nicht manuell konfiguriert)
+        // motionSensorMapping wird bereits vom Server geladen (siehe oben)
+        allMotionSensors.forEach(sensor => {
+            const roomName = sensor.roomName;
+            if (roomName && roomName !== 'Unbekannt' && !motionSensorMapping[roomName]) {
+                // Automatisch zuordnen basierend auf Zone
+                motionSensorMapping[roomName] = sensor.id;
+            }
         });
         
         // Räume aus Sensoren UND Lampen extrahieren
@@ -1088,6 +1160,12 @@ function renderOverview() {
         const lightsOn = roomLights.filter(l => l.state === 'on' || l.state === true);
         const hasLights = roomLights.length > 0;
         
+        // Bewegungssensor für diesen Raum
+        const motionSensorId = motionSensorMapping[room];
+        const motionSensor = motionSensorId ? allMotionSensors.find(s => s.id === motionSensorId) : 
+                            allMotionSensors.find(s => s.roomName === room);
+        const hasMotion = !!motionSensor;
+        
         // Werte ermitteln (konfiguriert oder automatisch)
         let temp = null, humidity = null, co2 = null;
         
@@ -1133,13 +1211,23 @@ function renderOverview() {
             </div>
         ` : '';
         
+        // Bewegungssensor-Anzeige
+        const motionHtml = hasMotion ? `
+            <div class="room-motion" title="Bewegungssensor: ${motionSensor.name}">
+                <span class="motion-icon">🚶</span>
+                <span class="motion-name">${motionSensor.name}</span>
+            </div>
+        ` : '';
+        
         return `
             <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
                 <div class="room-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${room}</span>
+                    ${hasMotion ? '<span class="motion-badge" title="Bewegungssensor vorhanden">🚶</span>' : ''}
                 </div>
                 ${lightsHtml}
+                ${motionHtml}
                 <div class="room-sensors">
                     <div class="sensor-value temp">
                         <span class="label">🌡️ Temp</span>
@@ -1155,7 +1243,7 @@ function renderOverview() {
                     </div>
                 </div>
                 <div class="room-status">
-                    <span class="sensor-count">${sensorCount} Sensoren${hasLights ? `, ${roomLights.length} Lampen` : ''}</span>
+                    <span class="sensor-count">${sensorCount} Sensoren${hasLights ? `, ${roomLights.length} Lampen` : ''}${hasMotion ? ', 🚶' : ''}</span>
                     ${isConfigured ? '<span class="configured-badge">✓ Konfiguriert</span>' : ''}
                     <button class="edit-btn" onclick="event.stopPropagation(); openRoomModal('${room.replace(/'/g, "\\'")}')">✏️</button>
                 </div>
@@ -1422,12 +1510,46 @@ function openRoomModal(room) {
     humiditySelect.innerHTML = buildGroupedOptions(humiditySensorsThisRoom, humiditySensorsOther, 'humidity', config.humidity, '-- Automatisch --');
     co2Select.innerHTML = buildGroupedOptions(co2SensorsThisRoom, co2SensorsOther, 'co2', config.co2, '-- Kein CO₂ --');
     
+    // Bewegungssensor-Dropdown füllen
+    const motionSelect = document.getElementById('edit-motion-sensor');
+    const motionSensorsThisRoom = allMotionSensors.filter(s => s.roomName === room);
+    const motionSensorsOther = allMotionSensors.filter(s => s.roomName !== room);
+    const currentMotionSensor = motionSensorMapping[room] || '';
+    
+    let motionHtml = '<option value="">-- Kein Bewegungssensor --</option>';
+    
+    if (motionSensorsThisRoom.length > 0) {
+        motionHtml += `<optgroup label="📍 ${room}">`;
+        motionSensorsThisRoom.forEach(s => {
+            const selected = currentMotionSensor === s.id ? 'selected' : '';
+            motionHtml += `<option value="${s.id}" ${selected}>🚶 ${s.name}</option>`;
+        });
+        motionHtml += '</optgroup>';
+    }
+    
+    if (motionSensorsOther.length > 0) {
+        motionHtml += `<optgroup label="🏠 Andere Räume">`;
+        motionSensorsOther.forEach(s => {
+            const selected = currentMotionSensor === s.id ? 'selected' : '';
+            motionHtml += `<option value="${s.id}" ${selected}>🚶 ${s.name} - ${s.roomName}</option>`;
+        });
+        motionHtml += '</optgroup>';
+    }
+    
+    motionSelect.innerHTML = motionHtml;
+    
+    // Automatische Vorauswahl: Wenn kein Sensor zugeordnet, aber einer im Raum existiert
+    if (!currentMotionSensor && motionSensorsThisRoom.length > 0) {
+        motionSelect.value = motionSensorsThisRoom[0].id;
+    }
+    
     // Preview aktualisieren
     updateSensorPreviews();
     
     tempSelect.onchange = updateSensorPreviews;
     humiditySelect.onchange = updateSensorPreviews;
     co2Select.onchange = updateSensorPreviews;
+    motionSelect.onchange = updateSensorPreviews;
     
     modal.classList.add('show');
 }
@@ -1698,9 +1820,11 @@ async function saveRoomEdit(event) {
     
     const roomId = document.getElementById('edit-room-id').value;
     const roomName = document.getElementById('edit-room-name').value;
+    const originalRoomName = document.getElementById('edit-room-original-name').value;
     const tempSensor = document.getElementById('edit-temp-sensor').value;
     const humiditySensor = document.getElementById('edit-humidity-sensor').value;
     const co2Sensor = document.getElementById('edit-co2-sensor').value;
+    const motionSensor = document.getElementById('edit-motion-sensor').value;
     
     sensorMapping[roomId] = {
         name: roomName,
@@ -1708,6 +1832,24 @@ async function saveRoomEdit(event) {
         humidity: humiditySensor,
         co2: co2Sensor
     };
+    
+    // Bewegungssensor-Zuordnung speichern
+    if (motionSensor) {
+        motionSensorMapping[originalRoomName] = motionSensor;
+    } else {
+        delete motionSensorMapping[originalRoomName];
+    }
+    
+    // An Server senden für ForgottenLightDetector
+    try {
+        await fetch('/api/rooms/motion-sensors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ motion_sensors: motionSensorMapping })
+        });
+    } catch (e) {
+        console.log('Motion sensor API not available, using localStorage only');
+    }
     
     try {
         await fetch('/api/ventilation/sensor-mapping', {

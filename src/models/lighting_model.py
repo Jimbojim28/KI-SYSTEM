@@ -270,6 +270,10 @@ class LightingModel:
         # Training
         logger.info(f"Training {self.model_type} with {len(X_train)} samples")
         
+        # WICHTIG: Aktualisiere feature_columns mit den tatsächlichen Features aus dem Training
+        self.feature_columns = list(X.columns)
+        logger.info(f"Using {len(self.feature_columns)} features: {self.feature_columns}")
+        
         # Cross-Validation vor finalem Training
         logger.info(f"Running 5-Fold Cross-Validation...")
         cv_scores = cross_val_score(self.model, X, y, cv=5, scoring='accuracy')

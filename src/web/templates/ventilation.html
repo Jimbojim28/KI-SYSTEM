@@ -1887,7 +1887,8 @@ async function loadWindowStatistics() {
         
         // Statistiken pro Raum berechnen
         const statsByRoom = {};
-        data.events.filter(e => e.is_complete).forEach(event => {
+        // Events sind abgeschlossen wenn closed_at vorhanden ist (is_complete ist optional)
+        data.events.filter(e => e.closed_at || e.is_complete).forEach(event => {
             const room = event.room_name;
             if (!statsByRoom[room]) {
                 statsByRoom[room] = {
@@ -1903,14 +1904,22 @@ async function loadWindowStatistics() {
             stats.totalDuration += event.duration_minutes || 0;
             stats.eventCount++;
             
-            if (event.temperature_before !== null && event.temperature_after !== null) {
-                stats.tempChanges.push(event.temperature_after - event.temperature_before);
+            // API gibt temp_start/temp_end zurück, oder temperature_before/temperature_after
+            const tempStart = event.temp_start ?? event.temperature_before;
+            const tempEnd = event.temp_end ?? event.temperature_after;
+            const humStart = event.humidity_start ?? event.humidity_before;
+            const humEnd = event.humidity_end ?? event.humidity_after;
+            const co2Start = event.co2_start ?? event.co2_before;
+            const co2End = event.co2_end ?? event.co2_after;
+            
+            if (tempStart !== null && tempStart !== undefined && tempEnd !== null && tempEnd !== undefined) {
+                stats.tempChanges.push(tempEnd - tempStart);
             }
-            if (event.humidity_before !== null && event.humidity_after !== null) {
-                stats.humidityChanges.push(event.humidity_after - event.humidity_before);
+            if (humStart !== null && humStart !== undefined && humEnd !== null && humEnd !== undefined) {
+                stats.humidityChanges.push(humEnd - humStart);
             }
-            if (event.co2_before !== null && event.co2_after !== null) {
-                stats.co2Changes.push(event.co2_after - event.co2_before);
+            if (co2Start !== null && co2Start !== undefined && co2End !== null && co2End !== undefined) {
+                stats.co2Changes.push(co2End - co2Start);
             }
         });
         
@@ -2127,7 +2136,7 @@ async function loadRecentEvents() {
         
         // Zeige die letzten 10 abgeschlossenen Ereignisse
         const completedEvents = data.events
-            .filter(e => e.is_complete)
+            .filter(e => e.closed_at || e.is_complete)
             .sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))
             .slice(0, 10);
         
@@ -2142,19 +2151,28 @@ async function loadRecentEvents() {
             const closedAt = new Date(event.closed_at);
             const timeAgo = formatTimeAgo(closedAt);
             
+            // API gibt temp_start/temp_end zurück, oder temperature_before/temperature_after
+            const tempStart = event.temp_start ?? event.temperature_before;
+            const tempEnd = event.temp_end ?? event.temperature_after;
+            const humStart = event.humidity_start ?? event.humidity_before;
+            const humEnd = event.humidity_end ?? event.humidity_after;
+            const co2Start = event.co2_start ?? event.co2_before;
+            const co2End = event.co2_end ?? event.co2_after;
+            const outdoorTemp = event.outdoor_temp ?? event.outdoor_temperature;
+            
             let changesHtml = '';
-            if (event.temperature_before !== null && event.temperature_after !== null) {
-                const tempDiff = (event.temperature_after - event.temperature_before).toFixed(1);
+            if (tempStart !== null && tempStart !== undefined && tempEnd !== null && tempEnd !== undefined) {
+                const tempDiff = (tempEnd - tempStart).toFixed(1);
                 const tempClass = parseFloat(tempDiff) < 0 ? 'negative' : '';
                 changesHtml += `<span class="event-change ${tempClass}">🌡️ ${tempDiff > 0 ? '+' : ''}${tempDiff}°C</span>`;
             }
-            if (event.humidity_before !== null && event.humidity_after !== null) {
-                const humDiff = (event.humidity_after - event.humidity_before).toFixed(0);
+            if (humStart !== null && humStart !== undefined && humEnd !== null && humEnd !== undefined) {
+                const humDiff = (humEnd - humStart).toFixed(0);
                 const humClass = parseFloat(humDiff) < 0 ? 'positive' : 'negative';
                 changesHtml += `<span class="event-change ${humClass}">💧 ${humDiff > 0 ? '+' : ''}${humDiff}%</span>`;
             }
-            if (event.co2_before !== null && event.co2_after !== null) {
-                const co2Diff = event.co2_after - event.co2_before;
+            if (co2Start !== null && co2Start !== undefined && co2End !== null && co2End !== undefined) {
+                const co2Diff = co2End - co2Start;
                 const co2Class = co2Diff < 0 ? 'positive' : 'negative';
                 changesHtml += `<span class="event-change ${co2Class}">💨 ${co2Diff > 0 ? '+' : ''}${co2Diff} ppm</span>`;
             }
@@ -2164,7 +2182,7 @@ async function loadRecentEvents() {
                     <div class="event-icon">🪟</div>
                     <div class="event-details">
                         <div class="title">${event.room_name}</div>
-                        <div class="subtitle">Außentemperatur: ${event.outdoor_temperature !== null ? event.outdoor_temperature.toFixed(1) + '°C' : 'unbekannt'}</div>
+                        <div class="subtitle">Außentemperatur: ${outdoorTemp !== null && outdoorTemp !== undefined ? outdoorTemp.toFixed(1) + '°C' : 'unbekannt'}</div>
                         ${changesHtml ? `<div class="event-changes">${changesHtml}</div>` : ''}
                     </div>
                     <div class="event-meta">

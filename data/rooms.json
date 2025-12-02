@@ -155,7 +155,6 @@
     "f35f92a1-fc3a-456e-8d0d-67ddb6118a55": "ebc1bb3e-f084-4903-8117-a885d913d1a7"
   },
   "hidden": [
-    "Garage",
     "Heim",
     "Nachtlicht",
     "Wohn/Haustür"
@@ -170,6 +169,12 @@
     "482cd171-2038-456a-815c-090e9ec2b520": "light",
     "cdd99da9-020c-4bb3-ba38-b854ff80bd3c": "device",
     "deff7454-7556-4b0f-9105-f8028e7bd4e6": "device",
-    "6682f0c3-a811-4e2d-a03f-5a81a9c37ac0": "device"
+    "6682f0c3-a811-4e2d-a03f-5a81a9c37ac0": "device",
+    "e8f482c5-1112-40cd-b3cd-670cd9735a4b": "device"
+  },
+  "motion_sensors": {
+    "Badezimmer": "77d4986b-8a6a-4ff6-a064-3ac518c288b4",
+    "Flur": "7baeba60-7439-4421-8f8d-641663c69712",
+    "Arbeitszimmer": "7d9ab64b-9795-47f3-a60b-ff3e4cbc35cb"
   }
 }

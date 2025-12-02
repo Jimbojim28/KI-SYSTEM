@@ -107,6 +107,38 @@
         </div>
     </div>
     
+    <!-- Raum-Beleuchtungs-Statistik -->
+    <div class="section-card">
+        <h3>📊 Beleuchtung pro Raum</h3>
+        <p class="section-hint">Wie oft und wie lange war das Licht in jedem Raum an:</p>
+        <div class="stats-filter" style="margin-bottom: 1rem;">
+            <label>Zeitraum:</label>
+            <select id="room-stats-days" onchange="loadRoomLightStats()">
+                <option value="1">Heute</option>
+                <option value="7" selected>Letzte 7 Tage</option>
+                <option value="30">Letzte 30 Tage</option>
+            </select>
+        </div>
+        <div id="room-light-stats" class="room-light-stats">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Lade Raum-Statistik...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Lampen Statistik -->
+    <div class="section-card">
+        <h3>💡 Lampen Statistik</h3>
+        <p class="section-hint">Welche Lampen werden am meisten genutzt (Top 20):</p>
+        <div id="light-stats-list" class="light-stats-list">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Lade Statistik...</p>
+            </div>
+        </div>
+    </div>
+    
 </div>
 
 <!-- Datensammlung Tab -->
@@ -170,18 +202,6 @@
             <div class="loading-state">
                 <div class="spinner"></div>
                 <p>Lade Events...</p>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Lampen Statistik -->
-    <div class="section-card">
-        <h3>💡 Lampen Statistik</h3>
-        <p class="section-hint">Welche Lampen werden am meisten genutzt:</p>
-        <div id="light-stats-list" class="light-stats-list">
-            <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Lade Statistik...</p>
             </div>
         </div>
     </div>
@@ -1136,6 +1156,64 @@
     overflow-y: auto;
 }
 
+/* Room Light Stats */
+.room-light-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.room-stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 1.25rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.room-stat-card::before {
+    content: '💡';
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    font-size: 2rem;
+    opacity: 0.2;
+}
+
+.room-stat-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+
+.room-stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.3rem 0;
+    font-size: 0.9rem;
+    opacity: 0.95;
+}
+
+.room-stat-value {
+    font-weight: 600;
+}
+
+.room-stat-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 3px;
+    margin-top: 0.75rem;
+    overflow: hidden;
+}
+
+.room-stat-bar-fill {
+    height: 100%;
+    background: rgba(255,255,255,0.9);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
 .light-stat-item {
     display: flex;
     align-items: center;
@@ -1416,9 +1494,14 @@ async function toggleDetector() {
 
 // Chart laden
 async function loadChart(days = 7) {
-    // Button-Status
+    // Button-Status aktualisieren (nur wenn von Button aufgerufen)
     document.querySelectorAll('.chart-btn').forEach(btn => btn.classList.remove('active'));
-    event?.target?.classList.add('active');
+    // Finde den Button mit dem passenden days-Wert und aktiviere ihn
+    document.querySelectorAll('.chart-btn').forEach(btn => {
+        if (btn.textContent.includes(days === 7 ? '7 Tage' : days === 30 ? '30 Tage' : days === 1 ? 'Heute' : '')) {
+            btn.classList.add('active');
+        }
+    });
     
     try {
         const response = await fetch(`/api/lighting/forgotten/chart?days=${days}`);
@@ -1756,6 +1839,71 @@ async function loadLightStats() {
     }
 }
 
+// Raum-Beleuchtungsstatistik laden
+async function loadRoomLightStats() {
+    const container = document.getElementById('room-light-stats');
+    const days = document.getElementById('room-stats-days')?.value || 7;
+    
+    try {
+        const response = await fetch(`/api/lighting/room-stats?days=${days}`);
+        const data = await response.json();
+        
+        if (!data.success || !data.stats || data.stats.length === 0) {
+            container.innerHTML = '<p class="empty-state">Noch keine Raum-Statistik verfügbar. Daten werden gesammelt sobald Lampen ein-/ausgeschaltet werden.</p>';
+            return;
+        }
+        
+        // Finde Maximum für Balken-Skalierung
+        const maxDuration = Math.max(...data.stats.map(s => s.total_duration_minutes || 0));
+        
+        container.innerHTML = data.stats.map(s => {
+            const barWidth = maxDuration > 0 ? Math.round((s.total_duration_minutes || 0) / maxDuration * 100) : 0;
+            const avgDuration = s.on_count > 0 ? Math.round(s.total_duration_minutes / s.on_count) : 0;
+            
+            return `
+                <div class="room-stat-card">
+                    <div class="room-stat-name">🏠 ${s.room_name}</div>
+                    <div class="room-stat-row">
+                        <span>Eingeschaltet</span>
+                        <span class="room-stat-value">${s.on_count}×</span>
+                    </div>
+                    <div class="room-stat-row">
+                        <span>Gesamtdauer</span>
+                        <span class="room-stat-value">${formatDuration(s.total_duration_minutes)}</span>
+                    </div>
+                    <div class="room-stat-row">
+                        <span>Ø pro Einschalten</span>
+                        <span class="room-stat-value">${avgDuration} Min.</span>
+                    </div>
+                    <div class="room-stat-row">
+                        <span>Lampen</span>
+                        <span class="room-stat-value">${s.light_count}</span>
+                    </div>
+                    <div class="room-stat-bar">
+                        <div class="room-stat-bar-fill" style="width: ${barWidth}%"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading room light stats:', error);
+        container.innerHTML = '<p class="empty-state">Fehler beim Laden der Raum-Statistik.</p>';
+    }
+}
+
+// Dauer formatieren
+function formatDuration(minutes) {
+    if (!minutes || minutes < 1) return '0 Min.';
+    if (minutes < 60) return `${Math.round(minutes)} Min.`;
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    if (hours < 24) return `${hours}h ${mins}m`;
+    const days = Math.floor(hours / 24);
+    const h = hours % 24;
+    return `${days}d ${h}h`;
+}
+
 // Auto-Refresh
 function startAutoRefresh() {
     if (autoRefreshInterval) clearInterval(autoRefreshInterval);
@@ -1768,6 +1916,9 @@ function startAutoRefresh() {
 document.addEventListener('DOMContentLoaded', () => {
     loadStatus();
     loadChart(7);
+    loadRoomLightStats();
+    loadLightStats();
+    loadRecentEvents();
     startAutoRefresh();
 });
 </script>
