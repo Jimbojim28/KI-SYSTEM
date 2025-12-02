@@ -629,31 +629,35 @@ class ForgottenLightDetector:
         """
         Prüft ob Gerät eine Lampe ist.
         
-        Respektiert device_types aus /rooms:
-        - device_type="device" -> wird ignoriert (return False)
+        Logik wie bei /rooms:
+        - device_type="device" -> wird ignoriert (ausgeblendet)
         - device_type="light" -> wird als Lampe behandelt
-        - kein Eintrag -> wird nach Homey-Klasse geprüft
+        - kein Eintrag -> wird nach Homey-Klasse geprüft (Standard-Verhalten)
+        
+        Alle Lampen werden genutzt, außer die explizit ausgeblendeten!
         """
         device_id = device.get('id', '')
-        device_name = device.get('name', '')
         
-        # 1. Prüfe ob in rooms.json als "device" markiert
+        # Prüfe ob in device_types konfiguriert
         configured_type = self.device_types.get(device_id)
+        
+        # Explizit als "device" ausgeblendet -> ignorieren
         if configured_type == 'device':
-            # Explizit als "nicht Lampe" markiert
             return False
         
+        # Explizit als "light" markiert -> ist eine Lampe
         if configured_type == 'light':
-            # Explizit als Lampe markiert
             return True
         
-        # 2. Fallback: Homey-Klasse prüfen
+        # Nicht konfiguriert -> nach Homey-Klasse prüfen
         device_class = device.get('class', '').lower()
         capabilities = device.get('capabilities', [])
         
+        # Homey-Klasse "light"
         if 'light' in device_class:
             return True
         
+        # Geräte mit Dimmer oder Farbsteuerung
         if 'onoff' in capabilities and ('dim' in capabilities or 'light_hue' in capabilities):
             return True
         
