@@ -158,10 +158,12 @@ class WindowDataCollector:
                 # CO2 - nur verwenden wenn das Gerät WIRKLICH in diesem Raum ist
                 # CO2-Sensoren sind selten, daher strengeres Matching
                 if climate['co2'] is None and 'measure_co2' in caps:
-                    # Nur wenn Zone-Name exakt passt ODER Gerätename den Raumnamen enthält
+                    # Raum-Match: Zone enthält Raumnamen ODER Raum enthält Zone-Namen
+                    # z.B. "schlafzimmer" matches "schlafzimmer (doppelbett)"
                     co2_room_match = (
                         device_room == room_lower or  # Exaktes Zone-Match
-                        room_lower == device_room or
+                        room_lower in device_room or  # Raum ist Teil der Zone (z.B. "schlafzimmer" in "schlafzimmer (doppelbett)")
+                        device_room in room_lower or  # Zone ist Teil des Raums
                         (room_lower in device_name and 'co2' in device_name.lower())  # CO2-Monitor mit Raumnamen
                     )
                     if co2_room_match:
