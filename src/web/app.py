@@ -744,6 +744,56 @@ class WebInterface:
                 logger.error(f"Error training ML model: {e}")
                 return jsonify({'success': False, 'error': str(e)}), 500
 
+        @self.app.route('/api/lighting/forgotten/debug')
+        def api_lighting_forgotten_debug():
+            """API: Debug-Info für Lampen-Erkennung"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                debug_info = {
+                    'running': detector.running,
+                    'platform_available': detector.platform is not None,
+                    'lights_found': [],
+                    'lights_on': [],
+                    'device_types': detector.device_types,
+                    'settings': {
+                        'min_on_duration': detector.min_on_duration_minutes,
+                        'no_motion_threshold': detector.no_motion_threshold_minutes,
+                        'check_interval': detector.check_interval
+                    },
+                    'last_motion_times': {k: v.isoformat() if v else None for k, v in detector.last_motion_times.items()},
+                    'light_on_times': {k: v.isoformat() if v else None for k, v in detector.light_on_times.items()}
+                }
+                
+                # Hole Lampen-Status
+                if detector.platform:
+                    try:
+                        devices = detector.platform.get_all_devices()
+                        for d in devices:
+                            is_light = detector._is_light_device(d)
+                            if is_light:
+                                state = d.get('capabilitiesObj', {}).get('onoff', {}).get('value')
+                                zone = d.get('zone')
+                                room = zone.get('name') if isinstance(zone, dict) else str(zone) if zone else 'Unknown'
+                                light_info = {
+                                    'id': d.get('id'),
+                                    'name': d.get('name'),
+                                    'room': room,
+                                    'is_on': state,
+                                    'class': d.get('class')
+                                }
+                                debug_info['lights_found'].append(light_info)
+                                if state:
+                                    debug_info['lights_on'].append(light_info)
+                    except Exception as e:
+                        debug_info['error'] = str(e)
+                
+                return jsonify(debug_info)
+            except Exception as e:
+                logger.error(f"Error getting debug info: {e}")
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/lighting/collector/status')
         def api_lighting_collector_status():
             """API: Status des Lighting Data Collectors"""

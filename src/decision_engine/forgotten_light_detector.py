@@ -213,6 +213,9 @@ class ForgottenLightDetector:
             # Hole alle Geräte
             devices = self.platform.get_all_devices()
             
+            # Hole Zone-Mapping für Raumname-Auflösung
+            zone_mapping = self._get_zone_mapping()
+            
             # Hole Bewegungsdaten aus DB
             self._update_motion_data()
             
@@ -229,12 +232,13 @@ class ForgottenLightDetector:
                 device_id = device.get('id')
                 device_name = device.get('name', 'Unknown')
                 
-                # Handle zone
+                # Handle zone - löse UUID zu Raumname auf
                 zone = device.get('zone')
                 if isinstance(zone, dict):
                     room_name = zone.get('name', 'Unknown')
                 elif isinstance(zone, str):
-                    room_name = zone
+                    # Zone ist UUID - versuche aufzulösen
+                    room_name = zone_mapping.get(zone, zone)
                 else:
                     room_name = 'Unknown'
                 
@@ -364,6 +368,9 @@ class ForgottenLightDetector:
             motion_ago = (now - last_motion).total_seconds() / 60
             if motion_ago > self.no_motion_threshold_minutes:
                 reasons.append(f"Keine Bewegung seit {int(motion_ago)} Min.")
+        elif on_minutes > 30:
+            # Keine Bewegungsdaten für diesen Raum, aber Lampe ist schon lange an
+            reasons.append("Keine Bewegungsdaten verfügbar")
         
         # 2. Niemand zu Hause
         if not presence_home:
@@ -522,26 +529,63 @@ class ForgottenLightDetector:
             cursor = conn.cursor()
             
             # Letzte Bewegung pro Raum (aus sensor_data)
+            # Nutze value >= 1 da value als REAL gespeichert ist (1.0 statt 1)
             cursor.execute("""
                 SELECT metadata, MAX(timestamp) as last_motion
                 FROM sensor_data
-                WHERE sensor_type = 'motion' AND value = 1
+                WHERE sensor_type = 'motion' AND value >= 1
                 AND timestamp > datetime('now', '-2 hours')
                 GROUP BY metadata
             """)
             
+            # Zone UUID zu Raumname Mapping aufbauen
+            zone_to_room = self._get_zone_mapping()
+            
             for row in cursor.fetchall():
                 try:
-                    import json
                     metadata = json.loads(row[0]) if row[0] else {}
-                    room = metadata.get('zone') or metadata.get('name', 'Unknown')
+                    zone_id = metadata.get('zone', '')
+                    
+                    # Zuerst versuchen Zone-UUID in Raumnamen zu übersetzen
+                    if zone_id and zone_id in zone_to_room:
+                        room = zone_to_room[zone_id]
+                    else:
+                        # Fallback auf Gerätename oder Zone-ID
+                        room = metadata.get('name', zone_id or 'Unknown')
+                    
                     if room:
                         self.last_motion_times[room] = datetime.fromisoformat(row[1])
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Error parsing motion metadata: {e}")
                     
         except Exception as e:
             logger.debug(f"Could not update motion data: {e}")
+    
+    def _get_zone_mapping(self) -> Dict[str, str]:
+        """Holt Zone-UUID zu Raumname Mapping von der Platform"""
+        zone_mapping = {}
+        try:
+            if self.platform:
+                # Versuche Zonen von der Platform zu holen
+                if hasattr(self.platform, 'get_zones'):
+                    zones = self.platform.get_zones()
+                    # Homey gibt Dict zurück: {zone_id: {id, name, ...}}
+                    if isinstance(zones, dict):
+                        for zone_id, zone_data in zones.items():
+                            if isinstance(zone_data, dict):
+                                zone_name = zone_data.get('name', '')
+                                if zone_id and zone_name:
+                                    zone_mapping[zone_id] = zone_name
+                    elif isinstance(zones, list):
+                        # Fallback für Listen-Format
+                        for zone in zones:
+                            zone_id = zone.get('id', '')
+                            zone_name = zone.get('name', '')
+                            if zone_id and zone_name:
+                                zone_mapping[zone_id] = zone_name
+        except Exception as e:
+            logger.debug(f"Could not get zone mapping: {e}")
+        return zone_mapping
     
     def _get_presence_status(self) -> bool:
         """Prüft ob jemand zu Hause ist"""
