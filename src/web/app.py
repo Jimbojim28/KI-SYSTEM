@@ -24,6 +24,7 @@ from src.web.blueprints import (
     ventilation_bp, init_ventilation_blueprint
 )
 from src.web.blueprints.api_notifications import notifications_bp, init_notifications_blueprint
+from src.web.blueprints.api_absence import absence_bp, init_absence_blueprint
 
 import src  # Für Zugriff auf __version__
 from src.decision_engine.engine import DecisionEngine
@@ -288,14 +289,16 @@ class WebInterface:
             init_ml_blueprint(self.engine, self.db)  # model_path ist optional
             init_ventilation_blueprint(self.engine, self.db, self.config)
             init_notifications_blueprint(self.engine, self.db, self.config)
+            init_absence_blueprint(self.engine, self.db, self.config)
             
             # Registriere Blueprints bei der Flask App
             self.app.register_blueprint(config_bp)
             self.app.register_blueprint(ml_bp)
             self.app.register_blueprint(ventilation_bp)
             self.app.register_blueprint(notifications_bp)
+            self.app.register_blueprint(absence_bp)
             
-            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp")
+            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp, absence_bp")
         except Exception as e:
             logger.error(f"Failed to register blueprints: {e}")
 
@@ -687,7 +690,9 @@ class WebInterface:
                     'sleep_hour_end': settings.get('sleep_hour_end', 6),
                     'daylight_lux_threshold': settings.get('daylight_lux_threshold', 200),
                     'min_on_duration': settings.get('min_on_duration', 15),
-                    'check_interval': settings.get('check_interval', 60)
+                    'check_interval': settings.get('check_interval', 60),
+                    'turn_off_when_away': settings.get('turn_off_when_away', True),
+                    'away_min_duration': settings.get('away_min_duration', 5)
                 })
             else:
                 # Speichere Einstellungen
@@ -699,7 +704,8 @@ class WebInterface:
                         self.config['forgotten_light'] = {}
                     
                     for key in ['no_motion_threshold', 'sleep_hour_start', 'sleep_hour_end',
-                               'daylight_lux_threshold', 'min_on_duration', 'check_interval']:
+                               'daylight_lux_threshold', 'min_on_duration', 'check_interval',
+                               'turn_off_when_away', 'away_min_duration']:
                         if key in data:
                             self.config['forgotten_light'][key] = data[key]
                     
@@ -712,6 +718,16 @@ class WebInterface:
                         yaml_config['forgotten_light'] = self.config['forgotten_light']
                         with open(config_path, 'w') as f:
                             yaml.dump(yaml_config, f, default_flow_style=False, allow_unicode=True)
+                    
+                    # Aktualisiere laufenden Detektor
+                    try:
+                        from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                        detector = get_forgotten_light_detector()
+                        if detector:
+                            detector.turn_off_when_away = data.get('turn_off_when_away', True)
+                            detector.away_min_duration = data.get('away_min_duration', 5)
+                    except:
+                        pass
                     
                     return jsonify({'success': True})
                 except Exception as e:
@@ -4174,6 +4190,278 @@ class WebInterface:
                 
             except Exception as e:
                 logger.error(f"Error getting room settings: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/window-calibration', methods=['GET', 'POST'])
+        def api_window_calibration():
+            """API: Fenster-Kalibrierung pro Raum - definiert wann ein Fenster als geschlossen gilt"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'rooms': [], 'assignments': {}, 'hidden': [], 'window_calibration': {}}
+                
+                # Sicherstellen dass 'window_calibration' existiert
+                if 'window_calibration' not in rooms_data:
+                    rooms_data['window_calibration'] = {}
+                
+                if request.method == 'GET':
+                    room_id = request.args.get('room_id')
+                    
+                    if room_id:
+                        # Kalibrierung für einen bestimmten Raum
+                        calibration = rooms_data['window_calibration'].get(room_id, {
+                            'closed_angle': 0,
+                            'tilted_min': 5,
+                            'tilted_max': 45
+                        })
+                        return jsonify({
+                            'success': True,
+                            'calibration': calibration
+                        })
+                    else:
+                        # Alle Kalibrierungen
+                        return jsonify({
+                            'success': True,
+                            'window_calibration': rooms_data.get('window_calibration', {})
+                        })
+                
+                elif request.method == 'POST':
+                    data = request.json
+                    room_id = data.get('room_id')
+                    
+                    if not room_id:
+                        return jsonify({'error': 'room_id required'}), 400
+                    
+                    # Kalibrierungswerte
+                    calibration = {
+                        'closed_angle': float(data.get('closed_angle', 0)),
+                        'tilted_min': float(data.get('tilted_min', 5)),
+                        'tilted_max': float(data.get('tilted_max', 45))
+                    }
+                    
+                    rooms_data['window_calibration'][room_id] = calibration
+                    logger.info(f"Window calibration for room {room_id}: closed={calibration['closed_angle']}°, tilted={calibration['tilted_min']}-{calibration['tilted_max']}°")
+                    
+                    # Speichern
+                    with open(rooms_file, 'w') as f:
+                        json.dump(rooms_data, f, indent=2, ensure_ascii=False)
+                    
+                    return jsonify({
+                        'success': True,
+                        'calibration': calibration
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error managing window calibration: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/window-status', methods=['GET'])
+        def api_window_status():
+            """API: Aktueller Fensterstatus mit Winkel und Zustand (Zu/Gekippt/Offen)"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                # Lade Kalibrierungsdaten
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'window_calibration': {}}
+                
+                calibrations = rooms_data.get('window_calibration', {})
+                
+                # Hole alle Fenster-Geräte (nutze get_states statt get_devices)
+                devices = []
+                if hasattr(self.engine, 'platform'):
+                    # Für Homey: nutze _device_cache oder get_states
+                    if hasattr(self.engine.platform, '_device_cache'):
+                        self.engine.platform._refresh_device_cache()
+                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                            self.engine.platform._device_cache, dict) else []
+                    elif hasattr(self.engine.platform, 'get_states'):
+                        states = self.engine.platform.get_states() or {}
+                        devices = list(states.values()) if isinstance(states, dict) else states
+                
+                window_status = []
+                
+                for device in devices:
+                    name = device.get('name', '').lower()
+                    if 'fenster' in name or 'window' in name:
+                        caps = device.get('capabilitiesObj', {})
+                        zone_id = device.get('zone', '')
+                        
+                        # Hole Tilt-Wert
+                        tilt_value = None
+                        if 'tilt' in caps:
+                            tilt_value = caps['tilt'].get('value', 0)
+                        
+                        # Hole Kontakt-Status
+                        is_contact_open = False
+                        if 'alarm_contact' in caps:
+                            is_contact_open = bool(caps['alarm_contact'].get('value', False))
+                        
+                        # Bestimme Zustand basierend auf Kalibrierung
+                        calibration = calibrations.get(zone_id, {
+                            'closed_angle': 0,
+                            'tilted_min': 5,
+                            'tilted_max': 45
+                        })
+                        
+                        state = 'closed'  # Default
+                        if tilt_value is not None:
+                            closed_angle = calibration.get('closed_angle', 0)
+                            tilted_min = calibration.get('tilted_min', 5)
+                            tilted_max = calibration.get('tilted_max', 45)
+                            
+                            # Logik: Kontakt + Winkel kombinieren
+                            # - Kontakt zu = Fenster geschlossen
+                            # - Kontakt offen + Winkel im Kippbereich (5°-45°) = gekippt
+                            # - Kontakt offen + Winkel außerhalb Kippbereich (0° oder >45°) = weit offen
+                            diff = abs(tilt_value - closed_angle)
+                            
+                            if not is_contact_open:
+                                # Kontakt geschlossen = Fenster zu
+                                state = 'closed'
+                            elif is_contact_open and diff >= tilted_min and diff <= tilted_max:
+                                # Kontakt offen + Winkel im Kippbereich = gekippt
+                                state = 'tilted'
+                            elif is_contact_open:
+                                # Kontakt offen + Winkel nahe geschlossen (0°) oder sehr groß (>45°) = weit offen
+                                state = 'open'
+                        elif is_contact_open:
+                            # Kein Tilt-Sensor, aber Kontakt offen
+                            state = 'open'
+                        
+                        window_status.append({
+                            'device_id': device.get('id'),
+                            'name': device.get('name'),
+                            'zone_id': zone_id,
+                            'tilt': tilt_value,
+                            'contact_open': is_contact_open,
+                            'state': state,
+                            'state_label': {
+                                'closed': '🟢 Geschlossen',
+                                'tilted': '🟡 Gekippt',
+                                'open': '🔴 Offen'
+                            }.get(state, state)
+                        })
+                
+                return jsonify({
+                    'success': True,
+                    'windows': window_status
+                })
+                
+            except Exception as e:
+                logger.error(f"Error getting window status: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/window-auto-calibrate', methods=['POST'])
+        def api_window_auto_calibrate():
+            """API: Automatische Fenster-Kalibrierung basierend auf aktuellem Status
+            
+            Logik:
+            - Wenn Kontakt geschlossen UND Tilt vorhanden -> Tilt-Wert als "geschlossen" speichern
+            - Wenn Kontakt offen UND Tilt vorhanden -> basierend auf Tilt-Wert ermitteln ob gekippt oder offen
+            """
+            import json
+            rooms_file = Path('data/rooms.json')
+            
+            try:
+                # Lade aktuelle Daten
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'window_calibration': {}}
+                
+                if 'window_calibration' not in rooms_data:
+                    rooms_data['window_calibration'] = {}
+                
+                # Hole alle Fenster-Geräte
+                devices = []
+                if hasattr(self.engine, 'platform'):
+                    if hasattr(self.engine.platform, '_device_cache'):
+                        self.engine.platform._refresh_device_cache()
+                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                            self.engine.platform._device_cache, dict) else []
+                    elif hasattr(self.engine.platform, 'get_states'):
+                        states = self.engine.platform.get_states() or {}
+                        devices = list(states.values()) if isinstance(states, dict) else states
+                
+                calibrated_rooms = []
+                
+                for device in devices:
+                    name = device.get('name', '').lower()
+                    if 'fenster' in name or 'window' in name:
+                        caps = device.get('capabilitiesObj', {})
+                        zone_id = device.get('zone', '')
+                        
+                        if not zone_id:
+                            continue
+                        
+                        # Hole Tilt-Wert
+                        tilt_value = None
+                        if 'tilt' in caps:
+                            tilt_value = caps['tilt'].get('value')
+                        
+                        # Hole Kontakt-Status
+                        is_contact_open = False
+                        if 'alarm_contact' in caps:
+                            is_contact_open = bool(caps['alarm_contact'].get('value', False))
+                        
+                        if tilt_value is not None:
+                            # Aktuelle Kalibrierung holen oder Default
+                            current_cal = rooms_data['window_calibration'].get(zone_id, {
+                                'closed_angle': 0,
+                                'tilted_min': 5,
+                                'tilted_max': 45
+                            })
+                            
+                            # Auto-Kalibrierung basierend auf Kontakt-Status
+                            if not is_contact_open:
+                                # Fenster geschlossen -> aktueller Tilt ist der "geschlossen" Winkel
+                                current_cal['closed_angle'] = round(tilt_value, 1)
+                                rooms_data['window_calibration'][zone_id] = current_cal
+                                
+                                # Hole Zone-Namen
+                                zone_name = 'Unbekannt'
+                                try:
+                                    zones = self.engine.platform.get_zones() or []
+                                    for z in zones:
+                                        if z.get('id') == zone_id:
+                                            zone_name = z.get('name', zone_id)
+                                            break
+                                except:
+                                    pass
+                                
+                                calibrated_rooms.append({
+                                    'zone_id': zone_id,
+                                    'zone_name': zone_name,
+                                    'device_name': device.get('name'),
+                                    'closed_angle': current_cal['closed_angle'],
+                                    'status': 'calibrated'
+                                })
+                                
+                                logger.info(f"Auto-calibrated window {device.get('name')}: closed_angle={current_cal['closed_angle']}°")
+                
+                # Speichern
+                with open(rooms_file, 'w') as f:
+                    json.dump(rooms_data, f, indent=2, ensure_ascii=False)
+                
+                return jsonify({
+                    'success': True,
+                    'calibrated': calibrated_rooms,
+                    'message': f'{len(calibrated_rooms)} Fenster kalibriert'
+                })
+                
+            except Exception as e:
+                logger.error(f"Error auto-calibrating windows: {e}")
                 return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/rooms/device-types', methods=['GET', 'POST'])

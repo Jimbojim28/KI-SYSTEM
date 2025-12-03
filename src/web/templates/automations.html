@@ -16,6 +16,9 @@
         <button class="main-tab-btn active" data-maintab="rules">
             <span style="font-size: 18px;">⚙️</span> Regeln & Szenen
         </button>
+        <button class="main-tab-btn" data-maintab="absence">
+            <span style="font-size: 18px;">🚪</span> Abwesenheit
+        </button>
         <button class="main-tab-btn" data-maintab="devices">
             <span style="font-size: 18px;">🔧</span> Geräte & System
         </button>
@@ -114,7 +117,101 @@
         </div>
     </div>
 
-    <!-- TAB 2: Geräte & System (old automations) -->
+    <!-- TAB 2: Abwesenheit -->
+    <div id="tab-absence" class="main-tab-content" style="display: none;">
+        <!-- Aktueller Status -->
+        <div class="card">
+            <h3>📍 Aktueller Status</h3>
+            <div class="absence-status-grid">
+                <div class="absence-status-card" id="presence-status-card">
+                    <div class="status-icon">👥</div>
+                    <div class="status-info">
+                        <div class="status-title">Präsenz</div>
+                        <div class="status-value" id="absence-presence-value">Wird ermittelt...</div>
+                    </div>
+                </div>
+                <div class="absence-status-card" id="lights-status-card">
+                    <div class="status-icon">💡</div>
+                    <div class="status-info">
+                        <div class="status-title">Lichter</div>
+                        <div class="status-value" id="absence-lights-value">-</div>
+                    </div>
+                </div>
+                <div class="absence-status-card" id="windows-status-card">
+                    <div class="status-icon">🪟</div>
+                    <div class="status-info">
+                        <div class="status-title">Fenster</div>
+                        <div class="status-value" id="absence-windows-value">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Abwesenheits-Automatisierung -->
+        <div class="card">
+            <h3>🚪 Abwesenheits-Benachrichtigungen</h3>
+            <p class="card-description">Erhalte eine Pushover-Benachrichtigung wenn keiner zu Hause ist.</p>
+            
+            <div class="absence-settings">
+                <div class="setting-row">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="absence-notification-enabled" onchange="saveAbsenceSettings()">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Benachrichtigung bei Abwesenheit aktivieren</span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="absence-check-lights" checked onchange="saveAbsenceSettings()">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Lichter-Status prüfen</span>
+                    </label>
+                    <small class="setting-hint">Benachrichtigen wenn noch Lichter an sind</small>
+                </div>
+                
+                <div class="setting-row">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="absence-check-windows" checked onchange="saveAbsenceSettings()">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Fenster-Status prüfen</span>
+                    </label>
+                    <small class="setting-hint">Warnung wenn Fenster offen oder gekippt sind</small>
+                </div>
+                
+                <div class="setting-row">
+                    <label>Verzögerung nach Abwesenheit (Minuten):</label>
+                    <input type="number" id="absence-delay" value="5" min="0" max="60" 
+                           style="width: 80px; padding: 8px;" onchange="saveAbsenceSettings()">
+                    <small class="setting-hint">Warten bevor Benachrichtigung gesendet wird</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manueller Check -->
+        <div class="card">
+            <h3>🔍 Manueller Status-Check</h3>
+            <p class="card-description">Prüfe jetzt den aktuellen Status aller Lichter und Fenster.</p>
+            
+            <button class="btn btn-primary" onclick="checkAbsenceStatus()" style="margin-bottom: 1rem;">
+                🔍 Status jetzt prüfen
+            </button>
+            
+            <div id="absence-check-result" class="absence-check-result" style="display: none;">
+                <!-- Wird dynamisch gefüllt -->
+            </div>
+        </div>
+
+        <!-- Letzte Benachrichtigungen -->
+        <div class="card">
+            <h3>📜 Letzte Abwesenheits-Ereignisse</h3>
+            <div id="absence-history" class="absence-history">
+                <div class="loading-state">Lade Historie...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: Geräte & System (old automations) -->
     <div id="tab-devices" class="main-tab-content" style="display: none;">
         <!-- Präsenz-Status -->
         <div class="card">
@@ -739,6 +836,419 @@
     padding: 6px 12px;
     font-size: 13px;
 }
+
+/* Abwesenheit Tab Styles */
+.absence-settings-form {
+    display: grid;
+    gap: 20px;
+}
+
+.absence-section {
+    background: #f9fafb;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #e5e7eb;
+}
+
+.absence-section h4 {
+    margin: 0 0 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    color: #374151;
+}
+
+.absence-section h4 span {
+    font-size: 20px;
+}
+
+.settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.settings-row:last-child {
+    border-bottom: none;
+}
+
+.settings-row label {
+    font-size: 14px;
+    color: #4b5563;
+}
+
+.settings-row input[type="text"],
+.settings-row input[type="password"] {
+    width: 300px;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.status-preview {
+    margin-top: 25px;
+}
+
+.status-preview h4 {
+    margin: 0 0 15px 0;
+    font-size: 16px;
+    color: #1f2937;
+}
+
+.preview-card {
+    background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+    border-radius: 16px;
+    padding: 25px;
+    color: white;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+.preview-header h5 {
+    margin: 0;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.preview-time {
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+}
+
+.preview-sections {
+    display: grid;
+    gap: 20px;
+}
+
+.preview-section h6 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: rgba(255,255,255,0.8);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.lights-grid, .windows-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+}
+
+.light-item, .window-item {
+    background: rgba(255,255,255,0.1);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.light-item.on {
+    background: rgba(251, 191, 36, 0.3);
+    border: 1px solid rgba(251, 191, 36, 0.5);
+}
+
+.light-item.off {
+    background: rgba(107, 114, 128, 0.3);
+}
+
+.window-item.closed {
+    background: rgba(16, 185, 129, 0.3);
+}
+
+.window-item.tilted {
+    background: rgba(251, 191, 36, 0.3);
+    border: 1px solid rgba(251, 191, 36, 0.5);
+}
+
+.window-item.open {
+    background: rgba(239, 68, 68, 0.3);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.absence-summary {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    text-align: center;
+}
+
+.summary-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.summary-badge.all-good {
+    background: rgba(16, 185, 129, 0.3);
+    color: #6ee7b7;
+}
+
+.summary-badge.warning {
+    background: rgba(251, 191, 36, 0.3);
+    color: #fcd34d;
+}
+
+.btn-test-absence {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.btn-test-absence:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Abwesenheit Status Grid */
+.absence-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.absence-status-card {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: all 0.3s;
+}
+
+.absence-status-card.warning {
+    border-color: #fbbf24;
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+
+.absence-status-card.alert {
+    border-color: #ef4444;
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+}
+
+.absence-status-card.success {
+    border-color: #10b981;
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+}
+
+.absence-status-card .status-icon {
+    font-size: 32px;
+}
+
+.absence-status-card .status-info {
+    flex: 1;
+}
+
+.absence-status-card .status-title {
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.absence-status-card .status-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+/* Abwesenheit Settings */
+.absence-settings {
+    margin-top: 15px;
+}
+
+.setting-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 15px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.setting-row:last-child {
+    border-bottom: none;
+}
+
+.setting-hint {
+    color: #6b7280;
+    font-size: 12px;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    position: absolute;
+}
+
+.toggle-slider {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    background: #d1d5db;
+    border-radius: 13px;
+    transition: all 0.3s;
+    flex-shrink: 0;
+}
+
+.toggle-slider::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    top: 2px;
+    left: 2px;
+    transition: all 0.3s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.toggle-label input:checked + .toggle-slider {
+    background: #10b981;
+}
+
+.toggle-label input:checked + .toggle-slider::after {
+    left: 24px;
+}
+
+.toggle-text {
+    font-size: 14px;
+    color: #374151;
+    font-weight: 500;
+}
+
+/* Abwesenheit Check Result */
+.absence-check-result {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 15px;
+}
+
+.absence-check-result h4 {
+    margin: 0 0 15px 0;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.device-list-compact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.device-tag {
+    background: #e5e7eb;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.device-tag.on {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.device-tag.open {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.device-tag.tilted {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.device-tag.closed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+/* Abwesenheit History */
+.absence-history {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: #f9fafb;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.history-item .time {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.history-item .status {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.loading-state {
+    text-align: center;
+    color: #9ca3af;
+    padding: 20px;
+    font-style: italic;
+}
+
+.card-description {
+    color: #6b7280;
+    font-size: 14px;
+    margin-bottom: 15px;
+}
 </style>
 
 <script>
@@ -756,8 +1266,244 @@ document.querySelectorAll('.main-tab-btn').forEach(btn => {
             content.style.display = 'none';
         });
         document.getElementById('tab-' + tabName).style.display = 'block';
+        
+        // Load absence tab data when switching to it
+        if (tabName === 'absence') {
+            loadAbsenceTabData();
+        }
     });
 });
+
+// Abwesenheit Tab Functions
+function loadAbsenceTabData() {
+    loadAbsenceSettings();
+    checkAbsenceStatus();
+    loadAbsenceHistory();
+}
+
+function loadAbsenceSettings() {
+    fetch('/api/automations/absence-settings')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const settings = data.settings;
+                const enabledCheckbox = document.getElementById('absence-notification-enabled');
+                if (enabledCheckbox) {
+                    enabledCheckbox.checked = settings.enabled || false;
+                }
+            }
+        })
+        .catch(error => console.error('Error loading absence settings:', error));
+}
+
+function saveAbsenceSettings() {
+    const settings = {
+        enabled: document.getElementById('absence-notification-enabled')?.checked || false,
+        check_lights: document.getElementById('absence-check-lights')?.checked || false,
+        check_windows: document.getElementById('absence-check-windows')?.checked || false,
+        delay_minutes: parseInt(document.getElementById('absence-delay')?.value || '5')
+    };
+
+    fetch('/api/automations/absence-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToastMessage('Einstellungen gespeichert', 'success');
+        }
+    })
+    .catch(error => console.error('Error saving absence settings:', error));
+}
+
+function checkAbsenceStatus() {
+    // Update status cards
+    updateAbsenceStatusCards();
+    
+    fetch('/api/automations/absence-status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderAbsenceCheckResult(data);
+            }
+        })
+        .catch(error => console.error('Error checking absence status:', error));
+}
+
+function updateAbsenceStatusCards() {
+    fetch('/api/automations/absence-status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Lights status
+                const lightsOn = data.lights ? data.lights.filter(l => l.on).length : 0;
+                const totalLights = data.lights ? data.lights.length : 0;
+                const lightsValue = document.getElementById('absence-lights-value');
+                const lightsCard = document.getElementById('lights-status-card');
+                if (lightsValue) {
+                    lightsValue.textContent = `${lightsOn}/${totalLights} an`;
+                    if (lightsCard) {
+                        lightsCard.classList.remove('success', 'warning', 'alert');
+                        lightsCard.classList.add(lightsOn === 0 ? 'success' : 'warning');
+                    }
+                }
+                
+                // Windows status
+                const windowsOpen = data.windows ? data.windows.filter(w => w.state === 'open').length : 0;
+                const windowsTilted = data.windows ? data.windows.filter(w => w.state === 'tilted').length : 0;
+                const totalWindows = data.windows ? data.windows.length : 0;
+                const windowsValue = document.getElementById('absence-windows-value');
+                const windowsCard = document.getElementById('windows-status-card');
+                if (windowsValue) {
+                    if (windowsOpen > 0) {
+                        windowsValue.textContent = `${windowsOpen} offen`;
+                    } else if (windowsTilted > 0) {
+                        windowsValue.textContent = `${windowsTilted} gekippt`;
+                    } else {
+                        windowsValue.textContent = 'Alle zu';
+                    }
+                    if (windowsCard) {
+                        windowsCard.classList.remove('success', 'warning', 'alert');
+                        if (windowsOpen > 0) {
+                            windowsCard.classList.add('alert');
+                        } else if (windowsTilted > 0) {
+                            windowsCard.classList.add('warning');
+                        } else {
+                            windowsCard.classList.add('success');
+                        }
+                    }
+                }
+                
+                // Presence status (placeholder - would need presence API)
+                const presenceValue = document.getElementById('absence-presence-value');
+                const presenceCard = document.getElementById('presence-status-card');
+                if (presenceValue) {
+                    presenceValue.textContent = 'Anwesend';
+                    if (presenceCard) {
+                        presenceCard.classList.add('success');
+                    }
+                }
+            }
+        })
+        .catch(error => console.error('Error updating status cards:', error));
+}
+
+function renderAbsenceCheckResult(data) {
+    const resultDiv = document.getElementById('absence-check-result');
+    if (!resultDiv) return;
+    
+    const lightsOn = data.lights ? data.lights.filter(l => l.on) : [];
+    const windowsOpen = data.windows ? data.windows.filter(w => w.state === 'open') : [];
+    const windowsTilted = data.windows ? data.windows.filter(w => w.state === 'tilted') : [];
+    
+    let html = '';
+    
+    // Lights section
+    html += `<h4>💡 Lichter</h4>`;
+    if (lightsOn.length > 0) {
+        html += `<p style="color: #92400e; font-weight: 500;">⚠️ ${lightsOn.length} Licht(er) noch an:</p>`;
+        html += `<div class="device-list-compact">`;
+        lightsOn.forEach(l => {
+            html += `<span class="device-tag on">💡 ${l.name}</span>`;
+        });
+        html += `</div>`;
+    } else {
+        html += `<p style="color: #065f46; font-weight: 500;">✅ Alle Lichter aus</p>`;
+    }
+    
+    // Windows section
+    html += `<h4 style="margin-top: 20px;">🪟 Fenster</h4>`;
+    if (windowsOpen.length > 0 || windowsTilted.length > 0) {
+        if (windowsOpen.length > 0) {
+            html += `<p style="color: #991b1b; font-weight: 500;">🔴 ${windowsOpen.length} Fenster offen:</p>`;
+            html += `<div class="device-list-compact">`;
+            windowsOpen.forEach(w => {
+                html += `<span class="device-tag open">🔴 ${w.name}</span>`;
+            });
+            html += `</div>`;
+        }
+        if (windowsTilted.length > 0) {
+            html += `<p style="color: #92400e; font-weight: 500; margin-top: 10px;">🟡 ${windowsTilted.length} Fenster gekippt:</p>`;
+            html += `<div class="device-list-compact">`;
+            windowsTilted.forEach(w => {
+                html += `<span class="device-tag tilted">🟡 ${w.name}</span>`;
+            });
+            html += `</div>`;
+        }
+    } else {
+        html += `<p style="color: #065f46; font-weight: 500;">✅ Alle Fenster geschlossen</p>`;
+    }
+    
+    // Send notification button
+    html += `
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+            <button class="btn btn-secondary" onclick="sendAbsenceNotification()" style="display: flex; align-items: center; gap: 8px;">
+                📤 Status als Pushover senden
+            </button>
+        </div>
+    `;
+    
+    resultDiv.innerHTML = html;
+    resultDiv.style.display = 'block';
+}
+
+function sendAbsenceNotification() {
+    fetch('/api/automations/absence-test-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToastMessage('Benachrichtigung gesendet!', 'success');
+        } else {
+            showToastMessage('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error sending notification:', error);
+        showToastMessage('Fehler beim Senden', 'error');
+    });
+}
+
+function loadAbsenceHistory() {
+    const historyDiv = document.getElementById('absence-history');
+    if (!historyDiv) return;
+    
+    // For now, show placeholder
+    historyDiv.innerHTML = `
+        <div class="history-item">
+            <span class="status">📱 Keine Ereignisse aufgezeichnet</span>
+            <span class="time">-</span>
+        </div>
+    `;
+}
+
+function showToastMessage(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 15px 25px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
 </script>
 
 <script src="{{ url_for('static', filename='js/automations_new.js') }}"></script>

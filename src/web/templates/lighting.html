@@ -34,7 +34,26 @@
         <div class="status-info">
             <span id="mode-badge" class="mode-badge test-mode">🧪 Test-Modus</span>
             <span id="ml-badge" class="ml-badge ml-inactive">📊 Regelbasiert</span>
+            <span id="presence-badge" class="presence-badge presence-home">🏠 Zu Hause</span>
             <p class="mode-hint">Im Test-Modus wird nur protokolliert, keine Lampen werden ausgeschaltet.</p>
+        </div>
+    </div>
+    
+    <!-- Anwesenheits-Status Karte -->
+    <div class="presence-card" id="presence-card">
+        <div class="presence-header">
+            <h4>🏠 Anwesenheits-Status</h4>
+            <span id="presence-status-badge" class="presence-status-badge home">Jemand zu Hause</span>
+        </div>
+        <div class="presence-info" id="presence-info">
+            <p>✅ Mindestens eine Person ist zu Hause.</p>
+        </div>
+        <div class="presence-setting">
+            <label class="toggle-label">
+                <input type="checkbox" id="away-auto-off" checked>
+                <span class="toggle-slider"></span>
+                <span class="toggle-text">Bei Abwesenheit alle Lampen als vergessen markieren</span>
+            </label>
         </div>
     </div>
     
@@ -269,6 +288,24 @@
     </div>
     
     <div class="settings-section">
+        <h3>🏠 Anwesenheit</h3>
+        
+        <div class="mode-toggle">
+            <label class="toggle-label">
+                <input type="checkbox" id="setting-away-auto-off" checked>
+                <span class="toggle-slider"></span>
+                <span class="toggle-text">Bei Abwesenheit alle Lampen als vergessen markieren</span>
+            </label>
+        </div>
+        
+        <div class="setting-row">
+            <label>Wartezeit bei Abwesenheit (Minuten)</label>
+            <input type="number" id="setting-away-duration" min="1" max="60" value="5">
+            <span class="setting-hint">Nach dieser Zeit ohne Anwesenheit werden Lampen markiert</span>
+        </div>
+    </div>
+    
+    <div class="settings-section">
         <h3>🔄 System</h3>
         
         <div class="setting-row">
@@ -463,7 +500,7 @@
     z-index: 1;
 }
 
-.mode-badge, .ml-badge {
+.mode-badge, .ml-badge, .presence-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -478,12 +515,74 @@
 .active-mode { background: rgba(231, 76, 60, 0.9); }
 .ml-active { background: rgba(39, 174, 96, 0.9); }
 .ml-inactive { background: rgba(255, 255, 255, 0.15); }
+.presence-home { background: rgba(39, 174, 96, 0.9); }
+.presence-away { background: rgba(231, 76, 60, 0.9); }
 
 .mode-hint {
     width: 100%;
     margin-top: 0.75rem;
     font-size: 0.9em;
     opacity: 0.85;
+}
+
+/* Presence Card */
+.presence-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    border-left: 4px solid #10b981;
+}
+
+.presence-card.away {
+    border-left-color: #ef4444;
+}
+
+.presence-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.presence-header h4 {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.presence-status-badge {
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.presence-status-badge.home {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    color: #065f46;
+}
+
+.presence-status-badge.away {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+}
+
+.presence-info {
+    color: #6b7280;
+    font-size: 0.95em;
+    margin-bottom: 1rem;
+}
+
+.presence-info p {
+    margin: 0;
+}
+
+.presence-setting {
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
 }
 
 /* ML Card */
@@ -1351,6 +1450,9 @@ async function loadStatus() {
             mlBadge.className = 'ml-badge ml-inactive';
         }
         
+        // Anwesenheits-Status
+        updatePresenceStatus(data.statistics);
+        
         // Statistiken
         const stats = data.statistics || {};
         document.getElementById('stat-today').textContent = stats.predictions_today || 0;
@@ -1372,6 +1474,48 @@ async function loadStatus() {
         
     } catch (error) {
         console.error('Error loading status:', error);
+    }
+}
+
+// Anwesenheits-Status aktualisieren
+function updatePresenceStatus(stats) {
+    const presenceCard = document.getElementById('presence-card');
+    const presenceBadge = document.getElementById('presence-badge');
+    const presenceStatusBadge = document.getElementById('presence-status-badge');
+    const presenceInfo = document.getElementById('presence-info');
+    
+    if (!stats) return;
+    
+    const isHome = stats.presence_home !== false;
+    
+    if (isHome) {
+        presenceCard.classList.remove('away');
+        presenceBadge.textContent = '🏠 Zu Hause';
+        presenceBadge.className = 'presence-badge presence-home';
+        presenceStatusBadge.textContent = 'Jemand zu Hause';
+        presenceStatusBadge.className = 'presence-status-badge home';
+        presenceInfo.innerHTML = '<p>✅ Mindestens eine Person ist zu Hause.</p>';
+    } else {
+        presenceCard.classList.add('away');
+        presenceBadge.textContent = '🚪 Abwesend';
+        presenceBadge.className = 'presence-badge presence-away';
+        presenceStatusBadge.textContent = 'Niemand zu Hause';
+        presenceStatusBadge.className = 'presence-status-badge away';
+        
+        if (stats.away_since) {
+            const awaySince = new Date(stats.away_since);
+            const now = new Date();
+            const awayMinutes = Math.floor((now - awaySince) / 60000);
+            presenceInfo.innerHTML = `<p>⚠️ Niemand zu Hause seit ${awayMinutes} Minuten. Lampen werden als vergessen markiert.</p>`;
+        } else {
+            presenceInfo.innerHTML = '<p>⚠️ Niemand zu Hause. Alle eingeschalteten Lampen werden als vergessen markiert.</p>';
+        }
+    }
+    
+    // Checkbox Status aktualisieren
+    const awayAutoOff = document.getElementById('away-auto-off');
+    if (awayAutoOff && stats.turn_off_when_away !== undefined) {
+        awayAutoOff.checked = stats.turn_off_when_away;
     }
 }
 
@@ -1659,6 +1803,8 @@ async function loadSettings() {
         document.getElementById('setting-sleep-start').value = settings.sleep_hour_start || 23;
         document.getElementById('setting-sleep-end').value = settings.sleep_hour_end || 6;
         document.getElementById('setting-interval').value = settings.check_interval || 60;
+        document.getElementById('setting-away-auto-off').checked = settings.turn_off_when_away !== false;
+        document.getElementById('setting-away-duration').value = settings.away_min_duration || 5;
         
     } catch (error) {
         console.error('Error loading settings:', error);
@@ -1673,7 +1819,9 @@ async function saveSettings() {
         daylight_lux_threshold: parseInt(document.getElementById('setting-daylight').value),
         sleep_hour_start: parseInt(document.getElementById('setting-sleep-start').value),
         sleep_hour_end: parseInt(document.getElementById('setting-sleep-end').value),
-        check_interval: parseInt(document.getElementById('setting-interval').value)
+        check_interval: parseInt(document.getElementById('setting-interval').value),
+        turn_off_when_away: document.getElementById('setting-away-auto-off').checked,
+        away_min_duration: parseInt(document.getElementById('setting-away-duration').value)
     };
     
     try {

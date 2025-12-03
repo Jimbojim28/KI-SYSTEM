@@ -72,6 +72,34 @@ class WindowDataCollector:
             # Warte bis zum nächsten Intervall
             time.sleep(self.interval_seconds)
 
+    def _get_window_calibration(self, zone_id: str) -> Dict:
+        """Holt die Fenster-Kalibrierung für eine Zone aus rooms.json"""
+        default_calibration = {
+            'closed_angle': 0,
+            'tilted_min': 5,
+            'tilted_max': 45
+        }
+        
+        if not zone_id:
+            return default_calibration
+        
+        try:
+            import json
+            from pathlib import Path
+            rooms_file = Path('data/rooms.json')
+            
+            if rooms_file.exists():
+                with open(rooms_file, 'r') as f:
+                    rooms_data = json.load(f)
+                
+                calibrations = rooms_data.get('window_calibration', {})
+                if zone_id in calibrations:
+                    return calibrations[zone_id]
+        except Exception as e:
+            logger.debug(f"Error loading window calibration: {e}")
+        
+        return default_calibration
+
     def _extract_room_from_device_name(self, device_name: str) -> Optional[str]:
         """Extrahiert den Raumnamen aus dem Gerätenamen (z.B. 'Wohnzimmer 2 Fenster' -> 'Wohnzimmer')"""
         if not device_name:
@@ -310,10 +338,17 @@ class WindowDataCollector:
 
         device_name = device.get('name', 'Unbekannt')
         capabilities = device.get('capabilitiesObj', {})
+        zone_id = device.get('zone')
+
+        # Hole Tilt-Winkel (falls vorhanden)
+        tilt_angle = None
+        if 'tilt' in capabilities:
+            tilt_angle = capabilities['tilt'].get('value')
 
         # Status: offen oder geschlossen
         is_open = False
         contact_alarm = False
+        window_state = 'closed'  # closed, tilted, open
 
         # Prüfe alarm_contact capability (typisch für Fenster/Tür-Sensoren)
         if 'alarm_contact' in capabilities:
@@ -323,18 +358,42 @@ class WindowDataCollector:
                 is_open = bool(alarm_value)
                 contact_alarm = is_open
 
+        # Bestimme Fensterzustand basierend auf Kalibrierung (wenn Tilt vorhanden)
+        if tilt_angle is not None:
+            calibration = self._get_window_calibration(zone_id)
+            closed_angle = calibration.get('closed_angle', 0)
+            tilted_min = calibration.get('tilted_min', 5)
+            tilted_max = calibration.get('tilted_max', 45)
+            
+            diff = abs(tilt_angle - closed_angle)
+            
+            if diff <= 2:  # Toleranz für "geschlossen"
+                window_state = 'closed'
+                is_open = False
+            elif diff >= tilted_min and diff <= tilted_max:
+                window_state = 'tilted'
+                is_open = True  # Gekippt gilt als offen für Lüftung
+            else:
+                window_state = 'open'
+                is_open = True
+        elif is_open:
+            window_state = 'open'
+
         # Alternative: windowcoverings_state (für Rollläden/Jalousien)
-        elif 'windowcoverings_state' in capabilities:
+        if not is_open and 'windowcoverings_state' in capabilities:
             state = capabilities['windowcoverings_state'].get('value', 'idle')
             is_open = (state == 'up')  # up = offen
+            if is_open:
+                window_state = 'open'
 
         # Alternative: onoff (für manche Sensoren)
-        elif 'onoff' in capabilities:
+        if not is_open and 'onoff' in capabilities:
             is_open = capabilities['onoff'].get('value', False)
+            if is_open:
+                window_state = 'open'
 
         # Raum-Name aus Zone
         room_name = None
-        zone_id = device.get('zone')
         if zone_id and hasattr(self.engine, 'platform'):
             try:
                 zones = self.engine.platform.get_zones()
@@ -355,37 +414,55 @@ class WindowDataCollector:
             device_name=device_name,
             room_name=room_name,
             is_open=is_open,
-            contact_alarm=contact_alarm
+            contact_alarm=contact_alarm,
+            tilt_angle=tilt_angle,
+            window_state=window_state
         )
 
         # === Lüftungs-Event-Tracking ===
-        # Prüfe ob sich der Status geändert hat
-        previous_state = self._previous_window_states.get(device_id)
+        # Prüfe ob sich der Status geändert hat (is_open oder window_state)
+        previous_data = self._previous_window_states.get(device_id)
+        previous_is_open = previous_data.get('is_open') if isinstance(previous_data, dict) else previous_data
+        previous_window_state = previous_data.get('window_state') if isinstance(previous_data, dict) else None
         
-        if previous_state is not None and previous_state != is_open:
-            # Status hat sich geändert
+        if previous_is_open is not None and previous_is_open != is_open:
+            # Status hat sich geändert (offen <-> geschlossen)
             if is_open:
                 # Fenster wurde geöffnet -> Starte Lüftungs-Event
-                self._start_ventilation_event(device_id, device_name, room_name)
+                self._start_ventilation_event(device_id, device_name, room_name, window_state)
             else:
                 # Fenster wurde geschlossen -> Beende Lüftungs-Event
                 self._end_ventilation_event(device_id, room_name)
         
-        elif previous_state is None and is_open:
+        elif previous_is_open is None and is_open:
             # Erstes Mal gesehen und offen -> Starte Event
-            self._start_ventilation_event(device_id, device_name, room_name)
+            self._start_ventilation_event(device_id, device_name, room_name, window_state)
         
-        # Speichere aktuellen Status
-        self._previous_window_states[device_id] = is_open
+        elif previous_is_open and is_open and previous_window_state != window_state:
+            # Fenster war offen und Zustand hat sich geändert (z.B. von gekippt zu offen)
+            # Beende altes Event und starte neues
+            self._end_ventilation_event(device_id, room_name)
+            self._start_ventilation_event(device_id, device_name, room_name, window_state)
+            logger.info(f"🪟 Window state changed: {device_name} {previous_window_state} -> {window_state}")
+        
+        # Speichere aktuellen Status (jetzt als Dict mit window_state)
+        self._previous_window_states[device_id] = {'is_open': is_open, 'window_state': window_state}
 
         return observation_id
 
-    def _start_ventilation_event(self, device_id: str, device_name: str, room_name: str):
-        """Startet ein Lüftungs-Event"""
+    def _start_ventilation_event(self, device_id: str, device_name: str, room_name: str, 
+                                  window_state: str = 'open'):
+        """Startet ein Lüftungs-Event
+        
+        Args:
+            window_state: 'tilted' (gekippt) oder 'open' (weit offen)
+        """
         try:
             # Hole aktuelle Klimadaten
             room_climate = self._get_room_climate(room_name) if room_name else {}
             outdoor = self._get_outdoor_climate()
+            
+            state_label = '🪟 gekippt' if window_state == 'tilted' else '🪟 offen'
             
             self.db.start_ventilation_event(
                 device_id=device_id,
@@ -395,9 +472,10 @@ class WindowDataCollector:
                 humidity_start=room_climate.get('humidity'),
                 co2_start=room_climate.get('co2'),
                 outdoor_temp=outdoor.get('temp'),
-                outdoor_humidity=outdoor.get('humidity')
+                outdoor_humidity=outdoor.get('humidity'),
+                window_state=window_state
             )
-            logger.info(f"🪟 Ventilation started: {device_name} in {room_name} "
+            logger.info(f"{state_label} Ventilation started: {device_name} in {room_name} "
                        f"(Temp: {room_climate.get('temp')}°C, CO2: {room_climate.get('co2')} ppm)")
         except Exception as e:
             logger.error(f"Error starting ventilation event: {e}")

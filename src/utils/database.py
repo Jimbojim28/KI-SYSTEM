@@ -1604,24 +1604,48 @@ class Database:
 
     def add_window_observation(self, device_id: str, device_name: str = None,
                                 room_name: str = None, is_open: bool = False,
-                                contact_alarm: bool = False):
-        """Fügt eine Fenster-Beobachtung hinzu (alle 60s für Heizungsoptimierung)"""
+                                contact_alarm: bool = False, tilt_angle: float = None,
+                                window_state: str = None):
+        """Fügt eine Fenster-Beobachtung hinzu (alle 60s für Heizungsoptimierung)
+        
+        Args:
+            device_id: Geräte-ID
+            device_name: Gerätename
+            room_name: Raum-Name
+            is_open: True wenn Fenster offen (auch gekippt gilt als offen)
+            contact_alarm: Kontaktalarm-Status
+            tilt_angle: Neigungswinkel in Grad (falls Tilt-Sensor vorhanden)
+            window_state: Fensterzustand: 'closed', 'tilted', 'open'
+        """
         from datetime import datetime
 
         conn = self._get_connection()
         cursor = conn.cursor()
+        
+        # Prüfe ob die neuen Spalten existieren
+        cursor.execute("PRAGMA table_info(window_observations)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'tilt_angle' not in columns:
+            # Füge neue Spalten hinzu
+            cursor.execute("ALTER TABLE window_observations ADD COLUMN tilt_angle REAL")
+            cursor.execute("ALTER TABLE window_observations ADD COLUMN window_state TEXT DEFAULT 'unknown'")
+            conn.commit()
+            logger.info("Added tilt_angle and window_state columns to window_observations")
 
         cursor.execute("""
             INSERT INTO window_observations
-            (timestamp, device_id, device_name, room_name, is_open, contact_alarm)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (timestamp, device_id, device_name, room_name, is_open, contact_alarm, tilt_angle, window_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now(),
             device_id,
             device_name,
             room_name,
             1 if is_open else 0,
-            1 if contact_alarm else 0
+            1 if contact_alarm else 0,
+            tilt_angle,
+            window_state or 'unknown'
         ))
 
         conn.commit()
@@ -1973,8 +1997,13 @@ class Database:
     def start_ventilation_event(self, device_id: str, device_name: str = None,
                                  room_name: str = None, temp_start: float = None,
                                  humidity_start: float = None, co2_start: int = None,
-                                 outdoor_temp: float = None, outdoor_humidity: float = None) -> int:
-        """Startet ein neues Lüftungs-Event (Fenster wurde geöffnet)"""
+                                 outdoor_temp: float = None, outdoor_humidity: float = None,
+                                 window_state: str = 'open') -> int:
+        """Startet ein neues Lüftungs-Event (Fenster wurde geöffnet)
+        
+        Args:
+            window_state: 'tilted' (gekippt) oder 'open' (weit offen)
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -2007,17 +2036,24 @@ class Database:
         # Lösche altes aktives Event für dieses Gerät (falls vorhanden)
         cursor.execute("DELETE FROM active_ventilations WHERE device_id = ?", (device_id,))
 
+        # Füge window_state Spalte hinzu falls nicht vorhanden
+        try:
+            cursor.execute("ALTER TABLE active_ventilations ADD COLUMN window_state TEXT DEFAULT 'open'")
+            conn.commit()
+        except:
+            pass  # Spalte existiert bereits
+
         # Erstelle neues aktives Event
         cursor.execute("""
             INSERT INTO active_ventilations
             (device_id, device_name, room_name, opened_at, temp_start, humidity_start, 
-             co2_start, outdoor_temp, outdoor_humidity, last_check)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             co2_start, outdoor_temp, outdoor_humidity, last_check, window_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (device_id, device_name, room_name, now, temp_start, humidity_start,
-              co2_start, outdoor_temp, outdoor_humidity, now))
+              co2_start, outdoor_temp, outdoor_humidity, now, window_state))
 
         conn.commit()
-        logger.debug(f"Started ventilation event for {device_name} in {room_name}")
+        logger.debug(f"Started ventilation event for {device_name} in {room_name} (state: {window_state})")
         return cursor.lastrowid
 
     def end_ventilation_event(self, device_id: str, temp_end: float = None,
@@ -2081,14 +2117,24 @@ class Database:
             duration_minutes, temp_change, co2_change, humidity_change, active['outdoor_temp']
         )
 
+        # Hole window_state aus aktivem Event
+        window_state = active.get('window_state', 'open')
+
+        # Füge window_state Spalte zu ventilation_events hinzu falls nicht vorhanden
+        try:
+            cursor.execute("ALTER TABLE ventilation_events ADD COLUMN window_state TEXT DEFAULT 'open'")
+            conn.commit()
+        except:
+            pass  # Spalte existiert bereits
+
         # Speichere in ventilation_events
         cursor.execute("""
             INSERT INTO ventilation_events
             (device_id, device_name, room_name, opened_at, closed_at, duration_minutes,
              temp_start, humidity_start, co2_start, temp_end, humidity_end, co2_end,
              temp_change, humidity_change, co2_change, outdoor_temp, outdoor_humidity,
-             season, time_of_day, weekday, effectiveness_score, was_optimal)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             season, time_of_day, weekday, effectiveness_score, was_optimal, window_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             device_id, active['device_name'], active['room_name'],
             active['opened_at'], now, duration_minutes,
@@ -2097,7 +2143,8 @@ class Database:
             temp_change, humidity_change, co2_change,
             active['outdoor_temp'], active['outdoor_humidity'],
             season, time_of_day, weekday,
-            effectiveness, effectiveness > 0.6 if effectiveness else None
+            effectiveness, effectiveness > 0.6 if effectiveness else None,
+            window_state
         ))
 
         event_id = cursor.lastrowid
@@ -2106,7 +2153,7 @@ class Database:
         cursor.execute("DELETE FROM active_ventilations WHERE device_id = ?", (device_id,))
         
         conn.commit()
-        logger.info(f"Ended ventilation event for {active['device_name']}: {duration_minutes}min, "
+        logger.info(f"Ended ventilation event for {active['device_name']}: {duration_minutes}min ({window_state}), "
                    f"temp_change={temp_change}, co2_change={co2_change}")
         return event_id
 
@@ -2224,6 +2271,88 @@ class Database:
         """, (f'-{days_back} days',))
 
         return [dict(row) for row in cursor.fetchall()]
+
+    def get_ventilation_learning_by_state(self, room_name: str = None, days_back: int = 30) -> List[Dict]:
+        """Holt Lüftungs-Lernstatistiken gruppiert nach Fensterzustand (gekippt vs offen)"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                room_name,
+                COALESCE(window_state, 'open') as window_state,
+                COUNT(*) as sample_count,
+                ROUND(AVG(duration_minutes), 1) as avg_duration,
+                ROUND(MIN(duration_minutes), 0) as min_duration,
+                ROUND(MAX(duration_minutes), 0) as max_duration,
+                ROUND(AVG(temp_change), 2) as avg_temp_change,
+                ROUND(AVG(humidity_change), 2) as avg_humidity_change,
+                ROUND(AVG(co2_change), 0) as avg_co2_change,
+                ROUND(AVG(outdoor_temp), 1) as avg_outdoor_temp,
+                ROUND(AVG(effectiveness_score), 2) as avg_effectiveness,
+                -- Zeit bis CO2 unter 600ppm (wenn Start > 600)
+                ROUND(AVG(CASE 
+                    WHEN co2_start > 600 AND co2_end <= 600 THEN duration_minutes 
+                    ELSE NULL 
+                END), 1) as avg_time_to_good_co2,
+                -- Zeit bis Temperatur um 1°C sinkt
+                ROUND(AVG(CASE 
+                    WHEN temp_change <= -1 THEN duration_minutes 
+                    ELSE NULL 
+                END), 1) as avg_time_to_1c_drop,
+                -- Effektivitäts-Rate (% der Lüftungen die effektiv waren)
+                ROUND(100.0 * SUM(CASE WHEN effectiveness_score > 0.6 THEN 1 ELSE 0 END) / COUNT(*), 1) as effectiveness_rate
+            FROM ventilation_events
+            WHERE closed_at IS NOT NULL
+              AND opened_at >= datetime('now', ?)
+              AND duration_minutes > 0
+              AND duration_minutes < 120
+        """
+        params = [f'-{days_back} days']
+
+        if room_name:
+            query += " AND room_name = ?"
+            params.append(room_name)
+
+        query += " GROUP BY room_name, COALESCE(window_state, 'open') ORDER BY room_name, window_state"
+
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_optimal_ventilation_by_state(self, outdoor_temp: float, window_state: str = 'open', 
+                                          room_name: str = None) -> Optional[Dict]:
+        """Berechnet optimale Lüftungsdauer basierend auf Fensterzustand und Außentemperatur"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                ROUND(AVG(duration_minutes), 0) as recommended_duration,
+                ROUND(AVG(temp_change), 2) as expected_temp_change,
+                ROUND(AVG(co2_change), 0) as expected_co2_change,
+                ROUND(AVG(humidity_change), 2) as expected_humidity_change,
+                COUNT(*) as sample_count,
+                ROUND(AVG(effectiveness_score), 2) as avg_effectiveness
+            FROM ventilation_events
+            WHERE closed_at IS NOT NULL
+              AND COALESCE(window_state, 'open') = ?
+              AND outdoor_temp BETWEEN ? AND ?
+              AND duration_minutes > 0
+              AND duration_minutes < 120
+              AND effectiveness_score > 0.5
+        """
+        params = [window_state, outdoor_temp - 5, outdoor_temp + 5]
+
+        if room_name:
+            query += " AND room_name = ?"
+            params.append(room_name)
+
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        
+        if row and row['sample_count'] and row['sample_count'] >= 3:
+            return dict(row)
+        return None
 
     def get_ventilation_ml_training_data(self, min_samples: int = 10) -> List[Dict]:
         """Holt Trainingsdaten für ML-Modell (optimale Lüftungsdauer)"""

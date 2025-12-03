@@ -61,6 +61,10 @@ class ForgottenLightDetector:
         self.check_interval = settings.get('check_interval', 60)  # Prüf-Intervall in Sekunden
         self.use_ml = settings.get('use_ml', True)  # ML-Modell nutzen wenn verfügbar
         
+        # Anwesenheits-basierte Einstellungen
+        self.turn_off_when_away = settings.get('turn_off_when_away', True)  # Bei Abwesenheit ausschalten
+        self.away_min_duration = settings.get('away_min_duration', 5)  # Min. Abwesenheit bevor Aktion
+        
         # Device Types und versteckte Räume aus rooms.json
         self.device_types: Dict[str, str] = {}
         self.hidden_rooms: List[str] = []
@@ -70,13 +74,17 @@ class ForgottenLightDetector:
         self.light_on_times: Dict[str, datetime] = {}  # device_id -> wann eingeschaltet
         self.last_motion_times: Dict[str, datetime] = {}  # room -> letzte Bewegung
         self.predictions: List[Dict] = []  # Aktuelle Vorhersagen
+        self.away_since: Optional[datetime] = None  # Seit wann niemand zu Hause
+        self.current_presence: bool = True  # Aktueller Anwesenheitsstatus
         
         # Statistiken (vor ML-Modell initialisieren!)
         self.stats = {
             'total_predictions': 0,
             'predictions_today': 0,
             'last_check': None,
-            'ml_enabled': False
+            'ml_enabled': False,
+            'presence_home': True,
+            'away_since': None
         }
         
         # Datenbank-Tabelle sicherstellen
@@ -226,8 +234,21 @@ class ForgottenLightDetector:
             # Hole Anwesenheit
             presence_home = self._get_presence_status()
             
+            # Update Anwesenheits-Tracking
+            self._update_presence_tracking(presence_home, now)
+            
             # Hole Außenhelligkeit
             outdoor_light = self._get_outdoor_light()
+            
+            # Bei Abwesenheit: Alle Lampen als vergessen markieren
+            if not presence_home and self.turn_off_when_away:
+                away_minutes = 0
+                if self.away_since:
+                    away_minutes = (now - self.away_since).total_seconds() / 60
+                
+                if away_minutes >= self.away_min_duration:
+                    self._handle_away_mode(devices, zone_mapping, now, away_minutes)
+                    return  # Rest der Prüfung überspringen
             
             for device in devices:
                 if not self._is_light_device(device):
@@ -530,6 +551,80 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.error(f"Could not turn off {device_name}: {e}")
     
+    def _update_presence_tracking(self, presence_home: bool, now: datetime):
+        """Aktualisiert das Anwesenheits-Tracking"""
+        self.current_presence = presence_home
+        self.stats['presence_home'] = presence_home
+        
+        if not presence_home:
+            # Niemand zu Hause
+            if self.away_since is None:
+                self.away_since = now
+                self.stats['away_since'] = now.isoformat()
+                logger.info("🏠 Niemand mehr zu Hause - Tracking gestartet")
+        else:
+            # Jemand ist zu Hause
+            if self.away_since is not None:
+                away_duration = (now - self.away_since).total_seconds() / 60
+                logger.info(f"🏠 Jemand ist wieder zu Hause (war {int(away_duration)} Min. weg)")
+                self.away_since = None
+                self.stats['away_since'] = None
+    
+    def _handle_away_mode(self, devices: List[Dict], zone_mapping: Dict[str, str], 
+                          now: datetime, away_minutes: float):
+        """
+        Behandelt alle Lampen wenn niemand zu Hause ist.
+        Markiert alle eingeschalteten Lampen als vergessen.
+        """
+        lights_on = 0
+        
+        for device in devices:
+            if not self._is_light_device(device):
+                continue
+            
+            device_id = device.get('id')
+            device_name = device.get('name', 'Unknown')
+            
+            # Raumname ermitteln
+            zone = device.get('zone')
+            if isinstance(zone, dict):
+                room_name = zone.get('name', 'Unknown')
+            elif isinstance(zone, str):
+                room_name = zone_mapping.get(zone, zone)
+            else:
+                room_name = 'Unknown'
+            
+            # Versteckte Räume überspringen
+            if room_name in self.hidden_rooms:
+                continue
+            
+            # Ist die Lampe an?
+            state = device.get('capabilitiesObj', {}).get('onoff', {}).get('value')
+            
+            if state:
+                lights_on += 1
+                
+                # Einschaltdauer berechnen
+                on_duration = 0
+                if device_id in self.light_on_times:
+                    on_duration = (now - self.light_on_times[device_id]).total_seconds() / 60
+                else:
+                    self.light_on_times[device_id] = now
+                
+                # Als vergessen markieren mit hoher Konfidenz
+                self._record_forgotten_prediction(
+                    device_id=device_id,
+                    device_name=device_name,
+                    room_name=room_name,
+                    on_minutes=on_duration,
+                    reasons=[f"🏠 Niemand zu Hause (seit {int(away_minutes)} Min.)", "Lampe sollte aus sein"],
+                    confidence=0.95,  # Hohe Konfidenz bei Abwesenheit
+                    ml_prediction=False
+                )
+        
+        if lights_on > 0:
+            logger.info(f"🏠 Abwesenheit: {lights_on} Lampe(n) noch an nach {int(away_minutes)} Min.")
+    
     def _update_motion_data(self):
         """Aktualisiert Bewegungsdaten aus DB"""
         try:
@@ -757,7 +852,11 @@ class ForgottenLightDetector:
                 'top_forgotten_lights': top_forgotten,
                 'top_hours': top_hours,
                 'test_mode': self.test_mode,
-                'last_check': self.stats.get('last_check')
+                'last_check': self.stats.get('last_check'),
+                'presence_home': self.current_presence,
+                'away_since': self.stats.get('away_since'),
+                'turn_off_when_away': self.turn_off_when_away,
+                'away_min_duration': self.away_min_duration
             }
             
         except Exception as e:
@@ -766,6 +865,9 @@ class ForgottenLightDetector:
                 'total_predictions': 0,
                 'predictions_today': 0,
                 'test_mode': self.test_mode,
+                'presence_home': self.current_presence,
+                'away_since': self.stats.get('away_since'),
+                'turn_off_when_away': self.turn_off_when_away,
                 'error': str(e)
             }
     

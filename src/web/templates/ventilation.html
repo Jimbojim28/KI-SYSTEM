@@ -78,6 +78,19 @@
         </div>
     </div>
     
+    <!-- Lern-Statistiken nach Fensterzustand -->
+    <div class="section-header" style="margin-top: 2rem;">
+        <h3>🎓 Gelernte Lüftungseffektivität</h3>
+        <p class="section-info">Vergleich: Gekipptes Fenster vs. weit geöffnetes Fenster - basierend auf Ihren Daten</p>
+    </div>
+    
+    <div id="learning-by-state" class="learning-by-state">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Analysiere Lüftungsmuster...</p>
+        </div>
+    </div>
+    
     <!-- KI-Empfehlungen basierend auf Außentemperatur -->
     <div class="section-header" style="margin-top: 2rem;">
         <h3>🤖 KI-Lüftungsempfehlungen</h3>
@@ -670,11 +683,16 @@
     transform: translateY(-2px);
 }
 .window-tile.open {
-    border-left-color: #4CAF50;
-    background: linear-gradient(135deg, #fff 0%, #e8f5e9 100%);
+    border-left-color: #f44336;
+    background: linear-gradient(135deg, #fff 0%, #ffebee 100%);
+}
+.window-tile.tilted {
+    border-left-color: #FF9800;
+    background: linear-gradient(135deg, #fff 0%, #fff3e0 100%);
 }
 .window-tile.closed {
-    border-left-color: #9e9e9e;
+    border-left-color: #4CAF50;
+    background: linear-gradient(135deg, #fff 0%, #e8f5e9 100%);
 }
 .window-tile .room-name {
     font-size: 0.85em;
@@ -695,11 +713,22 @@
 .window-tile .status-icon {
     font-size: 1.3em;
 }
+.window-tile .tilt-info {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.25rem;
+}
 .window-tile .open-duration {
     font-size: 0.85em;
-    color: #4CAF50;
+    color: #666;
     margin-top: 0.5rem;
     font-weight: 500;
+}
+.window-tile.open .open-duration {
+    color: #f44336;
+}
+.window-tile.tilted .open-duration {
+    color: #FF9800;
 }
 .window-tile.clickable {
     cursor: pointer;
@@ -881,6 +910,109 @@
 .chart-container-medium {
     position: relative;
     height: 300px;
+}
+
+/* Lern-Statistiken nach Fensterzustand */
+.learning-by-state {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.learning-room-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.learning-room-card h4 {
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.learning-states {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+.state-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+}
+.state-card.tilted {
+    background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+    border: 2px solid #ffb74d;
+}
+.state-card.open {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    border: 2px solid #64b5f6;
+}
+.state-card .state-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+.state-card .state-label {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.75rem;
+}
+.state-card .state-stats {
+    font-size: 0.85rem;
+    color: #666;
+}
+.state-card .state-stats .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+.state-card .state-stats .stat-row:last-child {
+    border-bottom: none;
+}
+.state-card .stat-highlight {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #333;
+    margin: 0.5rem 0;
+}
+.state-card .effectiveness-bar {
+    height: 8px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    margin-top: 0.75rem;
+    overflow: hidden;
+}
+.state-card .effectiveness-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+.state-card.tilted .effectiveness-fill {
+    background: linear-gradient(90deg, #ff9800, #f57c00);
+}
+.state-card.open .effectiveness-fill {
+    background: linear-gradient(90deg, #2196f3, #1976d2);
+}
+.learning-summary {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+.learning-summary.warning {
+    background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+}
+.learning-no-data {
+    text-align: center;
+    color: #999;
+    padding: 2rem;
+    font-style: italic;
 }
 
 /* KI Empfehlungen */
@@ -1778,6 +1910,7 @@ async function loadWindowsTab() {
     await Promise.all([
         loadWindowStatus(),
         loadWindowStatistics(),
+        loadLearningByState(),
         loadAIRecommendations(),
         loadRecentEvents()
     ]);
@@ -1822,9 +1955,37 @@ async function loadWindowStatus() {
         
         sortedRooms.forEach(room => {
             windowsByRoom[room].forEach(w => {
-                const statusClass = w.is_open ? 'open' : 'closed';
-                const statusIcon = w.is_open ? '🟢' : '⚪';
-                const statusText = w.is_open ? 'Offen' : 'Geschlossen';
+                // Nutze window_state wenn vorhanden, sonst Fallback auf is_open
+                const windowState = w.window_state || (w.is_open ? 'open' : 'closed');
+                const statusClass = windowState;
+                
+                // Status-Icons und Texte basierend auf window_state
+                let statusIcon, statusText;
+                if (windowState === 'tilted') {
+                    statusIcon = '🟡';
+                    statusText = 'Gekippt';
+                } else if (windowState === 'open') {
+                    statusIcon = '🔴';
+                    statusText = 'Offen';
+                } else {
+                    statusIcon = '🟢';
+                    statusText = 'Geschlossen';
+                }
+                
+                // Wenn state_label vom Server kommt, nutze das
+                if (w.state_label) {
+                    const labelMatch = w.state_label.match(/^(.)\\s*(.+)$/);
+                    if (labelMatch) {
+                        statusIcon = labelMatch[1];
+                        statusText = labelMatch[2];
+                    }
+                }
+                
+                // Tilt-Winkel anzeigen wenn vorhanden
+                let tiltInfo = '';
+                if (w.tilt !== null && w.tilt !== undefined) {
+                    tiltInfo = `<div class="tilt-info">📐 ${w.tilt.toFixed(1)}°</div>`;
+                }
                 
                 let durationHtml = '';
                 if (w.is_open && w.open_since) {
@@ -1850,6 +2011,7 @@ async function loadWindowStatus() {
                             <span class="status-icon">${statusIcon}</span>
                             <span>${statusText}</span>
                         </div>
+                        ${tiltInfo}
                         ${durationHtml}
                         <div class="click-hint">Klicken für Ereignisse →</div>
                     </div>
@@ -2056,6 +2218,197 @@ function updateDurationChart(data) {
             }
         }
     });
+}
+
+// Lern-Statistiken nach Fensterzustand laden
+async function loadLearningByState() {
+    const container = document.getElementById('learning-by-state');
+    
+    try {
+        const response = await fetch('/api/ventilation/learning-by-state?days=30');
+        const data = await response.json();
+        
+        if (!data.success || !data.by_room || Object.keys(data.by_room).length === 0) {
+            container.innerHTML = `
+                <div class="learning-no-data">
+                    <p>📊 Noch keine Lüftungsdaten nach Fensterzustand verfügbar</p>
+                    <p>Daten werden gesammelt, sobald Fenster gekippt oder geöffnet werden.</p>
+                    <p style="font-size: 0.85em; margin-top: 1rem;">
+                        💡 <strong>Tipp:</strong> Öffnen Sie Fenster auf verschiedene Arten, 
+                        um zu lernen welche Methode für Ihre Räume am effektivsten ist.
+                    </p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        for (const [room, states] of Object.entries(data.by_room)) {
+            const tilted = states.tilted;
+            const open = states.open;
+            
+            // Prüfe ob mindestens einer der Zustände Daten hat
+            const hasTilted = tilted && tilted.sample_count > 0;
+            const hasOpen = open && open.sample_count > 0;
+            
+            if (!hasTilted && !hasOpen) continue;
+            
+            html += `
+                <div class="learning-room-card">
+                    <h4>🏠 ${room}</h4>
+                    <div class="learning-states">
+                        ${renderStateCard('tilted', tilted)}
+                        ${renderStateCard('open', open)}
+                    </div>
+                    ${renderLearningSummary(tilted, open)}
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html || `
+            <div class="learning-no-data">
+                <p>📊 Noch keine Lüftungsdaten nach Fensterzustand verfügbar</p>
+            </div>
+        `;
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Lern-Statistiken:', error);
+        container.innerHTML = '<div class="learning-no-data">❌ Fehler beim Laden der Daten</div>';
+    }
+}
+
+// State-Karte rendern (gekippt oder offen)
+function renderStateCard(state, data) {
+    const icon = state === 'tilted' ? '🪟↗️' : '🪟🔓';
+    const label = state === 'tilted' ? 'Gekippt' : 'Weit offen';
+    
+    if (!data || data.sample_count === 0) {
+        return `
+            <div class="state-card ${state}">
+                <div class="state-icon">${icon}</div>
+                <div class="state-label">${label}</div>
+                <div class="state-stats">
+                    <p style="color: #999; font-style: italic;">Noch keine Daten</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    const effectiveness = Math.round((data.avg_effectiveness || 0) * 100);
+    const avgDuration = data.avg_duration || 0;
+    const avgTempChange = data.avg_temp_change || 0;
+    const avgCo2Change = data.avg_co2_change || 0;
+    const avgHumChange = data.avg_humidity_change || 0;
+    const timeToGoodCo2 = data.avg_time_to_good_co2;
+    
+    return `
+        <div class="state-card ${state}">
+            <div class="state-icon">${icon}</div>
+            <div class="state-label">${label}</div>
+            <div class="stat-highlight">${avgDuration.toFixed(0)} Min.</div>
+            <div class="state-stats">
+                <div class="stat-row">
+                    <span>🔢 Messungen</span>
+                    <span>${data.sample_count}×</span>
+                </div>
+                <div class="stat-row">
+                    <span>🌡️ Temp.-Änderung</span>
+                    <span class="${avgTempChange < 0 ? 'negative' : ''}">${avgTempChange > 0 ? '+' : ''}${avgTempChange.toFixed(1)}°C</span>
+                </div>
+                <div class="stat-row">
+                    <span>💨 CO₂-Änderung</span>
+                    <span class="${avgCo2Change < 0 ? 'positive' : 'negative'}">${avgCo2Change > 0 ? '+' : ''}${avgCo2Change.toFixed(0)} ppm</span>
+                </div>
+                <div class="stat-row">
+                    <span>💧 Feuchte-Änderung</span>
+                    <span>${avgHumChange > 0 ? '+' : ''}${avgHumChange.toFixed(1)}%</span>
+                </div>
+                ${timeToGoodCo2 ? `
+                    <div class="stat-row">
+                        <span>⏱️ Zeit bis CO₂ &lt;600</span>
+                        <span>${timeToGoodCo2.toFixed(0)} Min.</span>
+                    </div>
+                ` : ''}
+            </div>
+            <div class="effectiveness-bar">
+                <div class="effectiveness-fill" style="width: ${effectiveness}%"></div>
+            </div>
+            <div style="font-size: 0.75rem; color: #666; margin-top: 0.25rem;">
+                Effektivität: ${effectiveness}%
+            </div>
+        </div>
+    `;
+}
+
+// Zusammenfassung der Lern-Daten rendern
+function renderLearningSummary(tilted, open) {
+    const hasTilted = tilted && tilted.sample_count >= 3;
+    const hasOpen = open && open.sample_count >= 3;
+    
+    if (!hasTilted && !hasOpen) {
+        return `
+            <div class="learning-summary warning">
+                💡 <strong>Mehr Daten benötigt:</strong> Lüften Sie weiter, um Empfehlungen zu erhalten.
+            </div>
+        `;
+    }
+    
+    if (!hasTilted) {
+        return `
+            <div class="learning-summary warning">
+                💡 <strong>Tipp:</strong> Probieren Sie auch gekipptes Lüften, um den Vergleich zu sehen.
+            </div>
+        `;
+    }
+    
+    if (!hasOpen) {
+        return `
+            <div class="learning-summary warning">
+                💡 <strong>Tipp:</strong> Probieren Sie auch Stoßlüften (weit offen), um den Vergleich zu sehen.
+            </div>
+        `;
+    }
+    
+    // Vergleich beider Methoden
+    const tiltedEff = tilted.avg_effectiveness || 0;
+    const openEff = open.avg_effectiveness || 0;
+    const tiltedDur = tilted.avg_duration || 0;
+    const openDur = open.avg_duration || 0;
+    const tiltedCo2 = Math.abs(tilted.avg_co2_change || 0);
+    const openCo2 = Math.abs(open.avg_co2_change || 0);
+    const tiltedTemp = Math.abs(tilted.avg_temp_change || 0);
+    const openTemp = Math.abs(open.avg_temp_change || 0);
+    
+    let recommendation = '';
+    let cssClass = '';
+    
+    // Bewerte CO2-Reduktion pro Minute (Effizienz)
+    const tiltedEfficiency = tiltedDur > 0 ? tiltedCo2 / tiltedDur : 0;
+    const openEfficiency = openDur > 0 ? openCo2 / openDur : 0;
+    
+    // Bewerte Wärmeverlust pro CO2-Reduktion
+    const tiltedHeatLoss = tiltedCo2 > 0 ? tiltedTemp / (tiltedCo2 / 100) : 999;
+    const openHeatLoss = openCo2 > 0 ? openTemp / (openCo2 / 100) : 999;
+    
+    if (openEfficiency > tiltedEfficiency * 1.5) {
+        recommendation = `🚀 <strong>Stoßlüften ist ${(openEfficiency / tiltedEfficiency).toFixed(1)}× effizienter</strong> - schnellere CO₂-Reduktion!`;
+    } else if (tiltedHeatLoss < openHeatLoss * 0.7) {
+        recommendation = `🌡️ <strong>Gekippt spart ${Math.round((1 - tiltedHeatLoss / openHeatLoss) * 100)}% Wärme</strong> bei ähnlicher Luftqualität.`;
+    } else if (tiltedEff > openEff) {
+        recommendation = `✨ <strong>Gekipptes Lüften</strong> ist in diesem Raum insgesamt effektiver.`;
+    } else {
+        recommendation = `✨ <strong>Stoßlüften</strong> ist in diesem Raum insgesamt effektiver.`;
+    }
+    
+    return `
+        <div class="learning-summary ${cssClass}">
+            ${recommendation}
+            <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.8;">
+                Gekippt: Ø ${tiltedDur.toFixed(0)} Min. | Offen: Ø ${openDur.toFixed(0)} Min.
+            </div>
+        </div>
+    `;
 }
 
 // KI-Empfehlungen laden

@@ -59,6 +59,18 @@
         </div>
 
         <div class="settings-section">
+            <h3>🪟 Fenster-Kalibrierung</h3>
+            <p>Automatische Kalibrierung der Fenstersensoren. <strong>Wichtig:</strong> Schließe alle Fenster komplett bevor du kalibrierst!</p>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="autoCalibateAllWindows()">
+                    🎯 Alle Fenster automatisch kalibrieren
+                </button>
+            </div>
+            <div id="calibration-status" class="sync-status"></div>
+            <small class="form-hint">Die Kalibrierung speichert den aktuellen Winkel geschlossener Fenster als Referenzwert.</small>
+        </div>
+
+        <div class="settings-section">
             <h3>🌡️ Außensensoren</h3>
             <p>Konfigurieren Sie die Sensoren für Außentemperatur und -feuchtigkeit</p>
             <div class="sensor-selects" id="outdoor-sensor-config">
@@ -169,6 +181,46 @@
                     <option value="">-- Kein Bewegungssensor --</option>
                 </select>
                 <small id="edit-motion-preview" class="sensor-preview"></small>
+            </div>
+
+            <h4>🪟 Fenster-Kalibrierung</h4>
+            <p class="modal-hint">Definiere die Winkel für den Fensterzustand (gemessen vom Tilt-Sensor)</p>
+            
+            <div id="window-calibration-section" class="window-calibration-section">
+                <div class="window-current-status" id="window-current-status">
+                    <span class="loading-state">Lade Fensterstatus...</span>
+                </div>
+                
+                <div class="form-group">
+                    <label>📐 Geschlossen-Winkel (°):</label>
+                    <div class="input-with-help">
+                        <input type="number" id="edit-closed-angle" step="0.1" min="-180" max="180" value="0" 
+                               style="width: 100px; padding: 10px; font-size: 1.1rem;">
+                        <button type="button" class="btn btn-small btn-secondary" onclick="calibrateCurrentAngle()">
+                            📍 Aktuellen Winkel übernehmen
+                        </button>
+                    </div>
+                    <small class="form-hint">Winkel bei geschlossenem Fenster (meist ~0°). Toleranz: ±2°</small>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>🟡 Gekippt ab (°):</label>
+                        <input type="number" id="edit-tilted-min" step="0.5" min="1" max="90" value="5"
+                               style="width: 80px; padding: 10px; font-size: 1.1rem;">
+                        <small class="form-hint">Typisch: 5° (leicht gekippt)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>🔴 Offen ab (°):</label>
+                        <input type="number" id="edit-tilted-max" step="0.5" min="10" max="180" value="45"
+                               style="width: 80px; padding: 10px; font-size: 1.1rem;">
+                        <small class="form-hint">Typisch: 45° (weit geöffnet)</small>
+                    </div>
+                </div>
+                
+                <div class="window-state-preview" id="window-state-preview">
+                    <!-- Wird dynamisch befüllt -->
+                </div>
             </div>
 
             <div class="form-actions">
@@ -426,6 +478,96 @@
 .motion-badge {
     font-size: 0.9rem;
     opacity: 0.7;
+}
+
+/* Fenster-Badge und Status */
+.window-badge {
+    font-size: 0.9rem;
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin-left: 2px;
+}
+
+.window-badge.open {
+    background: rgba(244, 67, 54, 0.2);
+    animation: pulse-red 2s infinite;
+}
+
+.window-badge.tilted {
+    background: rgba(255, 152, 0, 0.2);
+}
+
+.window-badge.closed {
+    opacity: 0.5;
+}
+
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.room-windows {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    margin-bottom: 0.8rem;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
+    font-size: 0.85rem;
+}
+
+.room-windows:has(.window-open) {
+    background: linear-gradient(135deg, #FFEBEE, #FFCDD2);
+}
+
+.room-windows:has(.window-tilted) {
+    background: linear-gradient(135deg, #FFF3E0, #FFE0B2);
+}
+
+.windows-icons {
+    display: flex;
+    gap: 4px;
+}
+
+.window-icon-status {
+    font-size: 1.1rem;
+    transition: all 0.3s;
+}
+
+.window-icon-status.window-closed {
+    opacity: 0.4;
+    filter: grayscale(100%);
+}
+
+.window-icon-status.window-tilted {
+    filter: hue-rotate(30deg) saturate(1.5);
+    transform: rotate(-15deg);
+}
+
+.window-icon-status.window-open {
+    filter: hue-rotate(-30deg) saturate(1.5);
+    transform: rotate(-30deg);
+    animation: swing 2s ease-in-out infinite;
+}
+
+@keyframes swing {
+    0%, 100% { transform: rotate(-30deg); }
+    50% { transform: rotate(-40deg); }
+}
+
+.windows-status {
+    color: #2E7D32;
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+.room-windows:has(.window-open) .windows-status {
+    color: #C62828;
+}
+
+.room-windows:has(.window-tilted) .windows-status {
+    color: #E65100;
 }
 
 .room-header {
@@ -799,6 +941,98 @@
     margin: -0.5rem 0 0.8rem 0;
 }
 
+/* Fenster-Kalibrierung */
+.window-calibration-section {
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.window-current-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+.window-sensor-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    font-size: 0.9rem;
+}
+
+.window-sensor-status .tilt-value {
+    font-weight: 600;
+    color: #1976D2;
+}
+
+.window-sensor-status.state-closed {
+    border-left: 3px solid #4CAF50;
+}
+
+.window-sensor-status.state-tilted {
+    border-left: 3px solid #FF9800;
+}
+
+.window-sensor-status.state-open {
+    border-left: 3px solid #f44336;
+}
+
+.input-with-help {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+.form-hint {
+    display: block;
+    color: #888;
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+}
+
+.window-state-preview {
+    margin-top: 1rem;
+    padding: 0.8rem;
+    background: white;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.window-state-preview .state-legend {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.window-state-preview .state-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.window-state-preview .state-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.window-state-preview .state-dot.closed { background: #4CAF50; }
+.window-state-preview .state-dot.tilted { background: #FF9800; }
+.window-state-preview .state-dot.open { background: #f44336; }
+
 /* Geräte-Liste im Modal */
 .room-devices-list {
     display: flex;
@@ -986,12 +1220,14 @@ let allSensors = [];
 let allLights = [];
 let allDevices = [];
 let allMotionSensors = []; // Bewegungssensoren
+let allWindowSensors = []; // Fenstersensoren mit Status
 let deviceTypes = {};
 let sensorMapping = {};
 let motionSensorMapping = {}; // Bewegungssensor-Zuordnung
 let outdoorSensors = {};
 let hiddenRooms = [];
 let zoneIdToName = {}; // Mapping von Zone-ID zu Raum-Namen
+let zoneNameToId = {}; // Mapping von Raum-Namen zu Zone-ID
 
 // Tab wechseln
 function switchTab(tab) {
@@ -1018,14 +1254,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Alle Daten laden
 async function loadAllData() {
     try {
-        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes, motionRes] = await Promise.all([
+        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes, motionRes, windowRes] = await Promise.all([
             fetch('/api/ventilation/sensors'),
             fetch('/api/ventilation/sensor-mapping'),
             fetch('/api/rooms/hidden'),
             fetch('/api/devices'),
             fetch('/api/rooms'),
             fetch('/api/rooms/device-types'),
-            fetch('/api/rooms/motion-sensors')
+            fetch('/api/rooms/motion-sensors'),
+            fetch('/api/rooms/window-status')
         ]);
         
         const sensorsData = await sensorsRes.json();
@@ -1035,6 +1272,7 @@ async function loadAllData() {
         const roomsData = await roomsRes.json();
         const deviceTypesData = await deviceTypesRes.json();
         const motionData = await motionRes.json();
+        const windowData = await windowRes.json();
         
         if (sensorsData.success) {
             allSensors = sensorsData.sensors;
@@ -1063,10 +1301,16 @@ async function loadAllData() {
             motionSensorMapping = JSON.parse(localStorage.getItem('motionSensorMapping') || '{}');
         }
         
+        // Fenstersensoren laden
+        if (windowData.success && windowData.windows) {
+            allWindowSensors = windowData.windows;
+        }
+        
         // Zone-ID zu Raum-Namen Mapping erstellen
         if (roomsData.rooms) {
             roomsData.rooms.forEach(r => {
                 zoneIdToName[r.id] = r.name;
+                zoneNameToId[r.name] = r.id;
             });
         }
         
@@ -1219,14 +1463,58 @@ function renderOverview() {
             </div>
         ` : '';
         
+        // Fenster-Status für diesen Raum ermitteln
+        const roomWindows = allWindowSensors.filter(w => zoneIdToName[w.zone_id] === room);
+        const hasWindows = roomWindows.length > 0;
+        
+        // Fenster-Status HTML
+        let windowsHtml = '';
+        if (hasWindows) {
+            const windowIcons = roomWindows.map(w => {
+                let icon, title, cssClass;
+                if (w.state === 'open') {
+                    icon = '🪟';
+                    title = `${w.name}: Offen`;
+                    cssClass = 'window-open';
+                } else if (w.state === 'tilted') {
+                    icon = '🪟';
+                    title = `${w.name}: Gekippt (${w.tilt?.toFixed(1) || '?'}°)`;
+                    cssClass = 'window-tilted';
+                } else {
+                    icon = '🪟';
+                    title = `${w.name}: Geschlossen`;
+                    cssClass = 'window-closed';
+                }
+                return `<span class="window-icon-status ${cssClass}" title="${title}">${icon}</span>`;
+            }).join('');
+            
+            const openCount = roomWindows.filter(w => w.state === 'open').length;
+            const tiltedCount = roomWindows.filter(w => w.state === 'tilted').length;
+            const closedCount = roomWindows.filter(w => w.state === 'closed').length;
+            
+            let statusText = '';
+            if (openCount > 0) statusText = `${openCount} offen`;
+            else if (tiltedCount > 0) statusText = `${tiltedCount} gekippt`;
+            else statusText = 'alle zu';
+            
+            windowsHtml = `
+                <div class="room-windows" title="Fenster: ${statusText}">
+                    <div class="windows-icons">${windowIcons}</div>
+                    <span class="windows-status">${statusText}</span>
+                </div>
+            `;
+        }
+        
         return `
             <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
                 <div class="room-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${room}</span>
                     ${hasMotion ? '<span class="motion-badge" title="Bewegungssensor vorhanden">🚶</span>' : ''}
+                    ${hasWindows ? `<span class="window-badge ${roomWindows.some(w => w.state === 'open') ? 'open' : roomWindows.some(w => w.state === 'tilted') ? 'tilted' : 'closed'}" title="Fenster">🪟</span>` : ''}
                 </div>
                 ${lightsHtml}
+                ${windowsHtml}
                 ${motionHtml}
                 <div class="room-sensors">
                     <div class="sensor-value temp">
@@ -1543,6 +1831,9 @@ function openRoomModal(room) {
         motionSelect.value = motionSensorsThisRoom[0].id;
     }
     
+    // Fenster-Kalibrierung laden
+    loadWindowCalibration(room);
+    
     // Preview aktualisieren
     updateSensorPreviews();
     
@@ -1809,6 +2100,148 @@ function updateSensorPreviews() {
         co2Sensor && co2Sensor.current_value !== null ? `Aktuell: ${co2Sensor.current_value} ppm` : '';
 }
 
+// Fenster-Kalibrierung und aktuellen Status laden
+let currentWindowData = null;
+
+async function loadWindowCalibration(roomName) {
+    const statusContainer = document.getElementById('window-current-status');
+    const previewContainer = document.getElementById('window-state-preview');
+    
+    try {
+        // Finde Zone-ID für diesen Raum
+        const zoneId = Object.keys(zoneIdToName).find(id => zoneIdToName[id] === roomName);
+        
+        // Lade Kalibrierung
+        let calibration = { closed_angle: 0, tilted_min: 5, tilted_max: 45 };
+        if (zoneId) {
+            const calRes = await fetch(`/api/rooms/window-calibration?room_id=${zoneId}`);
+            const calData = await calRes.json();
+            if (calData.success && calData.calibration) {
+                calibration = calData.calibration;
+            }
+        }
+        
+        // Setze Werte in die Felder
+        document.getElementById('edit-closed-angle').value = calibration.closed_angle;
+        document.getElementById('edit-tilted-min').value = calibration.tilted_min;
+        document.getElementById('edit-tilted-max').value = calibration.tilted_max;
+        
+        // Lade aktuellen Fensterstatus
+        const statusRes = await fetch('/api/rooms/window-status');
+        const statusData = await statusRes.json();
+        
+        if (statusData.success) {
+            // Filtere Fenster für diesen Raum
+            const roomWindows = statusData.windows.filter(w => 
+                zoneIdToName[w.zone_id] === roomName
+            );
+            
+            currentWindowData = roomWindows;
+            
+            if (roomWindows.length === 0) {
+                statusContainer.innerHTML = '<span class="no-windows">Keine Fenstersensoren in diesem Raum</span>';
+                previewContainer.innerHTML = '';
+            } else {
+                statusContainer.innerHTML = roomWindows.map(w => `
+                    <div class="window-sensor-status state-${w.state}">
+                        <span class="window-icon">🪟</span>
+                        <span class="window-name">${w.name}</span>
+                        <span class="tilt-value">${w.tilt !== null ? w.tilt.toFixed(1) + '°' : '-'}</span>
+                        <span class="state-badge">${w.state_label}</span>
+                    </div>
+                `).join('');
+                
+                previewContainer.innerHTML = `
+                    <div class="state-legend">
+                        <div class="state-item"><span class="state-dot closed"></span> 🟢 Geschlossen: Kontakt zu</div>
+                        <div class="state-item"><span class="state-dot tilted"></span> 🟡 Gekippt: Kontakt offen + Winkel ${calibration.tilted_min}° - ${calibration.tilted_max}°</div>
+                        <div class="state-item"><span class="state-dot open"></span> 🔴 Offen: Kontakt offen + Winkel < ${calibration.tilted_min}° oder > ${calibration.tilted_max}°</div>
+                    </div>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading window calibration:', error);
+        statusContainer.innerHTML = '<span class="error">Fehler beim Laden</span>';
+    }
+    
+    // Event-Listener für Live-Vorschau
+    document.getElementById('edit-closed-angle').addEventListener('input', updateWindowStatePreview);
+    document.getElementById('edit-tilted-min').addEventListener('input', updateWindowStatePreview);
+    document.getElementById('edit-tilted-max').addEventListener('input', updateWindowStatePreview);
+}
+
+// Aktuellen Winkel als Geschlossen-Winkel übernehmen
+function calibrateCurrentAngle() {
+    if (currentWindowData && currentWindowData.length > 0) {
+        const firstWindow = currentWindowData[0];
+        if (firstWindow.tilt !== null) {
+            document.getElementById('edit-closed-angle').value = firstWindow.tilt.toFixed(1);
+            showNotification(`Winkel ${firstWindow.tilt.toFixed(1)}° als "Geschlossen" übernommen`, 'success');
+            updateWindowStatePreview();
+        } else {
+            showNotification('Kein Winkel-Wert verfügbar', 'warning');
+        }
+    } else {
+        showNotification('Kein Fenstersensor gefunden', 'warning');
+    }
+}
+
+// Vorschau der Zustandsbereiche aktualisieren
+function updateWindowStatePreview() {
+    const closedAngle = parseFloat(document.getElementById('edit-closed-angle').value) || 0;
+    const tiltedMin = parseFloat(document.getElementById('edit-tilted-min').value) || 5;
+    const tiltedMax = parseFloat(document.getElementById('edit-tilted-max').value) || 45;
+    
+    const previewContainer = document.getElementById('window-state-preview');
+    
+    if (currentWindowData && currentWindowData.length > 0) {
+        // Aktualisiere die Zustandsanzeige basierend auf neuen Werten
+        const statusContainer = document.getElementById('window-current-status');
+        statusContainer.innerHTML = currentWindowData.map(w => {
+            let state = 'closed';
+            if (w.tilt !== null) {
+                const diff = Math.abs(w.tilt - closedAngle);
+                if (diff <= 2) {
+                    state = 'closed';
+                } else if (diff >= tiltedMin && diff <= tiltedMax) {
+                    state = 'tilted';
+                } else if (diff > tiltedMax) {
+                    state = 'open';
+                }
+            } else if (w.contact_open) {
+                state = 'open';
+            }
+            
+            const stateLabels = {
+                'closed': '🟢 Geschlossen',
+                'tilted': '🟡 Gekippt',
+                'open': '🔴 Offen'
+            };
+            
+            return `
+                <div class="window-sensor-status state-${state}">
+                    <span class="window-icon">🪟</span>
+                    <span class="window-name">${w.name}</span>
+                    <span class="tilt-value">${w.tilt !== null ? w.tilt.toFixed(1) + '°' : '-'}</span>
+                    <span class="state-badge">${stateLabels[state]}</span>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    const closedMin = (closedAngle - 2).toFixed(0);
+    const closedMax = (closedAngle + 2).toFixed(0);
+    
+    previewContainer.innerHTML = `
+        <div class="state-legend">
+            <div class="state-item"><span class="state-dot closed"></span> 🟢 Geschlossen: Kontakt zu</div>
+            <div class="state-item"><span class="state-dot tilted"></span> 🟡 Gekippt: Kontakt offen + Winkel ${tiltedMin}° - ${tiltedMax}°</div>
+            <div class="state-item"><span class="state-dot open"></span> 🔴 Offen: Kontakt offen + Winkel < ${tiltedMin}° oder > ${tiltedMax}°</div>
+        </div>
+    `;
+}
+
 // Modal schließen
 function closeModal() {
     document.getElementById('room-edit-modal').classList.remove('show');
@@ -1825,6 +2258,11 @@ async function saveRoomEdit(event) {
     const humiditySensor = document.getElementById('edit-humidity-sensor').value;
     const co2Sensor = document.getElementById('edit-co2-sensor').value;
     const motionSensor = document.getElementById('edit-motion-sensor').value;
+    
+    // Fenster-Kalibrierung
+    const closedAngle = parseFloat(document.getElementById('edit-closed-angle').value) || 0;
+    const tiltedMin = parseFloat(document.getElementById('edit-tilted-min').value) || 5;
+    const tiltedMax = parseFloat(document.getElementById('edit-tilted-max').value) || 45;
     
     sensorMapping[roomId] = {
         name: roomName,
@@ -1849,6 +2287,26 @@ async function saveRoomEdit(event) {
         });
     } catch (e) {
         console.log('Motion sensor API not available, using localStorage only');
+    }
+    
+    // Fenster-Kalibrierung speichern
+    try {
+        // Finde die Zone-ID für diesen Raum
+        const zoneId = Object.keys(zoneIdToName).find(id => zoneIdToName[id] === originalRoomName);
+        if (zoneId) {
+            await fetch('/api/rooms/window-calibration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    room_id: zoneId,
+                    closed_angle: closedAngle,
+                    tilted_min: tiltedMin,
+                    tilted_max: tiltedMax
+                })
+            });
+        }
+    } catch (e) {
+        console.log('Window calibration save error:', e);
     }
     
     try {
@@ -1910,6 +2368,33 @@ async function syncDevices() {
         if (data.success) {
             status.className = 'sync-status success';
             status.textContent = `✅ ${data.count || 0} Geräte importiert!`;
+            await loadAllData();
+            renderOverview();
+        } else {
+            status.className = 'sync-status error';
+            status.textContent = '❌ Fehler: ' + (data.error || 'Unbekannt');
+        }
+    } catch (error) {
+        status.className = 'sync-status error';
+        status.textContent = '❌ Verbindungsfehler';
+    }
+}
+
+// Fenster Auto-Kalibrierung
+async function autoCalibrate() {
+    const status = document.getElementById('calibration-status');
+    status.className = 'sync-status';
+    status.textContent = 'Kalibriere Fenster...';
+    status.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/rooms/window-auto-calibrate', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            status.className = 'sync-status success';
+            const count = Array.isArray(data.calibrated) ? data.calibrated.length : data.calibrated;
+            status.textContent = `✅ ${count} Fenster kalibriert!`;
             await loadAllData();
             renderOverview();
         } else {

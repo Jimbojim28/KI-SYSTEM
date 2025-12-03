@@ -51,6 +51,66 @@ def init_ventilation_blueprint(engine, db, config):
                 logger.debug(f"Could not get zones: {e}")
         return zones
     
+    def _generate_ventilation_summary(tilted: dict, open_rec: dict, outdoor_temp: float) -> dict:
+        """Generiert eine Zusammenfassung der Lüftungsempfehlungen"""
+        summary = {
+            'recommendation': '',
+            'tilted_info': None,
+            'open_info': None,
+            'temp_warning': None
+        }
+        
+        # Warnung bei extremen Temperaturen
+        if outdoor_temp is not None:
+            if outdoor_temp < 0:
+                summary['temp_warning'] = '❄️ Sehr kalt! Nur kurz lüften empfohlen.'
+            elif outdoor_temp < 5:
+                summary['temp_warning'] = '🥶 Kalt - Stoßlüften (kurz, weit offen) bevorzugen.'
+            elif outdoor_temp > 28:
+                summary['temp_warning'] = '🌡️ Sehr warm! Morgens oder abends lüften.'
+        
+        if tilted and tilted.get('sample_count', 0) >= 3:
+            duration = tilted.get('recommended_duration', 0)
+            temp_change = tilted.get('expected_temp_change', 0)
+            co2_change = tilted.get('expected_co2_change', 0)
+            summary['tilted_info'] = {
+                'duration_minutes': duration,
+                'temp_change': temp_change,
+                'co2_change': co2_change,
+                'description': f"🪟 Gekippt: {duration} Min. → {abs(co2_change):.0f} ppm CO₂ weniger, {abs(temp_change):.1f}°C kühler"
+            }
+        
+        if open_rec and open_rec.get('sample_count', 0) >= 3:
+            duration = open_rec.get('recommended_duration', 0)
+            temp_change = open_rec.get('expected_temp_change', 0)
+            co2_change = open_rec.get('expected_co2_change', 0)
+            summary['open_info'] = {
+                'duration_minutes': duration,
+                'temp_change': temp_change,
+                'co2_change': co2_change,
+                'description': f"🚪 Weit offen: {duration} Min. → {abs(co2_change):.0f} ppm CO₂ weniger, {abs(temp_change):.1f}°C kühler"
+            }
+        
+        # Generiere Empfehlung
+        if summary['tilted_info'] and summary['open_info']:
+            tilted_eff = tilted.get('avg_effectiveness', 0) or 0
+            open_eff = open_rec.get('avg_effectiveness', 0) or 0
+            
+            if outdoor_temp and outdoor_temp < 5:
+                summary['recommendation'] = '🌬️ Bei Kälte: Kurzes Stoßlüften (weit offen) ist effektiver als langes Kipplüften.'
+            elif tilted_eff > open_eff:
+                summary['recommendation'] = '💡 Gekipptes Fenster ist hier oft effektiver - weniger Wärmeverlust bei gutem Luftaustausch.'
+            else:
+                summary['recommendation'] = '💡 Stoßlüften (weit offen) ist schneller - ideal wenn Frischluft dringend benötigt wird.'
+        elif summary['tilted_info']:
+            summary['recommendation'] = '📊 Nur Daten für Kipplüftung vorhanden.'
+        elif summary['open_info']:
+            summary['recommendation'] = '📊 Nur Daten für Stoßlüftung vorhanden.'
+        else:
+            summary['recommendation'] = '📊 Noch keine Lüftungsdaten gesammelt - lüften Sie weiter!'
+        
+        return summary
+    
     def _get_sensor_value(entity_id: str) -> float | None:
         """Hole den aktuellen Wert eines Sensors"""
         if not entity_id:
@@ -545,6 +605,92 @@ def init_ventilation_blueprint(engine, db, config):
             logger.error(f"Error getting ventilation stats: {e}")
             return jsonify({'error': str(e)}), 500
 
+    @ventilation_bp.route('/ventilation/learning-by-state', methods=['GET'])
+    def get_ventilation_learning_by_state():
+        """API: Lüftungs-Lernstatistiken nach Fensterzustand (gekippt vs offen)"""
+        try:
+            room_name = request.args.get('room')
+            days = request.args.get('days', 30, type=int)
+            days = min(max(days, 1), 90)
+            
+            learning_data = db.get_ventilation_learning_by_state(room_name=room_name, days_back=days) if db else []
+            
+            # Gruppiere nach Raum für einfachere Darstellung
+            by_room = {}
+            for item in learning_data:
+                room = item.get('room_name', 'Unbekannt')
+                if room not in by_room:
+                    by_room[room] = {'tilted': None, 'open': None}
+                
+                state = item.get('window_state', 'open')
+                by_room[room][state] = item
+            
+            return jsonify({
+                'success': True,
+                'learning_data': learning_data,
+                'by_room': by_room,
+                'days': days,
+                'explanation': {
+                    'tilted': 'Fenster gekippt - langsamer Luftaustausch, weniger Wärmeverlust',
+                    'open': 'Fenster weit offen - schneller Luftaustausch, mehr Wärmeverlust'
+                }
+            })
+        except Exception as e:
+            logger.error(f"Error getting ventilation learning by state: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @ventilation_bp.route('/ventilation/optimal-by-state', methods=['GET'])
+    def get_optimal_by_state():
+        """API: Optimale Lüftungsdauer basierend auf Fensterzustand und Außentemperatur"""
+        try:
+            outdoor_temp = request.args.get('outdoor_temp', type=float)
+            window_state = request.args.get('state', 'open')
+            room_name = request.args.get('room')
+            
+            # Falls keine Außentemp angegeben, versuche sie zu ermitteln
+            if outdoor_temp is None:
+                mapping = _load_sensor_mapping()
+                outdoor = mapping.get('outdoor_sensors', {})
+                sensors = _get_all_sensors()
+                
+                for sensor in sensors:
+                    if sensor.get('id') == outdoor.get('temperature'):
+                        outdoor_temp = sensor.get('value')
+                        break
+            
+            if outdoor_temp is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'Keine Außentemperatur verfügbar'
+                }), 400
+            
+            # Hole Empfehlungen für beide Zustände
+            tilted_recommendation = db.get_optimal_ventilation_by_state(
+                outdoor_temp=outdoor_temp, 
+                window_state='tilted',
+                room_name=room_name
+            ) if db else None
+            
+            open_recommendation = db.get_optimal_ventilation_by_state(
+                outdoor_temp=outdoor_temp, 
+                window_state='open',
+                room_name=room_name
+            ) if db else None
+            
+            return jsonify({
+                'success': True,
+                'outdoor_temp': outdoor_temp,
+                'room': room_name,
+                'recommendations': {
+                    'tilted': tilted_recommendation,
+                    'open': open_recommendation
+                },
+                'summary': _generate_ventilation_summary(tilted_recommendation, open_recommendation, outdoor_temp)
+            })
+        except Exception as e:
+            logger.error(f"Error getting optimal ventilation by state: {e}")
+            return jsonify({'error': str(e)}), 500
+
     @ventilation_bp.route('/ventilation/recommendation/duration', methods=['GET'])
     def get_optimal_duration():
         """API: Empfohlene Lüftungsdauer basierend auf ML-Daten"""
@@ -685,7 +831,12 @@ def init_ventilation_blueprint(engine, db, config):
                             device_display_name = device.get('name', 'Unbekannt')
                             
                             # LIVE-Status direkt von Homey
-                            is_open = bool(capabilities['alarm_contact'].get('value', False))
+                            contact_open = bool(capabilities['alarm_contact'].get('value', False))
+                            
+                            # Hole Tilt-Winkel (falls vorhanden)
+                            tilt_value = None
+                            if 'tilt' in capabilities:
+                                tilt_value = capabilities['tilt'].get('value')
                             
                             # Raum aus Zone
                             room_name = None
@@ -704,6 +855,43 @@ def init_ventilation_blueprint(engine, db, config):
                                 # Entferne Nummerierung (z.B. "Wohnzimmer 2" -> "Wohnzimmer")
                                 if room_name:
                                     room_name = re.sub(r'\s+\d+$', '', room_name).strip()
+                            
+                            # Lade Fenster-Kalibrierung für diesen Raum
+                            calibration = {'closed_angle': 0, 'tilted_min': 5, 'tilted_max': 45}
+                            try:
+                                rooms_file = Path('data/rooms.json')
+                                if rooms_file.exists():
+                                    with open(rooms_file, 'r') as f:
+                                        rooms_data = json.load(f)
+                                    calibrations = rooms_data.get('window_calibration', {})
+                                    if zone_id and zone_id in calibrations:
+                                        calibration = calibrations[zone_id]
+                            except:
+                                pass
+                            
+                            # Bestimme Fensterzustand (closed/tilted/open)
+                            window_state = 'closed'
+                            is_open = False
+                            
+                            if not contact_open:
+                                # Kontakt geschlossen = Fenster zu
+                                window_state = 'closed'
+                                is_open = False
+                            elif tilt_value is not None:
+                                # Kontakt offen + Tilt vorhanden
+                                tilted_min = calibration.get('tilted_min', 5)
+                                tilted_max = calibration.get('tilted_max', 45)
+                                
+                                if tilt_value >= tilted_min and tilt_value <= tilted_max:
+                                    window_state = 'tilted'
+                                    is_open = True
+                                else:
+                                    window_state = 'open'
+                                    is_open = True
+                            else:
+                                # Kontakt offen, kein Tilt-Sensor
+                                window_state = 'open'
+                                is_open = True
                             
                             # Wenn Fenster offen ist, hole open_since aus DB
                             open_since = None
@@ -740,11 +928,21 @@ def init_ventilation_blueprint(engine, db, config):
                                 except Exception as e:
                                     logger.debug(f"Could not get open_since for {device_id}: {e}")
                             
+                            # State Labels
+                            state_labels = {
+                                'closed': '🟢 Geschlossen',
+                                'tilted': '🟡 Gekippt',
+                                'open': '🔴 Offen'
+                            }
+                            
                             windows.append({
                                 'device_id': device_id,
                                 'name': device_display_name,
                                 'room': room_name or 'Unbekannt',
                                 'is_open': is_open,
+                                'window_state': window_state,
+                                'state_label': state_labels.get(window_state, window_state),
+                                'tilt': tilt_value,
                                 'open_since': open_since,
                                 'source': 'live'  # Markiere als Live-Daten
                             })

@@ -799,59 +799,78 @@
             <h3>🔔 Event-Benachrichtigungen</h3>
             <p class="card-description">Wähle, bei welchen Ereignissen du benachrichtigt werden möchtest.</p>
             <form class="settings-form">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-window-open" checked>
                             🪟 Fenster zu lange offen
                         </label>
-                        <div style="margin-left: 25px; margin-top: 5px;">
-                            <label style="font-size: 0.85em;">Nach <input type="number" id="event-window-threshold" value="15" min="5" max="120" style="width: 60px;"> Minuten</label>
+                        <div style="margin-left: 28px; margin-top: 10px;">
+                            <label style="font-size: 1rem; display: flex; align-items: center; gap: 10px;">
+                                Nach 
+                                <input type="number" id="event-window-threshold" value="15" min="5" max="120" 
+                                       style="width: 120px; padding: 12px 16px; font-size: 1.1rem; border: 1px solid #d1d5db; border-radius: 8px;"> 
+                                Minuten
+                            </label>
                         </div>
                     </div>
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-temperature" checked>
                             🌡️ Temperaturwarnung
                         </label>
-                        <div style="margin-left: 25px; margin-top: 5px;">
-                            <label style="font-size: 0.85em;">Bei <input type="number" id="event-temp-deviation" value="3" min="1" max="10" style="width: 60px;">°C Abweichung</label>
+                        <div style="margin-left: 28px; margin-top: 10px;">
+                            <label style="font-size: 1rem; display: flex; align-items: center; gap: 10px;">
+                                Bei 
+                                <input type="number" id="event-temp-deviation" value="3" min="1" max="10" 
+                                       style="width: 120px; padding: 12px 16px; font-size: 1.1rem; border: 1px solid #d1d5db; border-radius: 8px;">
+                                °C Abweichung
+                            </label>
                         </div>
                     </div>
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-humidity" checked>
                             💧 Luftfeuchtigkeit kritisch
                         </label>
                     </div>
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-co2" checked>
                             🌬️ CO2 erhöht
                         </label>
-                        <div style="margin-left: 25px; margin-top: 5px;">
-                            <label style="font-size: 0.85em;">Ab <input type="number" id="event-co2-threshold" value="1200" min="800" max="2000" step="100" style="width: 70px;"> ppm</label>
+                        <div style="margin-left: 28px; margin-top: 10px;">
+                            <label style="font-size: 1rem; display: flex; align-items: center; gap: 10px;">
+                                Ab 
+                                <input type="number" id="event-co2-threshold" value="1200" min="800" max="2000" step="100" 
+                                       style="width: 140px; padding: 12px 16px; font-size: 1.1rem; border: 1px solid #d1d5db; border-radius: 8px;"> 
+                                ppm
+                            </label>
                         </div>
                     </div>
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-mold-risk" checked>
                             ⚠️ Schimmelrisiko
                         </label>
                     </div>
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-ventilation">
                             ✅ Lüftung beendet
                         </label>
                     </div>
-                    <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                        <label>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
                             <input type="checkbox" id="event-morning">
                             ☀️ Morgenzusammenfassung
                         </label>
-                        <div style="margin-left: 25px; margin-top: 5px;">
-                            <label style="font-size: 0.85em;">Um <input type="time" id="event-morning-time" value="07:00" style="width: 90px;"></label>
+                        <div style="margin-left: 28px; margin-top: 10px;">
+                            <label style="font-size: 1rem; display: flex; align-items: center; gap: 10px;">
+                                Um 
+                                <input type="time" id="event-morning-time" value="07:00" 
+                                       style="width: 160px; padding: 12px 16px; font-size: 1.1rem; border: 1px solid #d1d5db; border-radius: 8px;">
+                            </label>
                         </div>
                     </div>
                 </div>

@@ -761,4 +761,271 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     });
+
+    // ===========================================
+    // ABWESENHEIT TAB
+    // ===========================================
+
+    // Load absence settings on page load
+    loadAbsenceSettings();
+    loadAbsencePreview();
+
+    // Toggle handler for absence notifications
+    const absenceToggle = document.getElementById('absence-enabled');
+    if (absenceToggle) {
+        absenceToggle.addEventListener('change', function() {
+            saveAbsenceSettings();
+        });
+    }
+
+    // Save button handler
+    const saveAbsenceBtn = document.getElementById('save-absence-settings');
+    if (saveAbsenceBtn) {
+        saveAbsenceBtn.addEventListener('click', saveAbsenceSettings);
+    }
+
+    // Test button handler
+    const testAbsenceBtn = document.getElementById('test-absence-notification');
+    if (testAbsenceBtn) {
+        testAbsenceBtn.addEventListener('click', testAbsenceNotification);
+    }
+
+    // Refresh preview button
+    const refreshPreviewBtn = document.getElementById('refresh-absence-preview');
+    if (refreshPreviewBtn) {
+        refreshPreviewBtn.addEventListener('click', loadAbsencePreview);
+    }
 });
+
+// ===========================================
+// ABWESENHEIT FUNCTIONS (GLOBAL SCOPE)
+// ===========================================
+
+function loadAbsenceSettings() {
+    fetch('/api/automations/absence-settings')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const settings = data.settings;
+                
+                const enabledToggle = document.getElementById('absence-enabled');
+                if (enabledToggle) {
+                    enabledToggle.checked = settings.enabled || false;
+                }
+                
+                const apiKeyInput = document.getElementById('pushover-api-key');
+                if (apiKeyInput && settings.pushover_api_key) {
+                    apiKeyInput.value = settings.pushover_api_key;
+                }
+                
+                const userKeyInput = document.getElementById('pushover-user-key');
+                if (userKeyInput && settings.pushover_user_key) {
+                    userKeyInput.value = settings.pushover_user_key;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading absence settings:', error);
+        });
+}
+
+function saveAbsenceSettings() {
+    const settings = {
+        enabled: document.getElementById('absence-enabled')?.checked || false,
+        pushover_api_key: document.getElementById('pushover-api-key')?.value || '',
+        pushover_user_key: document.getElementById('pushover-user-key')?.value || ''
+    };
+
+    fetch('/api/automations/absence-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Einstellungen gespeichert', 'success');
+        } else {
+            showNotification('Fehler beim Speichern: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving absence settings:', error);
+        showNotification('Fehler beim Speichern', 'error');
+    });
+}
+
+function loadAbsencePreview() {
+    const previewContainer = document.getElementById('absence-preview-content');
+    if (!previewContainer) return;
+
+    previewContainer.innerHTML = '<div style="text-align: center; padding: 20px;">⏳ Lade Status...</div>';
+
+    fetch('/api/automations/absence-status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderAbsencePreview(data);
+            } else {
+                previewContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #ef4444;">❌ Fehler beim Laden</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading absence preview:', error);
+            previewContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #ef4444;">❌ Verbindungsfehler</div>';
+        });
+}
+
+function renderAbsencePreview(data) {
+    const previewContainer = document.getElementById('absence-preview-content');
+    if (!previewContainer) return;
+
+    const now = new Date().toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+
+    // Count lights and windows
+    const lightsOn = data.lights ? data.lights.filter(l => l.on).length : 0;
+    const totalLights = data.lights ? data.lights.length : 0;
+    const windowsOpen = data.windows ? data.windows.filter(w => w.state === 'open').length : 0;
+    const windowsTilted = data.windows ? data.windows.filter(w => w.state === 'tilted').length : 0;
+    const totalWindows = data.windows ? data.windows.length : 0;
+
+    // Determine status
+    const allGood = lightsOn === 0 && windowsOpen === 0;
+    const statusClass = allGood ? 'all-good' : 'warning';
+    const statusIcon = allGood ? '✅' : '⚠️';
+    const statusText = allGood 
+        ? 'Alles in Ordnung - bereit zum Verlassen' 
+        : `${lightsOn > 0 ? lightsOn + ' Licht(er) an' : ''}${lightsOn > 0 && windowsOpen > 0 ? ', ' : ''}${windowsOpen > 0 ? windowsOpen + ' Fenster offen' : ''}`;
+
+    let html = `
+        <div class="preview-header">
+            <h5>🏠 Status-Übersicht</h5>
+            <span class="preview-time">${now}</span>
+        </div>
+        <div class="preview-sections">
+            <div class="preview-section">
+                <h6>💡 Lichter (${lightsOn}/${totalLights} an)</h6>
+                <div class="lights-grid">
+    `;
+
+    // Render lights
+    if (data.lights && data.lights.length > 0) {
+        data.lights.forEach(light => {
+            const stateClass = light.on ? 'on' : 'off';
+            const icon = light.on ? '💡' : '⚫';
+            html += `<div class="light-item ${stateClass}">${icon} ${light.name}</div>`;
+        });
+    } else {
+        html += '<div class="light-item">Keine Lichter gefunden</div>';
+    }
+
+    html += `
+                </div>
+            </div>
+            <div class="preview-section">
+                <h6>🪟 Fenster (${windowsOpen} offen, ${windowsTilted} gekippt)</h6>
+                <div class="windows-grid">
+    `;
+
+    // Render windows
+    if (data.windows && data.windows.length > 0) {
+        data.windows.forEach(window => {
+            let stateClass = 'closed';
+            let icon = '🟢';
+            let stateLabel = 'Zu';
+            
+            if (window.state === 'open') {
+                stateClass = 'open';
+                icon = '🔴';
+                stateLabel = 'Offen';
+            } else if (window.state === 'tilted') {
+                stateClass = 'tilted';
+                icon = '🟡';
+                stateLabel = 'Gekippt';
+            }
+            
+            html += `<div class="window-item ${stateClass}">${icon} ${window.name} <small>(${stateLabel})</small></div>`;
+        });
+    } else {
+        html += '<div class="window-item">Keine Fenster gefunden</div>';
+    }
+
+    html += `
+                </div>
+            </div>
+        </div>
+        <div class="absence-summary">
+            <span class="summary-badge ${statusClass}">${statusIcon} ${statusText}</span>
+        </div>
+    `;
+
+    previewContainer.innerHTML = html;
+}
+
+function testAbsenceNotification() {
+    const btn = document.getElementById('test-absence-notification');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Sende...';
+    }
+
+    fetch('/api/automations/absence-test-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Test-Benachrichtigung gesendet!', 'success');
+        } else {
+            showNotification('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error sending test notification:', error);
+        showNotification('Fehler beim Senden', 'error');
+    })
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '📤 Test-Benachrichtigung senden';
+        }
+    });
+}
+
+function showNotification(message, type = 'info') {
+    // Check if notification function exists from other scripts
+    if (typeof showToast === 'function') {
+        showToast(message, type);
+        return;
+    }
+
+    // Simple fallback notification
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 15px 25px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.3s';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
