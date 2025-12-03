@@ -1,6 +1,6 @@
 """
 Background Task: Automatisches ML-Training
-Trainiert Lighting und Temperature Modelle sobald genug Daten vorhanden sind
+Trainiert Lighting, Temperature und Forgotten Light Modelle sobald genug Daten vorhanden sind
 """
 
 import threading
@@ -14,6 +14,7 @@ from typing import Dict, Optional
 from src.utils.database import Database
 from src.models.lighting_model import LightingModel
 from src.models.temperature_model import TemperatureModel
+from src.models.forgotten_light_model import ForgottenLightModel
 from src.models.model_version_manager import ModelVersionManager
 
 
@@ -30,6 +31,7 @@ class MLAutoTrainer:
     # Minimale Daten-Anforderungen
     MIN_LIGHTING_SAMPLES = 100      # Mindestens 100 Licht-Events
     MIN_TEMPERATURE_SAMPLES = 200   # Mindestens 200 Temperatur-Readings
+    MIN_FORGOTTEN_LIGHT_SAMPLES = 50  # Mindestens 50 Licht-Sessions für Forgotten Light
     MIN_DAYS_DATA = 3               # Mindestens 3 Tage Daten
 
     def __init__(self, run_at_hour: int = 2):
@@ -180,6 +182,18 @@ class MLAutoTrainer:
                 self._update_progress(status='completed')
             else:
                 logger.warning("[FAILED] Temperature Model training failed")
+
+        # Prüfe Forgotten Light Model
+        if self._should_train_forgotten_light(status):
+            logger.info("[TRAIN] Sufficient data for Forgotten Light Model - starting training...")
+            success = self._train_forgotten_light_model()
+            if success:
+                status['forgotten_light_last_trained'] = datetime.now().isoformat()
+                status['forgotten_light_trained'] = True
+                logger.success("[OK] Forgotten Light Model trained successfully!")
+                self._update_progress(status='completed')
+            else:
+                logger.warning("[FAILED] Forgotten Light Model training failed")
 
         # Speichere Status
         self._save_status(status)
@@ -603,6 +617,149 @@ class MLAutoTrainer:
             self._update_progress(status='error', error=str(e))
             return False
 
+    def _should_train_forgotten_light(self, status: Dict) -> bool:
+        """
+        Prüft ob Forgotten Light Model trainiert werden soll
+
+        Args:
+            status: Aktueller Trainingsstatus
+
+        Returns:
+            True wenn Training sinnvoll ist
+        """
+        # Bereits vor weniger als 24 Stunden trainiert?
+        last_trained = status.get('forgotten_light_last_trained')
+        if last_trained:
+            last_trained_dt = datetime.fromisoformat(last_trained)
+            if datetime.now() - last_trained_dt < timedelta(hours=24):
+                return False
+
+        # Prüfe ob genug Daten vorhanden
+        try:
+            # Zähle Licht-Sessions (ON->OFF Paare) aus lighting_events
+            # Wir brauchen genug "Sessions" um Muster zu lernen
+            result = self.db.execute("""
+                SELECT COUNT(*) as count FROM (
+                    SELECT device_id, 
+                           SUM(CASE WHEN state = 'on' THEN 1 ELSE 0 END) as on_count,
+                           SUM(CASE WHEN state = 'off' THEN 1 ELSE 0 END) as off_count
+                    FROM lighting_events
+                    GROUP BY device_id
+                    HAVING on_count > 0 AND off_count > 0
+                )
+            """)
+            sessions_count = result[0]['count'] if result else 0
+
+            # Zähle auch die absolute Anzahl an Events
+            result = self.db.execute("SELECT COUNT(*) as count FROM lighting_events")
+            total_events = result[0]['count'] if result else 0
+
+            # Prüfe Datenzeitraum
+            days_of_data = 0
+            result = self.db.execute("SELECT MIN(timestamp) as first_reading FROM lighting_events")
+            if result and result[0]['first_reading']:
+                first_reading = datetime.fromisoformat(result[0]['first_reading'])
+                days_of_data = (datetime.now() - first_reading).days
+
+            logger.info(f"Forgotten Light data check: {sessions_count} device sessions, {total_events} total events, {days_of_data} days")
+
+            # Training möglich? Brauchen mindestens 50 Sessions und 100 Events
+            return (sessions_count >= 5 and 
+                   total_events >= self.MIN_FORGOTTEN_LIGHT_SAMPLES and
+                   days_of_data >= self.MIN_DAYS_DATA)
+
+        except Exception as e:
+            logger.error(f"Error checking forgotten light data: {e}")
+            return False
+
+    def _train_forgotten_light_model(self) -> bool:
+        """
+        Trainiert das Forgotten Light Model
+
+        Returns:
+            True bei Erfolg
+        """
+        try:
+            self._update_progress(status='training', model='forgotten_light', progress=0, step='Initialisierung...')
+
+            # Erstelle Modell
+            self._update_progress(progress=10, step='Erstelle Forgotten Light Model...')
+            model = ForgottenLightModel(model_type="gradient_boosting")
+
+            # Lerne Raum-Muster
+            self._update_progress(progress=20, step='Lerne Raum-Muster...')
+            model.learn_room_patterns(self.db)
+
+            # Bereite Trainingsdaten vor
+            self._update_progress(progress=30, step='Bereite Trainingsdaten vor...')
+            X, y = model.prepare_training_data(self.db)
+
+            if len(X) < 30:
+                logger.warning(f"Not enough training samples for Forgotten Light: {len(X)}")
+                self._update_progress(status='error', error=f'Zu wenig Samples: {len(X)} (benötigt: 30)')
+                return False
+
+            # Trainiere Modell
+            self._update_progress(progress=50, step=f'Trainiere Modell mit {len(X)} Samples...')
+            metrics = model.train(X, y)
+
+            if not metrics.get('accuracy'):
+                logger.warning("Forgotten Light Model training returned no accuracy metric")
+                self._update_progress(status='error', error='Training fehlgeschlagen - keine Metriken')
+                return False
+
+            # === MODEL VERSIONING & QUALITY CHECK ===
+
+            # 1. Backup des aktuellen Modells (falls vorhanden)
+            self._update_progress(progress=70, step='Erstelle Backup des alten Modells...')
+            self.version_manager.backup_current_model('forgotten_light_model')
+
+            # 2. Vergleiche mit vorheriger Version
+            self._update_progress(progress=75, step='Vergleiche mit vorheriger Version...')
+            comparison = self.version_manager.compare_with_previous('forgotten_light_model', metrics)
+
+            logger.info(f"Forgotten Light Model comparison: {comparison['recommendation']}")
+
+            # 3. Speichere neues Modell
+            self._update_progress(progress=80, step='Speichere trainiertes Modell...')
+            models_dir = Path('models')
+            models_dir.mkdir(exist_ok=True)
+            model.save(str(models_dir / 'forgotten_light_model.pkl'))
+
+            # 4. Registriere neue Version
+            self._update_progress(progress=85, step='Registriere Model-Version...')
+            version_notes = f"Accuracy: {metrics.get('accuracy', 0):.3f}, Precision: {metrics.get('precision', 0):.3f}, Samples: {len(X)}"
+            if not comparison['improved']:
+                version_notes += " [Performance-Warnung]"
+
+            self.version_manager.register_model(
+                model_name='forgotten_light_model',
+                metrics=metrics,
+                notes=version_notes
+            )
+
+            # 5. Speichere Metriken in DB
+            self._update_progress(progress=90, step='Speichere Metriken...')
+            self._save_training_metrics('forgotten_light', metrics)
+
+            # 6. Cleanup alte Versionen
+            self._update_progress(progress=95, step='Cleanup alte Versionen...')
+            self.version_manager.cleanup_old_versions('forgotten_light_model', keep_last_n=5)
+
+            logger.info(f"Forgotten Light Model trained with accuracy: {metrics.get('accuracy', 0):.2f}, precision: {metrics.get('precision', 0):.2f}")
+            if not comparison['improved']:
+                logger.warning(f"⚠️ New Forgotten Light model may be worse than previous version!")
+
+            self._update_progress(progress=100, step='Forgotten Light Model erfolgreich trainiert!')
+            return True
+
+        except Exception as e:
+            logger.error(f"Error training forgotten light model: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self._update_progress(status='error', error=str(e))
+            return False
+
     def _load_status(self) -> Dict:
         """Lädt aktuellen Trainingsstatus"""
         if self.status_file.exists():
@@ -616,7 +773,9 @@ class MLAutoTrainer:
             'lighting_trained': False,
             'lighting_last_trained': None,
             'temperature_trained': False,
-            'temperature_last_trained': None
+            'temperature_last_trained': None,
+            'forgotten_light_trained': False,
+            'forgotten_light_last_trained': None
         }
 
     def _save_status(self, status: Dict):
