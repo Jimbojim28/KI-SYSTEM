@@ -154,23 +154,33 @@ def init_notifications_blueprint(engine, db, config):
             config = _get_notification_config()
             service = NotificationService({"notifications": config})
             
+            # Prüfe zuerst ob Pushover konfiguriert ist
+            if not service.pushover_enabled:
+                pushover_config = config.get('pushover', {})
+                if not pushover_config.get('api_token'):
+                    return jsonify({'success': False, 'error': 'Pushover API Token fehlt. Bitte in den Einstellungen konfigurieren.'}), 400
+                if not pushover_config.get('user_key'):
+                    return jsonify({'success': False, 'error': 'Pushover User Key fehlt. Bitte in den Einstellungen konfigurieren.'}), 400
+                return jsonify({'success': False, 'error': 'Pushover ist nicht aktiviert.'}), 400
+            
             if test_type == 'simple':
                 # Einfache Test-Nachricht
-                success = service.send_notification(
+                success, error_msg = service.send_notification_with_details(
                     title="🏠 KI Smart Home",
                     message="Test-Benachrichtigung erfolgreich! Die Pushover-Integration funktioniert.",
                     priority=0,
                     sound="pushover"
                 )
             elif test_type == 'chatgpt':
+                # Prüfe ob ChatGPT konfiguriert ist
+                if not service.openai_enabled:
+                    openai_config = config.get('openai', {})
+                    if not openai_config.get('api_key'):
+                        return jsonify({'success': False, 'error': 'OpenAI API Key fehlt. Bitte in den Einstellungen konfigurieren.'}), 400
+                    return jsonify({'success': False, 'error': 'ChatGPT ist nicht aktiviert.'}), 400
+                
                 # Test mit ChatGPT
-                context = {
-                    'room': 'Wohnzimmer',
-                    'current_temp': 21.5,
-                    'outdoor_temp': 8.3,
-                    'humidity': 55
-                }
-                success = service.send_smart_notification(
+                success, error_msg = service.send_smart_notification_with_details(
                     event_type='morning_summary',
                     context={
                         'avg_indoor_temp': 21.5,
@@ -187,7 +197,7 @@ def init_notifications_blueprint(engine, db, config):
             if success:
                 return jsonify({'success': True, 'message': 'Test-Benachrichtigung gesendet!'})
             else:
-                return jsonify({'success': False, 'error': 'Fehler beim Senden. Prüfe deine Credentials.'}), 400
+                return jsonify({'success': False, 'error': error_msg or 'Unbekannter Fehler beim Senden.'}), 400
                 
         except Exception as e:
             logger.error(f"Error testing notification: {e}")

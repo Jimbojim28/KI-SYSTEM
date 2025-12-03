@@ -325,6 +325,114 @@ class NotificationService:
             logger.error(f"Error sending Pushover notification: {e}")
             return False
     
+    def send_notification_with_details(self, title: str, message: str, 
+                                       priority: int = None,
+                                       sound: str = None,
+                                       url: str = None,
+                                       url_title: str = None,
+                                       device: str = None,
+                                       html: bool = False) -> tuple[bool, str]:
+        """
+        Sendet eine Pushover-Benachrichtigung mit detaillierter Fehlerrückgabe.
+        
+        Returns:
+            Tuple (success, error_message)
+        """
+        if not self.pushover_enabled:
+            return False, "Pushover nicht konfiguriert oder deaktiviert"
+        
+        if priority is None:
+            priority = self.default_priority
+            
+        if self._is_quiet_hours() and priority < 1:
+            priority = -1
+        
+        try:
+            payload = {
+                "token": self.pushover_token,
+                "user": self.pushover_user,
+                "title": title,
+                "message": message,
+                "priority": priority
+            }
+            
+            if sound:
+                payload["sound"] = sound
+            if url:
+                payload["url"] = url
+            if url_title:
+                payload["url_title"] = url_title
+            if device:
+                payload["device"] = device
+            if html:
+                payload["html"] = 1
+            
+            response = requests.post(
+                "https://api.pushover.net/1/messages.json",
+                data=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Pushover notification sent: {title}")
+                return True, None
+            else:
+                # Parse Pushover Error
+                try:
+                    error_data = response.json()
+                    errors = error_data.get('errors', [])
+                    if errors:
+                        error_msg = ', '.join(errors)
+                    else:
+                        error_msg = f"HTTP {response.status_code}: {response.text}"
+                except:
+                    error_msg = f"HTTP {response.status_code}: {response.text}"
+                
+                logger.error(f"Pushover error: {error_msg}")
+                return False, f"Pushover API Fehler: {error_msg}"
+                
+        except requests.exceptions.Timeout:
+            return False, "Pushover API Timeout - Server nicht erreichbar"
+        except requests.exceptions.ConnectionError:
+            return False, "Keine Verbindung zu Pushover - Netzwerkfehler"
+        except Exception as e:
+            logger.error(f"Error sending Pushover notification: {e}")
+            return False, f"Fehler: {str(e)}"
+    
+    def send_smart_notification_with_details(self, event_type: str, context: Dict[str, Any],
+                                             title: str = None,
+                                             style: str = "freundlich",
+                                             priority: int = None,
+                                             sound: str = None,
+                                             use_chatgpt: bool = True) -> tuple[bool, str]:
+        """
+        Sendet eine intelligente Benachrichtigung mit detaillierter Fehlerrückgabe.
+        
+        Returns:
+            Tuple (success, error_message)
+        """
+        # Generiere Text
+        if use_chatgpt and self.openai_enabled:
+            message = self.generate_smart_text(event_type, context, style)
+        else:
+            message = self._get_fallback_text(event_type, context)
+        
+        if not title:
+            title = self._get_default_title(event_type)
+        
+        if sound is None:
+            sound = self._get_default_sound(event_type)
+        
+        if priority is None:
+            priority = self._get_default_priority(event_type)
+        
+        return self.send_notification_with_details(
+            title=title,
+            message=message,
+            priority=priority,
+            sound=sound
+        )
+    
     def send_smart_notification(self, event_type: str, context: Dict[str, Any],
                                 title: str = None,
                                 style: str = "freundlich",
