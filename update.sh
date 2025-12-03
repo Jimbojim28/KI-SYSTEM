@@ -55,6 +55,7 @@ echo "  ✓ Datenbank (data/*.db) - Geschützt durch .gitignore"
 echo "  ✓ Konfigurationen (data/*.json) - Geschützt durch .gitignore"
 echo "  ✓ ML-Modelle (models/*.pkl) - Geschützt durch .gitignore"
 echo "  ✓ Credentials (.env) - Geschützt durch .gitignore"
+echo "  ✓ config.yaml (API-Keys) - Geschützt durch .gitignore"
 echo ""
 echo "  ℹ️  Diese Dateien werden von Git NICHT überschrieben!"
 
@@ -66,6 +67,11 @@ mkdir -p "$BACKUP_DIR"
 if [ -f ".env" ]; then
     cp .env "$BACKUP_DIR/.env" 2>/dev/null || true
     echo "  ✓ .env gesichert"
+fi
+if [ -f "config/config.yaml" ]; then
+    mkdir -p "$BACKUP_DIR/config"
+    cp config/config.yaml "$BACKUP_DIR/config/config.yaml" 2>/dev/null || true
+    echo "  ✓ config/config.yaml gesichert"
 fi
 if [ -d "data" ]; then
     cp -r data "$BACKUP_DIR/data" 2>/dev/null || true
@@ -98,7 +104,7 @@ echo ""
 echo "⬇️  Installiere Updates..."
 # Reset lokale Änderungen vor dem Pull (außer data/, models/, .env)
 git reset --hard HEAD 2>&1 || echo "⚠️ git reset fehlgeschlagen"
-git clean -fd --exclude=data --exclude=models --exclude=.env --exclude=logs --exclude=.backup 2>&1 || echo "⚠️ git clean fehlgeschlagen"
+git clean -fd --exclude=data --exclude=models --exclude=.env --exclude=logs --exclude=.backup --exclude=config/config.yaml 2>&1 || echo "⚠️ git clean fehlgeschlagen"
 
 # Jetzt Pull durchführen
 if ! git pull origin main 2>&1; then

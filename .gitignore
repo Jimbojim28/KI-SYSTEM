@@ -40,6 +40,9 @@ ENV/
 # Environment variables
 .env
 
+# Configuration with secrets
+config/config.yaml
+
 # Data and Models
 data/*.db
 data/*.db-*
