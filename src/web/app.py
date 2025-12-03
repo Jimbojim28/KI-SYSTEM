@@ -6143,10 +6143,95 @@ class WebInterface:
 
         @self.app.route('/api/heating/windows/all')
         def api_heating_windows_all():
-            """Hole alle Fenster mit ihrem aktuellen Status"""
+            """Hole alle Fenster mit ihrem aktuellen Status - LIVE von Homey (wie /api/rooms/window-status)"""
+            import json
+            rooms_file = Path('data/rooms.json')
+            
             try:
-                windows = self.db.get_all_windows_latest_status()
-
+                # Lade Kalibrierungsdaten
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'window_calibration': {}}
+                
+                calibrations = rooms_data.get('window_calibration', {})
+                
+                # Hole alle Fenster-Geräte LIVE von Homey (wie /api/rooms/window-status)
+                devices = []
+                if hasattr(self.engine, 'platform'):
+                    # Für Homey: nutze _device_cache oder get_states
+                    if hasattr(self.engine.platform, '_device_cache'):
+                        self.engine.platform._refresh_device_cache()
+                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                            self.engine.platform._device_cache, dict) else []
+                    elif hasattr(self.engine.platform, 'get_states'):
+                        states = self.engine.platform.get_states() or {}
+                        devices = list(states.values()) if isinstance(states, dict) else states
+                
+                # Hole Zone-Namen für Raum-Zuordnung
+                zone_names = {}
+                if hasattr(self.engine, 'platform') and hasattr(self.engine.platform, 'get_zones'):
+                    zones = self.engine.platform.get_zones() or {}
+                    zone_names = {z.get('id'): z.get('name', 'Unbekannt') for z in zones.values()} if isinstance(zones, dict) else {}
+                
+                windows = []
+                
+                for device in devices:
+                    name = device.get('name', '').lower()
+                    if 'fenster' in name or 'window' in name:
+                        caps = device.get('capabilitiesObj', {})
+                        zone_id = device.get('zone', '')
+                        room_name = zone_names.get(zone_id, 'Unbekannt')
+                        
+                        # Hole Kontakt-Status (alarm_contact = True bedeutet offen)
+                        is_open = False
+                        if 'alarm_contact' in caps:
+                            is_open = bool(caps['alarm_contact'].get('value', False))
+                        
+                        # Hole Tilt-Wert für detaillierten Status
+                        tilt_value = None
+                        if 'tilt' in caps:
+                            tilt_value = caps['tilt'].get('value', 0)
+                        
+                        # Bestimme detaillierten Zustand basierend auf Kalibrierung
+                        calibration = calibrations.get(zone_id, {
+                            'closed_angle': 0,
+                            'tilted_min': 5,
+                            'tilted_max': 45
+                        })
+                        
+                        state = 'closed'  # Default
+                        if tilt_value is not None:
+                            closed_angle = calibration.get('closed_angle', 0)
+                            tilted_min = calibration.get('tilted_min', 5)
+                            tilted_max = calibration.get('tilted_max', 45)
+                            diff = abs(tilt_value - closed_angle)
+                            
+                            if not is_open:
+                                state = 'closed'
+                            elif is_open and diff >= tilted_min and diff <= tilted_max:
+                                state = 'tilted'
+                            elif is_open:
+                                state = 'open'
+                        elif is_open:
+                            state = 'open'
+                        
+                        windows.append({
+                            'device_id': device.get('id'),
+                            'device_name': device.get('name'),
+                            'room_name': room_name,
+                            'zone_id': zone_id,
+                            'is_open': is_open,
+                            'state': state,
+                            'tilt': tilt_value,
+                            'state_label': {
+                                'closed': '🟢 Geschlossen',
+                                'tilted': '🟡 Gekippt',
+                                'open': '🔴 Offen'
+                            }.get(state, state)
+                        })
+                
                 return jsonify({
                     'success': True,
                     'data': windows,
@@ -6159,9 +6244,48 @@ class WebInterface:
 
         @self.app.route('/api/heating/windows/current')
         def api_heating_windows_current():
-            """Hole alle aktuell geöffneten Fenster mit Dauer"""
+            """Hole alle aktuell geöffneten Fenster mit Dauer - LIVE von Homey"""
             try:
-                open_windows = self.db.get_current_open_windows()
+                # Nutze dieselbe Live-Datenquelle wie /api/heating/windows/all
+                # und filtere nur offene Fenster
+                devices = []
+                if hasattr(self.engine, 'platform'):
+                    if hasattr(self.engine.platform, '_device_cache'):
+                        self.engine.platform._refresh_device_cache()
+                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                            self.engine.platform._device_cache, dict) else []
+                    elif hasattr(self.engine.platform, 'get_states'):
+                        states = self.engine.platform.get_states() or {}
+                        devices = list(states.values()) if isinstance(states, dict) else states
+                
+                # Hole Zone-Namen für Raum-Zuordnung
+                zone_names = {}
+                if hasattr(self.engine, 'platform') and hasattr(self.engine.platform, 'get_zones'):
+                    zones = self.engine.platform.get_zones() or {}
+                    zone_names = {z.get('id'): z.get('name', 'Unbekannt') for z in zones.values()} if isinstance(zones, dict) else {}
+                
+                open_windows = []
+                
+                for device in devices:
+                    name = device.get('name', '').lower()
+                    if 'fenster' in name or 'window' in name:
+                        caps = device.get('capabilitiesObj', {})
+                        zone_id = device.get('zone', '')
+                        
+                        # Hole Kontakt-Status
+                        is_open = False
+                        if 'alarm_contact' in caps:
+                            is_open = bool(caps['alarm_contact'].get('value', False))
+                        
+                        if is_open:
+                            room_name = zone_names.get(zone_id, 'Unbekannt')
+                            open_windows.append({
+                                'device_id': device.get('id'),
+                                'device_name': device.get('name'),
+                                'room_name': room_name,
+                                'zone_id': zone_id,
+                                'is_open': True
+                            })
 
                 return jsonify({
                     'success': True,
