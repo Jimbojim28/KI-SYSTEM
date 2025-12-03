@@ -125,12 +125,15 @@
         <p class="info-text">Erhalte Pushover-Benachrichtigungen bei wichtigen Lüftungsereignissen.</p>
         
         <div id="notification-settings-container">
-            <div class="notification-master-toggle">
+            <div class="notification-master-toggle" id="master-toggle-container">
                 <label class="toggle-switch">
                     <input type="checkbox" id="notifications-enabled" onchange="toggleNotifications()">
                     <span class="toggle-slider"></span>
                 </label>
-                <span class="toggle-label-text">Benachrichtigungen aktivieren</span>
+                <div class="toggle-label-group">
+                    <span class="toggle-label-text">Benachrichtigungen</span>
+                    <span class="toggle-status" id="notification-status">⭕ Deaktiviert</span>
+                </div>
                 <span id="pushover-status" class="pushover-status"></span>
             </div>
             
@@ -692,14 +695,36 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1rem;
+    padding: 1rem 1.25rem;
     background: #f8f9fa;
-    border-radius: 8px;
+    border-radius: 10px;
     margin-bottom: 1rem;
+    border: 2px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+.notification-master-toggle.active {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-color: #667eea;
+}
+.toggle-label-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
 }
 .toggle-label-text {
     font-weight: 600;
     color: #333;
+    font-size: 1.05em;
+}
+.toggle-status {
+    font-size: 0.85em;
+    font-weight: 500;
+}
+.toggle-status.inactive {
+    color: #6c757d;
+}
+.toggle-status.active {
+    color: #28a745;
 }
 .pushover-status {
     margin-left: auto;
@@ -1974,6 +1999,9 @@ async function loadNotificationSettings() {
             document.getElementById('notification-options').style.display = 
                 settings.enabled ? 'block' : 'none';
             
+            // Aktualisiere Status-Anzeige
+            updateNotificationStatus(settings.enabled);
+            
             // Einzelne Optionen
             document.getElementById('co2-high-alert').checked = settings.co2_high_alert;
             document.getElementById('co2-threshold').value = settings.co2_threshold || 1000;
@@ -2002,6 +2030,22 @@ async function loadNotificationSettings() {
 function toggleNotifications() {
     const enabled = document.getElementById('notifications-enabled').checked;
     document.getElementById('notification-options').style.display = enabled ? 'block' : 'none';
+    updateNotificationStatus(enabled);
+}
+
+function updateNotificationStatus(enabled) {
+    const container = document.getElementById('master-toggle-container');
+    const statusEl = document.getElementById('notification-status');
+    
+    if (enabled) {
+        container.classList.add('active');
+        statusEl.textContent = '✅ Aktiv';
+        statusEl.className = 'toggle-status active';
+    } else {
+        container.classList.remove('active');
+        statusEl.textContent = '⭕ Deaktiviert';
+        statusEl.className = 'toggle-status inactive';
+    }
 }
 
 async function saveNotificationSettings() {
