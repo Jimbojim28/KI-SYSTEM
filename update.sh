@@ -154,7 +154,19 @@ if command -v pm2 &> /dev/null; then
 
     # Prüfe ob App in PM2 läuft
     if pm2 list | grep -q "ki-smart-home"; then
-        pm2 restart ki-smart-home
+        # Stoppe zuerst und gib Port frei
+        echo "   Stoppe ki-smart-home..."
+        pm2 stop ki-smart-home 2>/dev/null || true
+        sleep 2
+        
+        # Beende alle Prozesse auf Port 8080
+        echo "   Gebe Port 8080 frei..."
+        fuser -k 8080/tcp 2>/dev/null || kill $(lsof -ti:8080) 2>/dev/null || true
+        sleep 2
+        
+        # Starte neu
+        echo "   Starte ki-smart-home..."
+        pm2 start ki-smart-home
         pm2 save
         echo "✓ System mit PM2 neu gestartet!"
     else

@@ -6574,8 +6574,22 @@ class WebInterface:
                     ).returncode == 0
 
                     if pm2_running and 'ki-smart-home' in subprocess.run(['pm2', 'list'], capture_output=True, text=True).stdout:
-                        # PM2 Neustart
-                        subprocess.Popen(['pm2', 'restart', 'ki-smart-home'])
+                        # PM2 Neustart - zuerst Port freigeben, dann stoppen und starten
+                        try:
+                            # Stoppe den PM2 Prozess zuerst
+                            subprocess.run(['pm2', 'stop', 'ki-smart-home'], capture_output=True)
+                            time.sleep(2)
+                            
+                            # Beende alle Prozesse auf Port 8080 falls noch welche laufen
+                            subprocess.run(['fuser', '-k', '8080/tcp'], capture_output=True, stderr=subprocess.DEVNULL)
+                            time.sleep(1)
+                            
+                            # Starte neu
+                            subprocess.Popen(['pm2', 'start', 'ki-smart-home'])
+                        except Exception as e:
+                            logger.error(f"PM2 restart error: {e}")
+                            # Fallback: normaler restart
+                            subprocess.Popen(['pm2', 'restart', 'ki-smart-home'])
                     else:
                         # Manueller Neustart
                         # Hole aktuellen Port
