@@ -48,6 +48,8 @@ data/*.sqlite3
 data/*_config.json
 data/heating_*.json
 data/settings_*.json
+data/webapp.pid
+data/rooms.json
 data/ml_training_status.json
 data/sensor_config.json
 models/*.pkl
