@@ -96,7 +96,17 @@ echo ""
 
 # Pull Updates
 echo "⬇️  Installiere Updates..."
-git pull origin main
+# Reset lokale Änderungen vor dem Pull (außer data/, models/, .env)
+git reset --hard HEAD 2>&1 || echo "⚠️ git reset fehlgeschlagen"
+git clean -fd --exclude=data --exclude=models --exclude=.env --exclude=logs --exclude=.backup 2>&1 || echo "⚠️ git clean fehlgeschlagen"
+
+# Jetzt Pull durchführen
+if ! git pull origin main 2>&1; then
+    echo "❌ git pull fehlgeschlagen!"
+    echo "Versuche alternativen Ansatz..."
+    git fetch origin main
+    git reset --hard origin/main
+fi
 
 # Aktiviere Virtual Environment falls vorhanden
 if [ -d "venv" ]; then
