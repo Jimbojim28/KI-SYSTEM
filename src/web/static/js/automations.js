@@ -148,28 +148,53 @@ async function loadConfig() {
 
 // Wende Regeln auf UI an
 function applyRulesToUI() {
+    // Default-Werte falls nicht vorhanden
+    const awayMode = automationRules.away_mode || {};
+    const arrivalMode = automationRules.arrival_mode || {};
+    const nightMode = automationRules.night_mode || {};
+    
     // Away Mode
-    document.getElementById('away-mode-enabled').checked = automationRules.away_mode.enabled;
-    document.getElementById('away-timeout').value = automationRules.away_mode.timeout;
-    document.getElementById('away-lights-off').checked = automationRules.away_mode.lights_off;
-    document.getElementById('away-sockets-off').checked = automationRules.away_mode.sockets_off;
-    document.getElementById('away-heating-eco').checked = automationRules.away_mode.heating_eco;
+    const awayEnabled = document.getElementById('away-mode-enabled');
+    const awayTimeout = document.getElementById('away-timeout');
+    const awayLightsOff = document.getElementById('away-lights-off');
+    const awaySocketsOff = document.getElementById('away-sockets-off');
+    const awayHeatingEco = document.getElementById('away-heating-eco');
+    
+    if (awayEnabled) awayEnabled.checked = awayMode.enabled || false;
+    if (awayTimeout) awayTimeout.value = awayMode.timeout || 15;
+    if (awayLightsOff) awayLightsOff.checked = awayMode.lights_off !== false;
+    if (awaySocketsOff) awaySocketsOff.checked = awayMode.sockets_off || false;
+    if (awayHeatingEco) awayHeatingEco.checked = awayMode.heating_eco !== false;
 
     // Arrival Mode
-    document.getElementById('arrival-mode-enabled').checked = automationRules.arrival_mode.enabled;
-    document.getElementById('arrival-lights-on').checked = automationRules.arrival_mode.lights_on;
-    document.getElementById('arrival-sockets-on').checked = automationRules.arrival_mode.sockets_on;
-    document.getElementById('arrival-heating-comfort').checked = automationRules.arrival_mode.heating_comfort;
-    document.getElementById('arrival-time-from').value = automationRules.arrival_mode.time_from;
-    document.getElementById('arrival-time-to').value = automationRules.arrival_mode.time_to;
+    const arrivalEnabled = document.getElementById('arrival-mode-enabled');
+    const arrivalLightsOn = document.getElementById('arrival-lights-on');
+    const arrivalSocketsOn = document.getElementById('arrival-sockets-on');
+    const arrivalHeatingComfort = document.getElementById('arrival-heating-comfort');
+    const arrivalTimeFrom = document.getElementById('arrival-time-from');
+    const arrivalTimeTo = document.getElementById('arrival-time-to');
+    
+    if (arrivalEnabled) arrivalEnabled.checked = arrivalMode.enabled || false;
+    if (arrivalLightsOn) arrivalLightsOn.checked = arrivalMode.lights_on || false;
+    if (arrivalSocketsOn) arrivalSocketsOn.checked = arrivalMode.sockets_on || false;
+    if (arrivalHeatingComfort) arrivalHeatingComfort.checked = arrivalMode.heating_comfort || false;
+    if (arrivalTimeFrom) arrivalTimeFrom.value = arrivalMode.time_from || '17:00';
+    if (arrivalTimeTo) arrivalTimeTo.value = arrivalMode.time_to || '22:00';
 
     // Night Mode
-    document.getElementById('night-mode-enabled').checked = automationRules.night_mode.enabled;
-    document.getElementById('night-time-from').value = automationRules.night_mode.time_from;
-    document.getElementById('night-time-to').value = automationRules.night_mode.time_to;
-    document.getElementById('night-lights-dim').checked = automationRules.night_mode.lights_dim;
-    document.getElementById('night-no-automation').checked = automationRules.night_mode.no_automation;
-    document.getElementById('night-heating-lower').checked = automationRules.night_mode.heating_lower;
+    const nightEnabled = document.getElementById('night-mode-enabled');
+    const nightTimeFrom = document.getElementById('night-time-from');
+    const nightTimeTo = document.getElementById('night-time-to');
+    const nightLightsDim = document.getElementById('night-lights-dim');
+    const nightNoAutomation = document.getElementById('night-no-automation');
+    const nightHeatingLower = document.getElementById('night-heating-lower');
+    
+    if (nightEnabled) nightEnabled.checked = nightMode.enabled || false;
+    if (nightTimeFrom) nightTimeFrom.value = nightMode.time_from || '22:00';
+    if (nightTimeTo) nightTimeTo.value = nightMode.time_to || '06:00';
+    if (nightLightsDim) nightLightsDim.checked = nightMode.lights_dim !== false;
+    if (nightNoAutomation) nightNoAutomation.checked = nightMode.no_automation || false;
+    if (nightHeatingLower) nightHeatingLower.checked = nightMode.heating_lower || false;
 }
 
 // Sammle Regeln aus UI
