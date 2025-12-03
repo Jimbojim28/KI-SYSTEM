@@ -37,6 +37,7 @@ from src.background.bathroom_data_collector import BathroomDataCollector
 from src.background.lighting_data_collector import LightingDataCollector
 from src.background.temperature_data_collector import TemperatureDataCollector
 from src.background.database_maintenance import DatabaseMaintenanceJob
+from src.background.ventilation_notifier import VentilationNotifier
 from src.utils.database import Database
 
 
@@ -167,6 +168,17 @@ class WebInterface:
             logger.info(f"Database Maintenance Job initialized (retention: {retention_days} days)")
         except Exception as e:
             logger.error(f"Failed to initialize Database Maintenance: {e}")
+
+        # Ventilation Notifier für Pushover-Benachrichtigungen
+        self.ventilation_notifier = None
+        try:
+            self.ventilation_notifier = VentilationNotifier(
+                engine=self.engine,
+                check_interval=60  # Alle 60 Sekunden prüfen
+            )
+            logger.info("Ventilation Notifier initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Ventilation Notifier: {e}")
 
         # Registriere Routen
         self._register_routes()
@@ -7404,6 +7416,11 @@ class WebInterface:
             self.db_maintenance.start()
             logger.info("Database Maintenance Job started (runs daily at 5:00)")
 
+        # Starte Ventilation Notifier
+        if self.ventilation_notifier:
+            self.ventilation_notifier.start()
+            logger.info("Ventilation Notifier started (checks every 60s)")
+
         try:
             self.app.run(host=host, port=port, debug=debug)
         finally:
@@ -7443,6 +7460,10 @@ class WebInterface:
             if self.db_maintenance:
                 self.db_maintenance.stop()
                 logger.info("Database Maintenance Job stopped")
+
+            if self.ventilation_notifier:
+                self.ventilation_notifier.stop()
+                logger.info("Ventilation Notifier stopped")
 
 
 def create_app(config_path=None):

@@ -1187,5 +1187,188 @@ def init_ventilation_blueprint(engine, db, config):
             logger.error(f"Error getting effectiveness: {e}")
             return jsonify({'error': str(e)}), 500
 
+    # === Benachrichtigungs-Einstellungen ===
+    
+    def _get_ventilation_notification_config() -> dict:
+        """Lade Lüftungs-Benachrichtigungseinstellungen"""
+        import yaml
+        config_path = Path('config/config.yaml')
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+                return full_config.get('ventilation_notifications', {
+                    'enabled': False,
+                    'co2_high_alert': True,
+                    'co2_threshold': 1000,
+                    'humidity_high_alert': True,
+                    'humidity_threshold': 70,
+                    'ventilation_complete': False,
+                    'frost_warning': True,
+                    'frost_threshold': 2,
+                    'mold_warning': True
+                })
+        return {
+            'enabled': False,
+            'co2_high_alert': True,
+            'co2_threshold': 1000,
+            'humidity_high_alert': True,
+            'humidity_threshold': 70,
+            'ventilation_complete': False,
+            'frost_warning': True,
+            'frost_threshold': 2,
+            'mold_warning': True
+        }
+    
+    def _save_ventilation_notification_config(notification_config: dict):
+        """Speichere Lüftungs-Benachrichtigungseinstellungen"""
+        import yaml
+        config_path = Path('config/config.yaml')
+        
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+        else:
+            full_config = {}
+        
+        full_config['ventilation_notifications'] = notification_config
+        
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w') as f:
+            yaml.dump(full_config, f, default_flow_style=False, allow_unicode=True)
+    
+    def _get_pushover_credentials() -> tuple:
+        """Hole Pushover-Credentials aus Config"""
+        import yaml
+        config_path = Path('config/config.yaml')
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+                # Versuche verschiedene Quellen
+                notifications = full_config.get('notifications', {})
+                pushover = notifications.get('pushover', {})
+                api_key = pushover.get('api_token', '')
+                user_key = pushover.get('user_key', '')
+                
+                # Fallback: absence config
+                if not api_key or not user_key:
+                    absence = full_config.get('absence', {})
+                    if not api_key:
+                        api_key = absence.get('pushover_api_key', '')
+                    if not user_key:
+                        user_key = absence.get('pushover_user_key', '')
+                
+                return api_key, user_key
+        return '', ''
+    
+    def _send_pushover_notification(title: str, message: str, priority: int = 0) -> bool:
+        """Sende Pushover-Benachrichtigung"""
+        import requests
+        
+        api_key, user_key = _get_pushover_credentials()
+        if not api_key or not user_key:
+            logger.warning("Pushover credentials not configured")
+            return False
+        
+        try:
+            response = requests.post(
+                'https://api.pushover.net/1/messages.json',
+                data={
+                    'token': api_key,
+                    'user': user_key,
+                    'title': title,
+                    'message': message,
+                    'html': 1,
+                    'priority': priority
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Ventilation notification sent: {title}")
+                return True
+            else:
+                logger.error(f"Pushover error: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending Pushover notification: {e}")
+            return False
+    
+    @ventilation_bp.route('/ventilation/notification-settings', methods=['GET'])
+    def get_ventilation_notification_settings():
+        """Hole Lüftungs-Benachrichtigungseinstellungen"""
+        try:
+            config = _get_ventilation_notification_config()
+            api_key, user_key = _get_pushover_credentials()
+            
+            return jsonify({
+                'success': True,
+                'settings': config,
+                'has_pushover_credentials': bool(api_key and user_key)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting ventilation notification settings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @ventilation_bp.route('/ventilation/notification-settings', methods=['POST'])
+    def save_ventilation_notification_settings():
+        """Speichere Lüftungs-Benachrichtigungseinstellungen"""
+        try:
+            data = request.get_json()
+            
+            config = {
+                'enabled': data.get('enabled', False),
+                'co2_high_alert': data.get('co2_high_alert', True),
+                'co2_threshold': int(data.get('co2_threshold', 1000)),
+                'humidity_high_alert': data.get('humidity_high_alert', True),
+                'humidity_threshold': int(data.get('humidity_threshold', 70)),
+                'ventilation_complete': data.get('ventilation_complete', False),
+                'frost_warning': data.get('frost_warning', True),
+                'frost_threshold': int(data.get('frost_threshold', 2)),
+                'mold_warning': data.get('mold_warning', True)
+            }
+            
+            _save_ventilation_notification_config(config)
+            
+            return jsonify({'success': True})
+            
+        except Exception as e:
+            logger.error(f"Error saving ventilation notification settings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @ventilation_bp.route('/ventilation/test-notification', methods=['POST'])
+    def test_ventilation_notification():
+        """Sende Test-Benachrichtigung"""
+        try:
+            data = request.get_json() or {}
+            notification_type = data.get('type', 'test')
+            
+            # Verschiedene Test-Typen
+            notifications = {
+                'test': ('🧪 Lüftungs-Test', 'Dies ist eine Test-Benachrichtigung.\n\n✅ Pushover funktioniert!'),
+                'co2_high': ('💨 CO₂ zu hoch!', '<b>Wohnzimmer:</b> CO₂ bei <b>1250 ppm</b>\n\n🪟 Bitte Fenster öffnen für bessere Luftqualität.'),
+                'humidity_high': ('💧 Hohe Luftfeuchtigkeit!', '<b>Badezimmer:</b> Luftfeuchtigkeit bei <b>78%</b>\n\n🪟 Lüften empfohlen um Schimmelbildung zu vermeiden.'),
+                'ventilation_complete': ('✅ Lüftung abgeschlossen', '<b>Schlafzimmer:</b> Gute Luftqualität erreicht!\n\n🌡️ Temp: 20.5°C\n💨 CO₂: 520 ppm\n💧 Feucht: 52%'),
+                'frost_warning': ('❄️ Frostwarnung!', '<b>Außentemperatur: -2°C</b>\n\n🪟 <b>Küche Fenster</b> ist seit 15 Min. offen.\n\n⚠️ Bitte Fenster schließen um Heizkosten zu sparen.'),
+                'mold_warning': ('⚠️ Schimmelgefahr!', '<b>Badezimmer:</b>\n💧 Luftfeuchtigkeit: 82%\n🌡️ Temperatur: 18°C\n\n🔴 Kritische Bedingungen für Schimmelbildung!\n🪟 Dringend lüften empfohlen.')
+            }
+            
+            title, message = notifications.get(notification_type, notifications['test'])
+            
+            success = _send_pushover_notification(title, message)
+            
+            if success:
+                return jsonify({'success': True, 'message': 'Benachrichtigung gesendet'})
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Fehler beim Senden. Bitte Pushover-Credentials prüfen.'
+                }), 500
+                
+        except Exception as e:
+            logger.error(f"Error sending test notification: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     return ventilation_bp
 

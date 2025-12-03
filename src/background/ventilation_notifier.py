@@ -1,0 +1,380 @@
+"""
+Ventilation Notifier - Sendet Benachrichtigungen bei Lüftungs-Ereignissen
+
+Überwacht:
+- CO2 zu hoch (konfigurierbar)
+- Luftfeuchtigkeit zu hoch (konfigurierbar)
+- Lüftung abgeschlossen (optional)
+- Frostwarnung bei offenen Fenstern
+- Schimmelgefahr
+"""
+
+import threading
+import time
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+from pathlib import Path
+import yaml
+import requests
+from loguru import logger
+
+
+class VentilationNotifier:
+    """Sendet Pushover-Benachrichtigungen für Lüftungs-Ereignisse"""
+
+    def __init__(self, engine=None, check_interval: int = 60):
+        """
+        Args:
+            engine: DecisionEngine Instanz
+            check_interval: Prüf-Intervall in Sekunden (default: 60)
+        """
+        self.engine = engine
+        self.check_interval = check_interval
+        self.running = False
+        self.thread = None
+        
+        # Cooldown: Verhindert zu viele Benachrichtigungen
+        self._last_notifications: Dict[str, datetime] = {}
+        self._cooldown_minutes = 30  # Mindestens 30 Min zwischen gleichen Benachrichtigungen
+        
+        # Tracke offene Fenster und deren Öffnungszeit
+        self._open_windows: Dict[str, datetime] = {}  # device_id -> opened_at
+        
+        logger.info(f"Ventilation Notifier initialized ({check_interval}s interval)")
+
+    def _load_config(self) -> dict:
+        """Lade Benachrichtigungs-Konfiguration"""
+        config_path = Path('config/config.yaml')
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+                return full_config.get('ventilation_notifications', {
+                    'enabled': False,
+                    'co2_high_alert': True,
+                    'co2_threshold': 1000,
+                    'humidity_high_alert': True,
+                    'humidity_threshold': 70,
+                    'ventilation_complete': False,
+                    'frost_warning': True,
+                    'frost_threshold': 2,
+                    'mold_warning': True
+                })
+        return {'enabled': False}
+
+    def _get_pushover_credentials(self) -> tuple:
+        """Hole Pushover-Credentials"""
+        config_path = Path('config/config.yaml')
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+                
+                # Versuche verschiedene Quellen
+                notifications = full_config.get('notifications', {})
+                pushover = notifications.get('pushover', {})
+                api_key = pushover.get('api_token', '')
+                user_key = pushover.get('user_key', '')
+                
+                # Fallback: absence config
+                if not api_key or not user_key:
+                    absence = full_config.get('absence', {})
+                    if not api_key:
+                        api_key = absence.get('pushover_api_key', '')
+                    if not user_key:
+                        user_key = absence.get('pushover_user_key', '')
+                
+                return api_key, user_key
+        return '', ''
+
+    def _send_notification(self, title: str, message: str, priority: int = 0, 
+                          notification_key: str = None) -> bool:
+        """Sende Pushover-Benachrichtigung mit Cooldown"""
+        
+        # Prüfe Cooldown
+        if notification_key:
+            last_sent = self._last_notifications.get(notification_key)
+            if last_sent and datetime.now() - last_sent < timedelta(minutes=self._cooldown_minutes):
+                logger.debug(f"Notification skipped (cooldown): {notification_key}")
+                return False
+        
+        api_key, user_key = self._get_pushover_credentials()
+        if not api_key or not user_key:
+            logger.debug("Pushover credentials not configured")
+            return False
+        
+        try:
+            response = requests.post(
+                'https://api.pushover.net/1/messages.json',
+                data={
+                    'token': api_key,
+                    'user': user_key,
+                    'title': title,
+                    'message': message,
+                    'html': 1,
+                    'priority': priority
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Ventilation notification sent: {title}")
+                if notification_key:
+                    self._last_notifications[notification_key] = datetime.now()
+                return True
+            else:
+                logger.error(f"Pushover error: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending notification: {e}")
+            return False
+
+    def start(self):
+        """Startet die kontinuierliche Überwachung"""
+        if self.running:
+            logger.warning("Ventilation Notifier is already running")
+            return
+
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        logger.info(f"Ventilation Notifier started (checks every {self.check_interval}s)")
+
+    def stop(self):
+        """Stoppt die Überwachung"""
+        if not self.running:
+            return
+
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+        logger.info("Ventilation Notifier stopped")
+
+    def _run(self):
+        """Haupt-Loop für kontinuierliche Überwachung"""
+        while self.running:
+            try:
+                config = self._load_config()
+                if config.get('enabled'):
+                    self._check_conditions(config)
+            except Exception as e:
+                logger.error(f"Error in ventilation notification check: {e}")
+            
+            time.sleep(self.check_interval)
+
+    def _check_conditions(self, config: dict):
+        """Prüft alle Benachrichtigungs-Bedingungen"""
+        if not self.engine or not self.engine.platform:
+            return
+        
+        try:
+            # Hole aktuelle Daten
+            room_data = self._get_room_climate_data()
+            outdoor_temp = self._get_outdoor_temp()
+            open_windows = self._get_open_windows()
+            
+            # Update tracked windows
+            current_open = set(w['device_id'] for w in open_windows)
+            
+            # Neue offene Fenster
+            for window in open_windows:
+                if window['device_id'] not in self._open_windows:
+                    self._open_windows[window['device_id']] = datetime.now()
+            
+            # Geschlossene Fenster entfernen
+            closed = set(self._open_windows.keys()) - current_open
+            for device_id in closed:
+                del self._open_windows[device_id]
+            
+            # === CO2 zu hoch ===
+            if config.get('co2_high_alert'):
+                threshold = config.get('co2_threshold', 1000)
+                for room, data in room_data.items():
+                    co2 = data.get('co2')
+                    if co2 and co2 >= threshold:
+                        self._send_notification(
+                            '💨 CO₂ zu hoch!',
+                            f'<b>{room}:</b> CO₂ bei <b>{co2:.0f} ppm</b>\n\n'
+                            f'🪟 Bitte Fenster öffnen für bessere Luftqualität.',
+                            notification_key=f'co2_high_{room}'
+                        )
+            
+            # === Luftfeuchtigkeit zu hoch ===
+            if config.get('humidity_high_alert'):
+                threshold = config.get('humidity_threshold', 70)
+                for room, data in room_data.items():
+                    humidity = data.get('humidity')
+                    if humidity and humidity >= threshold:
+                        self._send_notification(
+                            '💧 Hohe Luftfeuchtigkeit!',
+                            f'<b>{room}:</b> Luftfeuchtigkeit bei <b>{humidity:.0f}%</b>\n\n'
+                            f'🪟 Lüften empfohlen um Schimmelbildung zu vermeiden.',
+                            notification_key=f'humidity_high_{room}'
+                        )
+            
+            # === Frostwarnung ===
+            if config.get('frost_warning') and outdoor_temp is not None:
+                frost_threshold = config.get('frost_threshold', 2)
+                if outdoor_temp < frost_threshold:
+                    for window in open_windows:
+                        device_id = window['device_id']
+                        opened_at = self._open_windows.get(device_id)
+                        if opened_at:
+                            minutes_open = (datetime.now() - opened_at).total_seconds() / 60
+                            if minutes_open >= 10:  # Mind. 10 Min offen
+                                self._send_notification(
+                                    '❄️ Frostwarnung!',
+                                    f'<b>Außentemperatur: {outdoor_temp:.1f}°C</b>\n\n'
+                                    f'🪟 <b>{window["name"]}</b> ist seit {minutes_open:.0f} Min. offen.\n\n'
+                                    f'⚠️ Bitte Fenster schließen um Heizkosten zu sparen.',
+                                    priority=1,
+                                    notification_key=f'frost_{device_id}'
+                                )
+            
+            # === Schimmelgefahr ===
+            if config.get('mold_warning'):
+                for room, data in room_data.items():
+                    humidity = data.get('humidity')
+                    temp = data.get('temp')
+                    if humidity and temp:
+                        # Schimmelgefahr: hohe Feuchtigkeit + niedrige Temperatur
+                        if humidity >= 75 and temp <= 18:
+                            self._send_notification(
+                                '⚠️ Schimmelgefahr!',
+                                f'<b>{room}:</b>\n'
+                                f'💧 Luftfeuchtigkeit: {humidity:.0f}%\n'
+                                f'🌡️ Temperatur: {temp:.1f}°C\n\n'
+                                f'🔴 Kritische Bedingungen für Schimmelbildung!\n'
+                                f'🪟 Dringend lüften empfohlen.',
+                                priority=1,
+                                notification_key=f'mold_{room}'
+                            )
+            
+        except Exception as e:
+            logger.error(f"Error checking ventilation conditions: {e}")
+
+    def _get_room_climate_data(self) -> Dict[str, Dict]:
+        """Holt Klimadaten für alle Räume"""
+        rooms = {}
+        
+        try:
+            if hasattr(self.engine.platform, '_device_cache'):
+                self.engine.platform._refresh_device_cache()
+                devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            else:
+                devices = self.engine.platform.get_states() or []
+            
+            # Hole Zone-Mapping
+            zones = {}
+            try:
+                zone_list = self.engine.platform.get_zones() or []
+                zones = {z.get('id'): z.get('name') for z in zone_list}
+            except:
+                pass
+            
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                
+                zone_id = device.get('zone')
+                room_name = zones.get(zone_id)
+                if not room_name:
+                    continue
+                
+                caps = device.get('capabilitiesObj', {})
+                
+                if room_name not in rooms:
+                    rooms[room_name] = {}
+                
+                # Temperatur
+                if 'measure_temperature' in caps:
+                    val = caps['measure_temperature'].get('value')
+                    if val is not None and -40 < val < 60:
+                        rooms[room_name]['temp'] = val
+                
+                # Luftfeuchtigkeit
+                if 'measure_humidity' in caps:
+                    val = caps['measure_humidity'].get('value')
+                    if val is not None and 0 <= val <= 100:
+                        rooms[room_name]['humidity'] = val
+                
+                # CO2
+                if 'measure_co2' in caps:
+                    val = caps['measure_co2'].get('value')
+                    if val is not None and 200 < val < 10000:
+                        rooms[room_name]['co2'] = val
+                        
+        except Exception as e:
+            logger.error(f"Error getting room climate data: {e}")
+        
+        return rooms
+
+    def _get_outdoor_temp(self) -> Optional[float]:
+        """Holt Außentemperatur"""
+        try:
+            if hasattr(self.engine.platform, '_device_cache'):
+                devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            else:
+                devices = self.engine.platform.get_states() or []
+            
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                name = device.get('name', '').lower()
+                if any(kw in name for kw in ['außen', 'outdoor', 'aussen', 'garten', 'balkon']):
+                    caps = device.get('capabilitiesObj', {})
+                    if 'measure_temperature' in caps:
+                        return caps['measure_temperature'].get('value')
+        except:
+            pass
+        return None
+
+    def _get_open_windows(self) -> list:
+        """Holt alle offenen Fenster"""
+        windows = []
+        
+        try:
+            if hasattr(self.engine.platform, '_device_cache'):
+                devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            else:
+                devices = self.engine.platform.get_states() or []
+            
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                
+                name = device.get('name', '').lower()
+                
+                # Nur Fenster, keine Türen
+                is_door = any(kw in name for kw in ['door', 'tür', 'tur', 'türe'])
+                is_window = any(kw in name for kw in ['window', 'fenster'])
+                
+                if is_door or not is_window:
+                    continue
+                
+                caps = device.get('capabilitiesObj', {})
+                if 'alarm_contact' in caps:
+                    is_open = caps['alarm_contact'].get('value', False)
+                    if is_open:
+                        windows.append({
+                            'device_id': device.get('id'),
+                            'name': device.get('name', 'Unbekannt')
+                        })
+                        
+        except Exception as e:
+            logger.error(f"Error getting open windows: {e}")
+        
+        return windows
+
+    def get_status(self) -> dict:
+        """Gibt den aktuellen Status zurück"""
+        config = self._load_config()
+        return {
+            'running': self.running,
+            'enabled': config.get('enabled', False),
+            'check_interval': self.check_interval,
+            'open_windows_tracked': len(self._open_windows),
+            'notifications_sent': len(self._last_notifications)
+        }

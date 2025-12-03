@@ -119,6 +119,109 @@
 
 <!-- Einstellungen Tab -->
 <div id="settings-tab" class="tab-content">
+    <!-- Benachrichtigungen -->
+    <div class="settings-section">
+        <h3>🔔 Benachrichtigungen</h3>
+        <p class="info-text">Erhalte Pushover-Benachrichtigungen bei wichtigen Lüftungsereignissen.</p>
+        
+        <div id="notification-settings-container">
+            <div class="notification-master-toggle">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="notifications-enabled" onchange="toggleNotifications()">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label-text">Benachrichtigungen aktivieren</span>
+                <span id="pushover-status" class="pushover-status"></span>
+            </div>
+            
+            <div id="notification-options" class="notification-options" style="display: none;">
+                <!-- CO2 Warnung -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="co2-high-alert" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">💨 CO₂ zu hoch</span>
+                    </div>
+                    <p class="option-description">Warnung wenn CO₂-Werte kritisch werden</p>
+                    <div class="option-threshold">
+                        <label>Schwellwert:</label>
+                        <input type="number" id="co2-threshold" value="1000" min="600" max="2000" step="50"> ppm
+                    </div>
+                </div>
+                
+                <!-- Luftfeuchtigkeit Warnung -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="humidity-high-alert" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">💧 Hohe Luftfeuchtigkeit</span>
+                    </div>
+                    <p class="option-description">Warnung bei hoher Luftfeuchtigkeit (Schimmelprävention)</p>
+                    <div class="option-threshold">
+                        <label>Schwellwert:</label>
+                        <input type="number" id="humidity-threshold" value="70" min="50" max="90" step="5"> %
+                    </div>
+                </div>
+                
+                <!-- Lüftung abgeschlossen -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="ventilation-complete">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">✅ Lüftung abgeschlossen</span>
+                    </div>
+                    <p class="option-description">Benachrichtigung wenn gute Luftqualität erreicht wurde</p>
+                </div>
+                
+                <!-- Frost-Warnung -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="frost-warning" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">❄️ Frostwarnung</span>
+                    </div>
+                    <p class="option-description">Warnung wenn Fenster bei Frost zu lange offen sind</p>
+                    <div class="option-threshold">
+                        <label>Unter:</label>
+                        <input type="number" id="frost-threshold" value="2" min="-10" max="10" step="1"> °C
+                    </div>
+                </div>
+                
+                <!-- Schimmel-Warnung -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="mold-warning" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">⚠️ Schimmelgefahr</span>
+                    </div>
+                    <p class="option-description">Warnung bei kritischen Bedingungen für Schimmelbildung</p>
+                </div>
+                
+                <div class="notification-actions">
+                    <button class="btn-save" onclick="saveNotificationSettings()">💾 Speichern</button>
+                    <div class="test-notifications">
+                        <span>Test senden:</span>
+                        <button class="btn-test" onclick="testNotification('test')">🧪 Test</button>
+                        <button class="btn-test" onclick="testNotification('co2_high')">💨 CO₂</button>
+                        <button class="btn-test" onclick="testNotification('frost_warning')">❄️ Frost</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <hr class="section-divider">
+    
     <div class="settings-section">
         <h3>🏠 Zentrale Raumverwaltung</h3>
         <p class="info-text">Räume ausblenden, Sensoren zuordnen und Geräte konfigurieren - alles zentral an einem Ort.</p>
@@ -576,6 +679,182 @@
     color: #666;
     margin-bottom: 1.5rem;
     font-size: 0.95em;
+}
+
+.section-divider {
+    border: none;
+    border-top: 1px solid #e0e0e0;
+    margin: 2rem 0;
+}
+
+/* Benachrichtigungs-Einstellungen */
+.notification-master-toggle {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+.toggle-label-text {
+    font-weight: 600;
+    color: #333;
+}
+.pushover-status {
+    margin-left: auto;
+    font-size: 0.85em;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+}
+.pushover-status.configured {
+    background: #d4edda;
+    color: #155724;
+}
+.pushover-status.not-configured {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+.toggle-switch.small {
+    width: 40px;
+    height: 22px;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 26px;
+}
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+.toggle-switch.small .toggle-slider:before {
+    height: 16px;
+    width: 16px;
+}
+input:checked + .toggle-slider {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+.toggle-switch.small input:checked + .toggle-slider:before {
+    transform: translateX(18px);
+}
+
+.notification-options {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+.notification-option {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    border: 1px solid #e9ecef;
+}
+.option-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.option-title {
+    font-weight: 600;
+    color: #333;
+}
+.option-description {
+    color: #666;
+    font-size: 0.9em;
+    margin: 0.5rem 0 0 0;
+    padding-left: 48px;
+}
+.option-threshold {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-left: 48px;
+}
+.option-threshold label {
+    color: #555;
+    font-size: 0.9em;
+}
+.option-threshold input {
+    width: 80px;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.95em;
+}
+
+.notification-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e9ecef;
+}
+.btn-save {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+.test-notifications {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.test-notifications span {
+    color: #666;
+    font-size: 0.9em;
+}
+.btn-test {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: all 0.2s;
+}
+.btn-test:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
 }
 
 .outdoor-sensor-grid {
@@ -1675,6 +1954,108 @@ function getRoomIcon(name) {
 // Einstellungen laden (nur noch Info über versteckte Räume)
 async function loadSettings() {
     displayHiddenRooms();
+    await loadNotificationSettings();
+}
+
+// ========== Benachrichtigungs-Einstellungen ==========
+
+async function loadNotificationSettings() {
+    try {
+        const response = await fetch('/api/ventilation/notification-settings');
+        const data = await response.json();
+        
+        if (data.success) {
+            const settings = data.settings;
+            
+            // Master Toggle
+            document.getElementById('notifications-enabled').checked = settings.enabled;
+            
+            // Zeige/Verstecke Optionen
+            document.getElementById('notification-options').style.display = 
+                settings.enabled ? 'block' : 'none';
+            
+            // Einzelne Optionen
+            document.getElementById('co2-high-alert').checked = settings.co2_high_alert;
+            document.getElementById('co2-threshold').value = settings.co2_threshold || 1000;
+            document.getElementById('humidity-high-alert').checked = settings.humidity_high_alert;
+            document.getElementById('humidity-threshold').value = settings.humidity_threshold || 70;
+            document.getElementById('ventilation-complete').checked = settings.ventilation_complete;
+            document.getElementById('frost-warning').checked = settings.frost_warning;
+            document.getElementById('frost-threshold').value = settings.frost_threshold || 2;
+            document.getElementById('mold-warning').checked = settings.mold_warning;
+            
+            // Pushover Status
+            const statusEl = document.getElementById('pushover-status');
+            if (data.has_pushover_credentials) {
+                statusEl.textContent = '✓ Pushover konfiguriert';
+                statusEl.className = 'pushover-status configured';
+            } else {
+                statusEl.textContent = '⚠️ Pushover nicht konfiguriert';
+                statusEl.className = 'pushover-status not-configured';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading notification settings:', error);
+    }
+}
+
+function toggleNotifications() {
+    const enabled = document.getElementById('notifications-enabled').checked;
+    document.getElementById('notification-options').style.display = enabled ? 'block' : 'none';
+}
+
+async function saveNotificationSettings() {
+    const settings = {
+        enabled: document.getElementById('notifications-enabled').checked,
+        co2_high_alert: document.getElementById('co2-high-alert').checked,
+        co2_threshold: parseInt(document.getElementById('co2-threshold').value),
+        humidity_high_alert: document.getElementById('humidity-high-alert').checked,
+        humidity_threshold: parseInt(document.getElementById('humidity-threshold').value),
+        ventilation_complete: document.getElementById('ventilation-complete').checked,
+        frost_warning: document.getElementById('frost-warning').checked,
+        frost_threshold: parseInt(document.getElementById('frost-threshold').value),
+        mold_warning: document.getElementById('mold-warning').checked
+    };
+    
+    try {
+        const response = await fetch('/api/ventilation/notification-settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('✅ Einstellungen gespeichert', 'success');
+        } else {
+            showToast('❌ Fehler beim Speichern', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        showToast('❌ Fehler beim Speichern', 'error');
+    }
+}
+
+async function testNotification(type) {
+    try {
+        const response = await fetch('/api/ventilation/test-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: type })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('📤 Test-Benachrichtigung gesendet', 'success');
+        } else {
+            showToast('❌ ' + (data.error || 'Fehler beim Senden'), 'error');
+        }
+    } catch (error) {
+        console.error('Error sending test notification:', error);
+        showToast('❌ Fehler beim Senden', 'error');
+    }
 }
 
 // Toast-Nachricht
