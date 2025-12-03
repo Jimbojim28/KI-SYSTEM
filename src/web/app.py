@@ -865,6 +865,17 @@ class WebInterface:
                 conn = self.db._get_connection()
                 cursor = conn.cursor()
                 
+                # Versteckte Räume laden
+                hidden_rooms = []
+                try:
+                    rooms_file = Path(__file__).parent.parent.parent / 'data' / 'rooms.json'
+                    if rooms_file.exists():
+                        with open(rooms_file, 'r') as f:
+                            rooms_data = json.load(f)
+                            hidden_rooms = rooms_data.get('hidden', [])
+                except Exception as e:
+                    logger.debug(f"Could not load hidden rooms: {e}")
+                
                 # Zone-UUID zu Raumname Mapping holen
                 zone_mapping = {}
                 try:
@@ -894,6 +905,10 @@ class WebInterface:
                     # Übersetze Zone-UUID in Raumname
                     room_name = zone_mapping.get(room_id, room_id) if room_id else 'Unbekannt'
                     
+                    # Versteckte Räume überspringen
+                    if room_name in hidden_rooms:
+                        continue
+                    
                     stats.append({
                         'device_name': row[0],
                         'room_name': room_name,
@@ -922,7 +937,25 @@ class WebInterface:
                 conn = self.db._get_connection()
                 cursor = conn.cursor()
                 
-                # Zone-UUID zu Raumname Mapping holen
+                # Versteckte Räume und alle Räume laden
+                hidden_rooms = []
+                all_rooms = {}  # room_id -> room_name
+                try:
+                    rooms_file = Path(__file__).parent.parent.parent / 'data' / 'rooms.json'
+                    if rooms_file.exists():
+                        with open(rooms_file, 'r') as f:
+                            rooms_data = json.load(f)
+                            hidden_rooms = rooms_data.get('hidden', [])
+                            # Alle Räume aus rooms.json laden
+                            for room in rooms_data.get('rooms', []):
+                                room_name = room.get('name', '')
+                                room_id = room.get('id', '')
+                                if room_name and room_name not in hidden_rooms:
+                                    all_rooms[room_id] = room_name
+                except Exception as e:
+                    logger.debug(f"Could not load rooms: {e}")
+                
+                # Zone-UUID zu Raumname Mapping holen (von Homey)
                 zone_mapping = {}
                 try:
                     if self.engine and hasattr(self.engine, 'platform') and self.engine.platform:
@@ -965,18 +998,44 @@ class WebInterface:
                     ORDER BY total_duration_minutes DESC
                 """, (f'-{days} days',))
                 
-                stats = []
+                # Räume mit Daten sammeln
+                rooms_with_data = {}
                 for row in cursor.fetchall():
                     room_id = row[0]
                     # Übersetze Zone-UUID in Raumname
                     room_name = zone_mapping.get(room_id, room_id)
                     
-                    stats.append({
+                    # Versteckte Räume überspringen
+                    if room_name in hidden_rooms:
+                        continue
+                    
+                    rooms_with_data[room_name] = {
                         'room_name': room_name,
                         'light_count': row[1],
                         'on_count': row[2],
                         'total_duration_minutes': round(row[3] or 0, 1)
-                    })
+                    }
+                
+                # Alle Räume hinzufügen (auch ohne Daten)
+                stats = []
+                seen_rooms = set()
+                
+                # Erst Räume mit Daten (sortiert nach Nutzung)
+                for room_name, data in sorted(rooms_with_data.items(), 
+                                               key=lambda x: x[1]['total_duration_minutes'], 
+                                               reverse=True):
+                    stats.append(data)
+                    seen_rooms.add(room_name)
+                
+                # Dann Räume ohne Daten hinzufügen
+                for room_id, room_name in all_rooms.items():
+                    if room_name not in seen_rooms and room_name not in hidden_rooms:
+                        stats.append({
+                            'room_name': room_name,
+                            'light_count': 0,
+                            'on_count': 0,
+                            'total_duration_minutes': 0
+                        })
                 
                 return jsonify({
                     'success': True,

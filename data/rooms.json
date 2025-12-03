@@ -170,7 +170,9 @@
     "cdd99da9-020c-4bb3-ba38-b854ff80bd3c": "device",
     "deff7454-7556-4b0f-9105-f8028e7bd4e6": "device",
     "6682f0c3-a811-4e2d-a03f-5a81a9c37ac0": "device",
-    "e8f482c5-1112-40cd-b3cd-670cd9735a4b": "device"
+    "e8f482c5-1112-40cd-b3cd-670cd9735a4b": "device",
+    "7c60d340-2b53-420e-b26a-f3015427ae76": "light",
+    "e862c342-7a2b-4610-bde2-33b4532dfeed": "light"
   },
   "motion_sensors": {
     "Badezimmer": "77d4986b-8a6a-4ff6-a064-3ac518c288b4",
