@@ -55,6 +55,9 @@ data/webapp.pid
 data/rooms.json
 data/ml_training_status.json
 data/sensor_config.json
+data/ha_entities.json
+data/presence_history.json
+data/automations.json
 models/*.pkl
 models/*.h5
 models/*.joblib

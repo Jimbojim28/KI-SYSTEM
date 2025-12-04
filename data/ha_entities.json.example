@@ -1,0 +1,12 @@
+{
+  "entities": [
+    {
+      "id": "example_entity_id",
+      "entity_id": "device_tracker.example",
+      "name": "Beispiel Tracker",
+      "type": "device_tracker",
+      "enabled": true,
+      "added_at": "2025-01-01T00:00:00"
+    }
+  ]
+}

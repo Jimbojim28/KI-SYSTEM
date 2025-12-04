@@ -102,6 +102,17 @@ echo ""
 
 # Pull Updates
 echo "⬇️  Installiere Updates..."
+
+# WICHTIG: Sichere Benutzerdaten VOR dem Reset
+echo "  📂 Sichere Benutzerdaten..."
+USER_DATA_BACKUP="/tmp/ki_system_userdata_$$"
+mkdir -p "$USER_DATA_BACKUP"
+[ -f "data/ha_entities.json" ] && cp data/ha_entities.json "$USER_DATA_BACKUP/" 2>/dev/null
+[ -f "data/presence_history.json" ] && cp data/presence_history.json "$USER_DATA_BACKUP/" 2>/dev/null
+[ -f "data/automations.json" ] && cp data/automations.json "$USER_DATA_BACKUP/" 2>/dev/null
+[ -f "data/rooms.json" ] && cp data/rooms.json "$USER_DATA_BACKUP/" 2>/dev/null
+[ -f "data/sensor_config.json" ] && cp data/sensor_config.json "$USER_DATA_BACKUP/" 2>/dev/null
+
 # Reset lokale Änderungen vor dem Pull (außer data/, models/, .env)
 git reset --hard HEAD 2>&1 || echo "⚠️ git reset fehlgeschlagen"
 git clean -fd --exclude=data --exclude=models --exclude=.env --exclude=logs --exclude=.backup --exclude=config/config.yaml 2>&1 || echo "⚠️ git clean fehlgeschlagen"
@@ -113,6 +124,15 @@ if ! git pull origin main 2>&1; then
     git fetch origin main
     git reset --hard origin/main
 fi
+
+# Stelle Benutzerdaten wieder her
+echo "  📂 Stelle Benutzerdaten wieder her..."
+[ -f "$USER_DATA_BACKUP/ha_entities.json" ] && cp "$USER_DATA_BACKUP/ha_entities.json" data/ 2>/dev/null && echo "    ✓ ha_entities.json wiederhergestellt"
+[ -f "$USER_DATA_BACKUP/presence_history.json" ] && cp "$USER_DATA_BACKUP/presence_history.json" data/ 2>/dev/null && echo "    ✓ presence_history.json wiederhergestellt"
+[ -f "$USER_DATA_BACKUP/automations.json" ] && cp "$USER_DATA_BACKUP/automations.json" data/ 2>/dev/null && echo "    ✓ automations.json wiederhergestellt"
+[ -f "$USER_DATA_BACKUP/rooms.json" ] && cp "$USER_DATA_BACKUP/rooms.json" data/ 2>/dev/null && echo "    ✓ rooms.json wiederhergestellt"
+[ -f "$USER_DATA_BACKUP/sensor_config.json" ] && cp "$USER_DATA_BACKUP/sensor_config.json" data/ 2>/dev/null && echo "    ✓ sensor_config.json wiederhergestellt"
+rm -rf "$USER_DATA_BACKUP"
 
 # Aktiviere Virtual Environment falls vorhanden
 if [ -d "venv" ]; then
