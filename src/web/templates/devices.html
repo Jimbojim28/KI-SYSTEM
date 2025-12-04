@@ -4,137 +4,92 @@
 
 {% block content %}
 <div class="devices-page">
-    <h2>Geräte-Übersicht</h2>
+    <h2>🏠 Geräte-Übersicht</h2>
 
-    <!-- Platform Tabs -->
+    <!-- Platform Filter -->
     <div class="platform-tabs">
-        <button class="platform-tab active" data-platform="homey">🏠 Homey</button>
+        <button class="platform-tab active" data-platform="all">📱 Alle Geräte</button>
+        <button class="platform-tab" data-platform="homey">🏠 Homey</button>
         <button class="platform-tab" data-platform="homeassistant">🏡 Home Assistant</button>
     </div>
 
-    <!-- Homey Tab Content -->
-    <div id="homey-content" class="platform-content active">
-        <!-- Statistiken -->
-        <div class="card">
-            <h3>📊 Geräte-Statistiken</h3>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value" id="total-devices">0</div>
-                    <div class="stat-label">Geräte gesamt</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="lights-count">0</div>
-                    <div class="stat-label">💡 Lichter</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="switches-count">0</div>
-                    <div class="stat-label">🔌 Schalter</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="climate-count">0</div>
-                    <div class="stat-label">🌡️ Klima</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="sensors-count">0</div>
-                    <div class="stat-label">📊 Sensoren</div>
-                </div>
+    <!-- Statistiken -->
+    <div class="card stats-overview">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-devices">0</div>
+                <div class="stat-label">Geräte gesamt</div>
             </div>
-        </div>
-
-        <!-- Suche und Filter -->
-        <div class="card">
-            <h3>🔍 Suche & Filter</h3>
-            <div class="search-filter-section">
-                <input type="text" id="device-search" placeholder="Gerät suchen (Name, Raum, Typ)..." class="search-input">
-
-                <div class="filter-controls">
-                    <label>Nach Typ filtern:</label>
-                    <div class="filter-buttons">
-                        <button class="filter-btn active" data-filter="all">Alle</button>
-                        <button class="filter-btn" data-filter="light">💡 Licht</button>
-                        <button class="filter-btn" data-filter="climate">🌡️ Klima</button>
-                        <button class="filter-btn" data-filter="switch">🔌 Schalter</button>
-                        <button class="filter-btn" data-filter="sensor">📊 Sensoren</button>
-                    </div>
-                </div>
-
-                <div class="view-toggle">
-                    <label>Ansicht:</label>
-                    <button class="view-btn active" data-view="grid">
-                        <span>🔲 Kacheln</span>
-                    </button>
-                    <button class="view-btn" data-view="list">
-                        <span>📋 Liste</span>
-                    </button>
-                    <button class="view-btn" data-view="rooms">
-                        <span>🏠 Nach Räumen</span>
-                    </button>
-                </div>
+            <div class="stat-card stat-online">
+                <div class="stat-value" id="devices-on">0</div>
+                <div class="stat-label">🟢 Eingeschaltet</div>
             </div>
-        </div>
-
-        <!-- Geräte-Anzeige -->
-        <div class="card">
-            <div class="card-header-with-actions">
-                <h3 id="devices-section-title">Alle Geräte</h3>
-                <button class="btn btn-small btn-secondary" id="refresh-devices">🔄 Aktualisieren</button>
+            <div class="stat-card">
+                <div class="stat-value" id="lights-count">0</div>
+                <div class="stat-label">💡 Lichter</div>
             </div>
-
-            <div id="devices-container" class="devices-display">
-                <!-- Geräte werden hier dynamisch geladen -->
-                <div class="loading">Lade Geräte...</div>
+            <div class="stat-card">
+                <div class="stat-value" id="switches-count">0</div>
+                <div class="stat-label">🔌 Schalter</div>
             </div>
-        </div>
-
-        <!-- Schnellaktionen -->
-        <div class="card">
-            <h3>⚡ Schnellaktionen</h3>
-            <div class="quick-actions">
-                <button class="btn btn-primary" id="all-lights-on">💡 Alle Lichter Ein</button>
-                <button class="btn btn-secondary" id="all-lights-off">Alle Lichter Aus</button>
-                <button class="btn btn-secondary" id="all-switches-off">🔌 Alle Schalter Aus</button>
+            <div class="stat-card">
+                <div class="stat-value" id="climate-count">0</div>
+                <div class="stat-label">🌡️ Klima</div>
             </div>
-            <div id="quick-action-result" class="action-result"></div>
+            <div class="stat-card">
+                <div class="stat-value" id="sensors-count">0</div>
+                <div class="stat-label">📊 Sensoren</div>
+            </div>
         </div>
     </div>
 
-    <!-- Home Assistant Tab Content -->
-    <div id="homeassistant-content" class="platform-content">
-        <div class="card">
-            <h3>🔍 Entity Abfrage</h3>
-            <p class="card-description">
-                Gib eine Home Assistant Entity-ID ein, um deren aktuellen Status abzurufen.
-            </p>
+    <!-- Suche und Filter -->
+    <div class="card">
+        <div class="search-filter-section">
+            <input type="text" id="device-search" placeholder="🔍 Gerät suchen (Name, Raum, Typ)..." class="search-input">
 
-            <div class="form-group">
-                <label for="ha-entity-input">Entity-ID:</label>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <input 
-                        type="text" 
-                        id="ha-entity-input" 
-                        class="form-control" 
-                        placeholder="z.B. light.living_room, sensor.temperature"
-                        style="flex: 1;">
-                    <button class="btn btn-primary" id="query-ha-entity">Abfragen</button>
-                </div>
-                <small class="help-text">
-                    Beispiele: light.wohnzimmer, climate.heizung_bad, sensor.temperatur_kueche
-                </small>
-            </div>
-
-            <div id="ha-entity-result" style="margin-top: 20px; display: none;">
-                <h4>Entity Status:</h4>
-                <div class="entity-details">
-                    <!-- Details werden hier angezeigt -->
+            <div class="filter-controls">
+                <div class="filter-buttons">
+                    <button class="filter-btn active" data-filter="all">Alle</button>
+                    <button class="filter-btn" data-filter="light">💡 Licht</button>
+                    <button class="filter-btn" data-filter="climate">🌡️ Klima</button>
+                    <button class="filter-btn" data-filter="switch">🔌 Schalter</button>
+                    <button class="filter-btn" data-filter="sensor">📊 Sensoren</button>
+                    <button class="filter-btn" data-filter="other">📱 Andere</button>
                 </div>
             </div>
+
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="grid" title="Kacheln">🔲</button>
+                <button class="view-btn" data-view="list" title="Liste">📋</button>
+                <button class="view-btn" data-view="rooms" title="Nach Räumen">🏠</button>
+            </div>
+            
+            <button class="btn btn-small btn-secondary" id="refresh-devices">🔄</button>
+        </div>
+    </div>
+
+    <!-- Schnellaktionen -->
+    <div class="card quick-actions-card">
+        <div class="quick-actions">
+            <button class="btn btn-primary" id="all-lights-on">💡 Alle Lichter Ein</button>
+            <button class="btn btn-secondary" id="all-lights-off">💡 Alle Lichter Aus</button>
+            <button class="btn btn-secondary" id="all-switches-off">🔌 Alle Schalter Aus</button>
+        </div>
+        <div id="quick-action-result" class="action-result"></div>
+    </div>
+
+    <!-- Geräte-Anzeige -->
+    <div class="card devices-card">
+        <div class="card-header-with-actions">
+            <h3 id="devices-section-title">Alle Geräte</h3>
+            <span class="last-update" id="last-update-time"></span>
         </div>
 
-        <!-- Zuletzt abgefragte Entities -->
-        <div class="card">
-            <h3>📋 Zuletzt abgefragte Entities</h3>
-            <div id="recent-entities" class="recent-entities-list">
-                <p style="color: #6b7280; font-style: italic;">Noch keine Entities abgefragt</p>
+        <div id="devices-container" class="devices-display">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Lade Geräte...</p>
             </div>
         </div>
     </div>
@@ -145,20 +100,33 @@
     <div class="modal-content modal-large">
         <span class="close">&times;</span>
         <div class="device-modal-header">
-            <h3 id="modal-device-name">Gerät</h3>
-            <div class="device-modal-meta">
-                <span id="modal-device-type" class="badge"></span>
-                <span id="modal-device-zone" class="device-zone"></span>
+            <div class="device-modal-icon" id="modal-device-icon">💡</div>
+            <div class="device-modal-title">
+                <h3 id="modal-device-name">Gerät</h3>
+                <div class="device-modal-meta">
+                    <span id="modal-device-type" class="badge"></span>
+                    <span id="modal-device-zone" class="device-zone"></span>
+                    <span id="modal-device-platform" class="badge badge-platform"></span>
+                </div>
             </div>
+            <div class="device-modal-status" id="modal-device-status-badge"></div>
         </div>
+        
         <div class="device-modal-body">
-            <div class="device-current-state">
-                <h4>Aktueller Status</h4>
-                <div id="modal-device-state"></div>
+            <!-- Status-Karten -->
+            <div class="device-status-cards" id="modal-status-cards">
             </div>
+            
+            <!-- Steuerungs-Bereich -->
             <div class="device-controls-section">
-                <h4>Steuerung</h4>
+                <h4>⚡ Steuerung</h4>
                 <div id="modal-device-controls"></div>
+            </div>
+            
+            <!-- Capabilities Info -->
+            <div class="device-capabilities-section">
+                <h4>📋 Fähigkeiten</h4>
+                <div id="modal-device-capabilities"></div>
             </div>
         </div>
     </div>
@@ -167,12 +135,46 @@
 <script src="{{ url_for('static', filename='js/devices.js') }}"></script>
 
 <style>
+/* Devices Page Styles */
+.devices-page {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Stats Overview */
+.stats-overview {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.stats-overview .stat-card {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 15px;
+    text-align: center;
+}
+
+.stats-overview .stat-value {
+    font-size: 2em;
+    font-weight: 700;
+}
+
+.stats-overview .stat-label {
+    font-size: 0.85em;
+    opacity: 0.9;
+}
+
+.stats-overview .stat-online {
+    background: rgba(16, 185, 129, 0.3);
+}
+
 /* Platform Tabs */
 .platform-tabs {
     display: flex;
     gap: 5px;
-    margin-bottom: 25px;
+    margin-bottom: 20px;
     border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 0;
 }
 
 .platform-tab {
@@ -181,7 +183,7 @@
     border: none;
     border-bottom: 3px solid transparent;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     color: #6b7280;
     transition: all 0.2s;
@@ -198,99 +200,583 @@
     border-bottom-color: #667eea;
 }
 
-.platform-content {
+/* Search & Filter */
+.search-filter-section {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+}
+
+.search-input {
+    flex: 1;
+    min-width: 250px;
+    padding: 10px 15px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.search-input:focus {
+    border-color: #667eea;
+    outline: none;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 8px 14px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover {
+    background: #f3f4f6;
+}
+
+.filter-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 5px;
+}
+
+.view-btn {
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.view-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* Quick Actions */
+.quick-actions-card {
+    background: #f8fafc;
+}
+
+.quick-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.action-result {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 6px;
     display: none;
 }
 
-.platform-content.active {
+.action-result.success {
+    background: #d1fae5;
+    color: #065f46;
     display: block;
 }
 
-/* Entity Details */
-.entity-details {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 20px;
+.action-result.error {
+    background: #fee2e2;
+    color: #991b1b;
+    display: block;
 }
 
-.entity-detail-row {
+/* Last Update */
+.last-update {
+    font-size: 0.8em;
+    color: #9ca3af;
+}
+
+/* Devices Grid */
+.devices-display {
+    min-height: 200px;
+}
+
+.devices-display.grid-view {
     display: grid;
-    grid-template-columns: 200px 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 15px;
-    padding: 12px 0;
-    border-bottom: 1px solid #e5e7eb;
 }
 
-.entity-detail-row:last-child {
-    border-bottom: none;
+.devices-display.list-view {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.entity-detail-label {
-    font-weight: 600;
-    color: #374151;
-}
-
-.entity-detail-value {
-    color: #6b7280;
-    font-family: 'Courier New', monospace;
-}
-
-.entity-state-badge {
-    display: inline-block;
-    padding: 4px 12px;
+/* Device Card */
+.device-card {
+    background: white;
+    border: 1px solid #e5e7eb;
     border-radius: 12px;
-    font-size: 0.85em;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+.device-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    transform: translateY(-2px);
+}
+
+.device-card.on {
+    border-color: #10b981;
+    background: linear-gradient(to bottom right, #f0fdf4, white);
+}
+
+.device-card.unavailable {
+    opacity: 0.6;
+    background: #f9fafb;
+}
+
+.device-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.device-icon {
+    font-size: 2em;
+}
+
+.device-status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e5e7eb;
+}
+
+.device-status-indicator.on {
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.device-status-indicator.off {
+    background: #9ca3af;
+}
+
+.device-card-body h4 {
+    margin: 0 0 5px 0;
+    font-size: 0.95em;
     font-weight: 600;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.entity-state-badge.on {
-    background: #d1fae5;
-    color: #065f46;
+.device-zone {
+    font-size: 0.8em;
+    color: #6b7280;
+    margin-bottom: 8px;
 }
 
-.entity-state-badge.off {
+/* Device Status Info */
+.device-status-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.75em;
+}
+
+.device-status-item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    background: #f3f4f6;
+    border-radius: 10px;
+}
+
+.device-status-item.highlight {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.device-status-item.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.device-status-item.danger {
     background: #fee2e2;
     color: #991b1b;
 }
 
-.entity-state-badge.unavailable {
-    background: #e5e7eb;
-    color: #6b7280;
+/* Quick Toggle Button */
+.device-quick-toggle {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 12px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 600;
 }
 
-/* Recent Entities */
-.recent-entities-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+.device-quick-toggle.turn-off {
+    background: #fee2e2;
+    color: #991b1b;
 }
 
-.recent-entity-item {
+.device-quick-toggle.turn-on {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.device-quick-toggle:hover {
+    transform: scale(1.05);
+}
+
+/* List View Item */
+.device-list-item {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 12px;
-    background: #f9fafb;
+    gap: 15px;
+    padding: 12px 15px;
+    background: white;
     border: 1px solid #e5e7eb;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.recent-entity-item:hover {
-    background: #f3f4f6;
-    border-color: #d1d5db;
+.device-list-item:hover {
+    border-color: #667eea;
+    background: #f8fafc;
 }
 
-.recent-entity-name {
+.device-list-item.on {
+    border-left: 4px solid #10b981;
+}
+
+.device-list-icon {
+    font-size: 1.5em;
+    width: 40px;
+    text-align: center;
+}
+
+.device-list-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.device-list-info h4 {
+    margin: 0;
+    font-size: 0.95em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.device-list-info .device-zone {
+    margin: 0;
+}
+
+.device-list-status {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 0.85em;
+    flex-wrap: wrap;
+}
+
+.device-list-value {
+    padding: 4px 10px;
+    background: #f3f4f6;
+    border-radius: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.device-list-value.on {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.device-list-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Room View */
+.room-group {
+    margin-bottom: 25px;
+}
+
+.room-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+    margin-bottom: 12px;
+}
+
+.room-group-header h4 {
+    margin: 0;
+    font-size: 1.1em;
+}
+
+.room-device-count {
+    font-size: 0.85em;
+    opacity: 0.9;
+}
+
+.room-devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+/* Modal Styles */
+.device-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 20px;
+}
+
+.device-modal-icon {
+    font-size: 3em;
+}
+
+.device-modal-title {
+    flex: 1;
+}
+
+.device-modal-title h3 {
+    margin: 0 0 8px 0;
+}
+
+.device-modal-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.device-modal-status {
+    padding: 8px 16px;
+    border-radius: 20px;
     font-weight: 600;
+    font-size: 0.9em;
+}
+
+.device-modal-status.on {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.device-modal-status.off {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+/* Status Cards */
+.device-status-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.status-card {
+    padding: 15px;
+    background: #f8fafc;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.status-card-icon {
+    font-size: 1.5em;
+    margin-bottom: 5px;
+}
+
+.status-card-value {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.status-card-label {
+    font-size: 0.75em;
+    color: #6b7280;
+    margin-top: 3px;
+}
+
+/* Controls Section */
+.device-controls-section {
+    margin-bottom: 20px;
+}
+
+.device-controls-section h4 {
+    margin: 0 0 15px 0;
     color: #374151;
 }
 
-.recent-entity-time {
-    font-size: 0.85em;
-    color: #9ca3af;
+.modal-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.control-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.control-group {
+    padding: 15px;
+    background: #f8fafc;
+    border-radius: 10px;
+    flex: 1;
+    min-width: 200px;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
+.slider {
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    background: #e5e7eb;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+}
+
+/* Capabilities Section */
+.device-capabilities-section h4 {
+    margin: 0 0 10px 0;
+    color: #374151;
+}
+
+.capabilities-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.capability-tag {
+    padding: 5px 12px;
+    background: #e0e7ff;
+    color: #3730a3;
+    border-radius: 15px;
+    font-size: 0.8em;
+}
+
+/* Badge */
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.75em;
+    font-weight: 600;
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.badge-platform {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+/* Loading */
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #6b7280;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 10px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .search-filter-section {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .search-input {
+        width: 100%;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .device-modal-header {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .filter-buttons {
+        justify-content: center;
+    }
 }
 </style>
 

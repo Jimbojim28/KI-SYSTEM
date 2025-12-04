@@ -1,6 +1,6 @@
 {
   "lighting_model": {
-    "current_version": "20251202_210103",
+    "current_version": "20251204_020425",
     "versions": [
       {
         "version": "20251128_082436",
@@ -98,6 +98,41 @@
           "version": "1.0.0"
         },
         "notes": "Accuracy: 0.937, Samples: 3467",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20251204_020425",
+        "timestamp": "2025-12-04T02:04:25.161295",
+        "metrics": {
+          "accuracy": 0.9274092615769712,
+          "cv_accuracy_mean": 0.49206244647915154,
+          "cv_accuracy_std": 0.14913968845632408,
+          "samples_train": 3192,
+          "samples_test": 799,
+          "feature_importance": {
+            "hour_of_day": 0.06387779464748257,
+            "day_of_week": 0.07666888280327008,
+            "is_weekend": 0.0069165935845571435,
+            "is_evening": 0.013110038538668921,
+            "is_night": 0.004933068547197851,
+            "brightness": 0.23808935120575334,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.006691716905198408,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.29468206034917416,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2460193711600803,
+            "month": 0.02404602695929558,
+            "is_winter": 0.024965095299321817,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.927, Samples: 3991",
         "model_path": "lighting_model.pkl"
       }
     ]

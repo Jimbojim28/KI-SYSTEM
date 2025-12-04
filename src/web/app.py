@@ -446,66 +446,150 @@ class WebInterface:
 
         @self.app.route('/api/devices')
         def api_devices():
-            """API: Liste aller Geräte"""
+            """API: Liste aller Geräte mit vollständigem Live-Status"""
             if not self.engine:
                 return jsonify({'error': 'Engine not initialized'}), 500
 
             try:
-                # Hole alle Geräte vom Platform Collector
-                platform = self.engine.platform
-
                 devices = []
+                platform = self.engine.platform
+                
+                # Hole Zone-Namen für Raum-Zuordnung
+                zone_names = {}
+                if hasattr(platform, 'get_zones'):
+                    zones = platform.get_zones() or {}
+                    zone_names = {z.get('id'): z.get('name', 'Unbekannt') for z in zones.values()} if isinstance(zones, dict) else {}
+                
+                # Hole ALLE Geräte direkt vom Cache für vollständige Daten
+                if hasattr(platform, '_device_cache'):
+                    platform._refresh_device_cache()
+                    all_devices = platform._device_cache
+                    
+                    if isinstance(all_devices, dict):
+                        all_devices = list(all_devices.values())
+                    
+                    for device in all_devices:
+                        device_class = device.get('class', '').lower()
+                        caps = device.get('capabilitiesObj', {})
+                        capabilities_list = device.get('capabilities', [])
+                        zone_id = device.get('zone', '')
+                        
+                        # Bestimme Domain basierend auf class und capabilities
+                        domain = 'other'
+                        if device_class == 'light' or ('onoff' in capabilities_list and 'dim' in capabilities_list):
+                            domain = 'light'
+                        elif device_class in ['thermostat', 'heater']:
+                            domain = 'climate'
+                        elif device_class in ['socket', 'switch']:
+                            domain = 'switch'
+                        elif device_class == 'sensor' or any(c.startswith('measure_') or c.startswith('alarm_') for c in capabilities_list):
+                            domain = 'sensor'
+                        elif 'onoff' in capabilities_list:
+                            domain = 'switch'
+                        
+                        # Basis-Gerätedaten
+                        device_data = {
+                            'id': device.get('id'),
+                            'entity_id': device.get('id'),
+                            'name': device.get('name', 'Unbekannt'),
+                            'domain': domain,
+                            'class': device_class,
+                            'zone': zone_id,
+                            'zoneName': zone_names.get(zone_id, 'Ohne Raum'),
+                            'available': device.get('available', True),
+                            'capabilities': capabilities_list,
+                            'platform': 'homey'
+                        }
+                        
+                        # Status auslesen
+                        if 'onoff' in caps:
+                            device_data['state'] = 'on' if caps['onoff'].get('value') else 'off'
+                        else:
+                            device_data['state'] = 'unknown'
+                        
+                        # Attribute sammeln
+                        attributes = {}
+                        
+                        # Helligkeit (für Lichter)
+                        if 'dim' in caps:
+                            dim_val = caps['dim'].get('value', 0)
+                            attributes['brightness'] = round(dim_val * 255) if dim_val else 0
+                            attributes['brightness_pct'] = round(dim_val * 100) if dim_val else 0
+                        
+                        # Farbe (für RGB-Lichter)
+                        if 'light_hue' in caps:
+                            attributes['hue'] = caps['light_hue'].get('value', 0)
+                        if 'light_saturation' in caps:
+                            attributes['saturation'] = caps['light_saturation'].get('value', 0)
+                        if 'light_temperature' in caps:
+                            attributes['color_temp'] = caps['light_temperature'].get('value', 0)
+                        
+                        # Temperatur (für Thermostate)
+                        if 'measure_temperature' in caps:
+                            attributes['current_temperature'] = caps['measure_temperature'].get('value')
+                        if 'target_temperature' in caps:
+                            attributes['target_temperature'] = caps['target_temperature'].get('value')
+                        if 'thermostat_mode' in caps:
+                            attributes['hvac_mode'] = caps['thermostat_mode'].get('value')
+                        
+                        # Energie (für Steckdosen)
+                        if 'measure_power' in caps:
+                            attributes['power'] = caps['measure_power'].get('value')
+                            attributes['power_unit'] = 'W'
+                        if 'meter_power' in caps:
+                            attributes['energy'] = caps['meter_power'].get('value')
+                            attributes['energy_unit'] = 'kWh'
+                        
+                        # Sensoren
+                        if 'measure_humidity' in caps:
+                            attributes['humidity'] = caps['measure_humidity'].get('value')
+                        if 'measure_co2' in caps:
+                            attributes['co2'] = caps['measure_co2'].get('value')
+                        if 'measure_luminance' in caps:
+                            attributes['luminance'] = caps['measure_luminance'].get('value')
+                        if 'measure_battery' in caps:
+                            attributes['battery'] = caps['measure_battery'].get('value')
+                        
+                        # Alarm-Sensoren
+                        if 'alarm_motion' in caps:
+                            attributes['motion'] = caps['alarm_motion'].get('value')
+                        if 'alarm_contact' in caps:
+                            attributes['contact_open'] = caps['alarm_contact'].get('value')
+                        if 'alarm_smoke' in caps:
+                            attributes['smoke'] = caps['alarm_smoke'].get('value')
+                        if 'alarm_water' in caps:
+                            attributes['water_leak'] = caps['alarm_water'].get('value')
+                        
+                        device_data['attributes'] = attributes
+                        device_data['capabilitiesObj'] = caps
+                        
+                        devices.append(device_data)
+                else:
+                    # Fallback: Alte Methode für andere Plattformen
+                    for domain in ['light', 'climate', 'switch', 'sensor']:
+                        try:
+                            entity_ids = platform.get_all_entities(domain)
+                            states = platform.get_states(entity_ids)
 
-                # Hole verschiedene Gerätetypen
-                for domain in ['light', 'climate', 'switch', 'sensor']:
-                    try:
-                        entity_ids = platform.get_all_entities(domain)
-                        states = platform.get_states(entity_ids)
+                            for entity_id, state_data in states.items():
+                                device_data = {
+                                    'id': entity_id,
+                                    'entity_id': entity_id,
+                                    'name': state_data.get('attributes', {}).get('friendly_name', entity_id),
+                                    'domain': domain,
+                                    'state': state_data.get('state'),
+                                    'attributes': state_data.get('attributes', {}),
+                                    'last_updated': state_data.get('last_updated'),
+                                    'platform': 'homeassistant'
+                                }
+                                
+                                zone = state_data.get('attributes', {}).get('zone')
+                                if zone:
+                                    device_data['zone'] = zone
 
-                        for entity_id, state_data in states.items():
-                            device_data = {
-                                'id': entity_id,
-                                'entity_id': entity_id,
-                                'name': state_data.get('attributes', {}).get('friendly_name', entity_id),
-                                'domain': domain,
-                                'state': state_data.get('state'),
-                                'attributes': state_data.get('attributes', {}),
-                                'last_updated': state_data.get('last_updated')
-                            }
-
-                            # Zone/Raum für ALLE Gerätetypen
-                            zone = state_data.get('attributes', {}).get('zone')
-                            if zone:
-                                device_data['zone'] = zone
-
-                            # Für Climate/Heizgeräte: Extrahiere Temperaturen
-                            if domain == 'climate':
-                                capabilities = state_data.get('attributes', {}).get('capabilities', {})
-
-                                # Aktuelle Temperatur
-                                if 'measure_temperature' in capabilities:
-                                    current_temp = capabilities['measure_temperature'].get('value')
-                                    if current_temp is not None:
-                                        device_data['current_temperature'] = current_temp
-                                        if 'attributes' not in device_data:
-                                            device_data['attributes'] = {}
-                                        device_data['attributes']['current_temperature'] = current_temp
-
-                                # Zieltemperatur
-                                if 'target_temperature' in capabilities:
-                                    target_temp = capabilities['target_temperature'].get('value')
-                                    if target_temp is not None:
-                                        device_data['target_temperature'] = target_temp
-                                        if 'attributes' not in device_data:
-                                            device_data['attributes'] = {}
-                                        device_data['attributes']['temperature'] = target_temp
-
-                                # Capabilities Object für erweiterte Infos
-                                device_data['capabilitiesObj'] = capabilities
-
-                            devices.append(device_data)
-                    except Exception as e:
-                        logger.warning(f"Error getting {domain} devices: {e}")
+                                devices.append(device_data)
+                        except Exception as e:
+                            logger.warning(f"Error getting {domain} devices: {e}")
 
                 return jsonify({'devices': devices, 'count': len(devices)})
 
