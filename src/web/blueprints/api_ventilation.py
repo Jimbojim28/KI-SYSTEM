@@ -1339,22 +1339,112 @@ def init_ventilation_blueprint(engine, db, config):
     
     @ventilation_bp.route('/ventilation/test-notification', methods=['POST'])
     def test_ventilation_notification():
-        """Sende Test-Benachrichtigung"""
+        """Sende Test-Benachrichtigung mit echten Sensorwerten"""
         try:
             data = request.get_json() or {}
             notification_type = data.get('type', 'test')
             
-            # Verschiedene Test-Typen
-            notifications = {
-                'test': ('🧪 Lüftungs-Test', 'Dies ist eine Test-Benachrichtigung.\n\n✅ Pushover funktioniert!'),
-                'co2_high': ('💨 CO₂ zu hoch!', '<b>Wohnzimmer:</b> CO₂ bei <b>1250 ppm</b>\n\n🪟 Bitte Fenster öffnen für bessere Luftqualität.'),
-                'humidity_high': ('💧 Hohe Luftfeuchtigkeit!', '<b>Badezimmer:</b> Luftfeuchtigkeit bei <b>78%</b>\n\n🪟 Lüften empfohlen um Schimmelbildung zu vermeiden.'),
-                'ventilation_complete': ('✅ Lüftung abgeschlossen', '<b>Schlafzimmer:</b> Gute Luftqualität erreicht!\n\n🌡️ Temp: 20.5°C\n💨 CO₂: 520 ppm\n💧 Feucht: 52%'),
-                'frost_warning': ('❄️ Frostwarnung!', '<b>Außentemperatur: -2°C</b>\n\n🪟 <b>Küche Fenster</b> ist seit 15 Min. offen.\n\n⚠️ Bitte Fenster schließen um Heizkosten zu sparen.'),
-                'mold_warning': ('⚠️ Schimmelgefahr!', '<b>Badezimmer:</b>\n💧 Luftfeuchtigkeit: 82%\n🌡️ Temperatur: 18°C\n\n🔴 Kritische Bedingungen für Schimmelbildung!\n🪟 Dringend lüften empfohlen.')
-            }
+            # Hole echte Sensorwerte über das Sensor-Mapping
+            real_data = {}
+            try:
+                mapping_data = _load_sensor_mapping()
+                room_mapping = mapping_data.get('rooms', {})
+                
+                # Lade rooms.json für Raum-Namen
+                rooms_file = Path('data/rooms.json')
+                room_list = []
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        room_list = json.load(f)
+                
+                for room in room_list:
+                    room_id = room.get('id') or room.get('name', '').lower().replace(' ', '_')
+                    room_name = room.get('name', room_id)
+                    sensors = room_mapping.get(room_id, {})
+                    
+                    temperature = _get_sensor_value(sensors.get('temperature'))
+                    humidity = _get_sensor_value(sensors.get('humidity'))
+                    co2 = _get_sensor_value(sensors.get('co2'))
+                    
+                    if temperature is not None or humidity is not None or co2 is not None:
+                        real_data[room_name] = {
+                            'co2': co2,
+                            'humidity': humidity,
+                            'temperature': temperature
+                        }
+            except Exception as e:
+                logger.warning(f"Konnte Sensordaten nicht laden: {e}")
             
-            title, message = notifications.get(notification_type, notifications['test'])
+            # Finde Raum mit höchstem CO2
+            max_co2_room = None
+            max_co2 = 0
+            for room, data in real_data.items():
+                if data.get('co2') and data['co2'] > max_co2:
+                    max_co2 = data['co2']
+                    max_co2_room = room
+            
+            # Finde Raum mit höchster Feuchtigkeit
+            max_humidity_room = None
+            max_humidity = 0
+            for room, data in real_data.items():
+                if data.get('humidity') and data['humidity'] > max_humidity:
+                    max_humidity = data['humidity']
+                    max_humidity_room = room
+            
+            # Verschiedene Test-Typen mit echten Werten
+            if notification_type == 'test':
+                title = '🧪 Lüftungs-Test'
+                message = 'Dies ist eine Test-Benachrichtigung.\n\n✅ Pushover funktioniert!'
+                
+            elif notification_type == 'co2_high':
+                if max_co2_room and max_co2 > 0:
+                    title = '💨 CO₂ zu hoch!'
+                    message = f'<b>{max_co2_room}:</b> CO₂ bei <b>{int(max_co2)} ppm</b>\n\n🪟 Bitte Fenster öffnen für bessere Luftqualität.'
+                else:
+                    title = '💨 CO₂ Test'
+                    message = 'Keine CO₂-Sensoren gefunden oder alle Werte normal.'
+                    
+            elif notification_type == 'humidity_high':
+                if max_humidity_room and max_humidity > 0:
+                    title = '💧 Hohe Luftfeuchtigkeit!'
+                    message = f'<b>{max_humidity_room}:</b> Luftfeuchtigkeit bei <b>{max_humidity:.0f}%</b>\n\n🪟 Lüften empfohlen um Schimmelbildung zu vermeiden.'
+                else:
+                    title = '💧 Feuchtigkeits-Test'
+                    message = 'Keine Feuchtigkeitssensoren gefunden oder alle Werte normal.'
+                    
+            elif notification_type == 'ventilation_complete':
+                # Zeige aktuellen Status eines Raums
+                if real_data:
+                    room = list(real_data.keys())[0]
+                    d = real_data[room]
+                    title = '✅ Lüftung abgeschlossen'
+                    parts = [f'<b>{room}:</b> Aktuelle Luftqualität']
+                    if d.get('temperature'):
+                        parts.append(f"🌡️ Temp: {d['temperature']:.1f}°C")
+                    if d.get('co2'):
+                        parts.append(f"💨 CO₂: {int(d['co2'])} ppm")
+                    if d.get('humidity'):
+                        parts.append(f"💧 Feucht: {d['humidity']:.0f}%")
+                    message = '\n'.join(parts)
+                else:
+                    title = '✅ Lüftungs-Test'
+                    message = 'Keine Sensordaten verfügbar.'
+                    
+            elif notification_type == 'frost_warning':
+                title = '❄️ Frostwarnung!'
+                message = '<b>Test-Warnung</b>\n\n⚠️ Bei Frost bitte Fenster schließen um Heizkosten zu sparen.'
+                
+            elif notification_type == 'mold_warning':
+                if max_humidity_room and max_humidity > 60:
+                    temp = real_data[max_humidity_room].get('temperature', 0)
+                    title = '⚠️ Schimmelgefahr!'
+                    message = f'<b>{max_humidity_room}:</b>\n💧 Luftfeuchtigkeit: {max_humidity:.0f}%\n🌡️ Temperatur: {temp:.1f}°C\n\n🔴 Kritische Bedingungen für Schimmelbildung!\n🪟 Dringend lüften empfohlen.'
+                else:
+                    title = '⚠️ Schimmel-Test'
+                    message = 'Aktuell keine kritischen Bedingungen.'
+            else:
+                title = '🧪 Lüftungs-Test'
+                message = 'Dies ist eine Test-Benachrichtigung.\n\n✅ Pushover funktioniert!'
             
             success = _send_pushover_notification(title, message)
             
