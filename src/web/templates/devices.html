@@ -79,6 +79,25 @@
         <div id="quick-action-result" class="action-result"></div>
     </div>
 
+    <!-- Presence Tracking Statistiken -->
+    <div class="card presence-tracking-card" id="presence-tracking-section">
+        <div class="card-header-with-actions">
+            <h3>📍 Handy-Tracking Statistiken</h3>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <select id="tracking-date-select" class="form-select" style="width: auto;">
+                    <option value="today">Heute</option>
+                    <option value="yesterday">Gestern</option>
+                    <option value="week">Letzte 7 Tage</option>
+                    <option value="alltime">Gesamt</option>
+                </select>
+                <button class="btn btn-small btn-secondary" id="refresh-tracking">🔄</button>
+            </div>
+        </div>
+        <div id="tracking-stats-container" style="min-height: 100px;">
+            <div class="loading">Lade Tracking-Daten...</div>
+        </div>
+    </div>
+
     <!-- Geräte-Anzeige -->
     <div class="card devices-card">
         <div class="card-header-with-actions">
@@ -721,6 +740,33 @@
 .badge-platform {
     background: #dbeafe;
     color: #1e40af;
+}
+
+.badge-domain {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.badge-config {
+    font-size: 0.7em;
+}
+
+.badge-light {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-device {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+/* Device Badges */
+.device-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
 }
 
 /* Loading */

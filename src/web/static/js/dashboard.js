@@ -201,52 +201,103 @@ function updatePrediction(type, prediction) {
     }
 }
 
-// Update Präsenz-Status
+// Update Präsenz-Status (kombiniert Homey + Home Assistant Tracker)
 async function updatePresenceStatus() {
     try {
-        const data = await fetchJSON('/api/automations/presence');
+        // Nutze die neue kombinierte Präsenz-API
+        const data = await fetchJSON('/api/presence');
 
         const presenceDot = document.getElementById('presence-dot-dash');
         const presenceText = document.getElementById('presence-text-dash');
         const presenceCount = document.getElementById('presence-count-dash');
 
+        if (!data.success) {
+            // Fallback auf alte API
+            const oldData = await fetchJSON('/api/automations/presence');
+            updatePresenceUI(oldData, presenceDot, presenceText, presenceCount);
+            return;
+        }
+
         // Status-Anzeige
-        if (data.present) {
+        if (data.anyone_home) {
             presenceDot.className = 'presence-dot present';
-
-            // Zeige wer zuhause ist (Homey User Tracking)
-            if (data.mode === 'homey_users' && data.users) {
-                const usersHome = data.users.filter(u => u.present).map(u => u.name);
-                if (usersHome.length > 0) {
-                    presenceText.textContent = `Anwesend: ${usersHome.join(', ')}`;
-                } else {
-                    presenceText.textContent = 'Anwesend';
-                }
-
-                // Zeige Personen-Anzahl
-                presenceCount.textContent = `${data.users_home} von ${data.total_users} Person(en) zuhause`;
+            
+            // Sammle alle anwesenden Personen mit Standort
+            const presentUsers = data.users.filter(u => u.present);
+            
+            if (presentUsers.length > 0) {
+                // Zeige Namen und optional Standort (z.B. "Sven (Küche), Anne (Flur)")
+                const userStrings = presentUsers.map(u => {
+                    if (u.location && u.location !== 'home') {
+                        return `${u.name} (${u.location})`;
+                    }
+                    return u.name;
+                });
+                presenceText.textContent = `🏠 ${userStrings.join(', ')}`;
             } else {
-                // Fallback: Motion-Sensor Modus
-                presenceText.textContent = 'Anwesend';
-                presenceCount.textContent = data.last_motion ?
-                    new Date(data.last_motion).toLocaleString('de-DE') : '--';
+                presenceText.textContent = '🏠 Anwesend';
             }
+            
+            // Zeige Quellen-Info
+            const sources = [];
+            if (data.sources.homey.available && data.sources.homey.users_home > 0) {
+                sources.push(`Homey: ${data.sources.homey.users_home}`);
+            }
+            if (data.sources.home_assistant.available && data.sources.home_assistant.trackers_home > 0) {
+                sources.push(`HA: ${data.sources.home_assistant.trackers_home}`);
+            }
+            
+            presenceCount.textContent = `${data.total_home} von ${data.total_users} anwesend` + 
+                (sources.length > 0 ? ` (${sources.join(', ')})` : '');
+            
         } else {
             presenceDot.className = 'presence-dot away';
-            presenceText.textContent = 'Abwesend';
-
-            if (data.mode === 'homey_users') {
-                presenceCount.textContent = 'Alle Nutzer sind unterwegs';
-            } else {
-                presenceCount.textContent = data.last_motion ?
-                    `Letzte Bewegung: ${new Date(data.last_motion).toLocaleString('de-DE')}` : '--';
-            }
+            presenceText.textContent = '🚶 Abwesend';
+            presenceCount.textContent = 'Alle Personen sind unterwegs';
         }
 
     } catch (error) {
         console.error('Error updating presence:', error);
-        document.getElementById('presence-text-dash').textContent = 'Fehler beim Laden';
-        document.getElementById('presence-count-dash').textContent = '--';
+        // Fallback auf alte API bei Fehler
+        try {
+            const oldData = await fetchJSON('/api/automations/presence');
+            const presenceDot = document.getElementById('presence-dot-dash');
+            const presenceText = document.getElementById('presence-text-dash');
+            const presenceCount = document.getElementById('presence-count-dash');
+            updatePresenceUI(oldData, presenceDot, presenceText, presenceCount);
+        } catch (e) {
+            document.getElementById('presence-text-dash').textContent = 'Fehler beim Laden';
+            document.getElementById('presence-count-dash').textContent = '--';
+        }
+    }
+}
+
+// Hilfsfunktion für alte API (Fallback)
+function updatePresenceUI(data, presenceDot, presenceText, presenceCount) {
+    if (data.present) {
+        presenceDot.className = 'presence-dot present';
+        if (data.mode === 'homey_users' && data.users) {
+            const usersHome = data.users.filter(u => u.present).map(u => u.name);
+            if (usersHome.length > 0) {
+                presenceText.textContent = `Anwesend: ${usersHome.join(', ')}`;
+            } else {
+                presenceText.textContent = 'Anwesend';
+            }
+            presenceCount.textContent = `${data.users_home} von ${data.total_users} Person(en) zuhause`;
+        } else {
+            presenceText.textContent = 'Anwesend';
+            presenceCount.textContent = data.last_motion ?
+                new Date(data.last_motion).toLocaleString('de-DE') : '--';
+        }
+    } else {
+        presenceDot.className = 'presence-dot away';
+        presenceText.textContent = 'Abwesend';
+        if (data.mode === 'homey_users') {
+            presenceCount.textContent = 'Alle Nutzer sind unterwegs';
+        } else {
+            presenceCount.textContent = data.last_motion ?
+                `Letzte Bewegung: ${new Date(data.last_motion).toLocaleString('de-DE')}` : '--';
+        }
     }
 }
 

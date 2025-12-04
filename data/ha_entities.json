@@ -1,0 +1,18 @@
+{
+  "entities": [
+    {
+      "entity_id": "device_tracker.ibeacon_c8151f61_79d3_4c48_9436_006a64b9c521_100_40004",
+      "type": "device_tracker",
+      "name": "Handy Anne",
+      "added_at": "2025-12-04T06:34:28.470527",
+      "domain": "device_tracker"
+    },
+    {
+      "entity_id": "device_tracker.ibeacon_c02ad99f_8b6c_415d_a868_973f72582e3e_100_40004",
+      "type": "device_tracker",
+      "name": "Handy-Sven",
+      "added_at": "2025-12-04T06:38:11.429769",
+      "domain": "device_tracker"
+    }
+  ]
+}

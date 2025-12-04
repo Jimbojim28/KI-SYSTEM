@@ -10,6 +10,7 @@
     <div class="settings-tabs">
         <button class="tab-button active" data-tab="general">⚙️ Allgemein</button>
         <button class="tab-button" data-tab="connection">🔌 Verbindung</button>
+        <button class="tab-button" data-tab="ha-devices">🏡 HA Geräte</button>
         <button class="tab-button" data-tab="notifications">📲 Benachrichtigungen</button>
         <button class="tab-button" data-tab="sensors">📡 Sensoren</button>
         <button class="tab-button" data-tab="heating">🔥 Heizung</button>
@@ -390,6 +391,91 @@
         </div>
     </div>
     <!-- Ende Tab: Verbindung -->
+
+    <!-- Tab: Home Assistant Geräte -->
+    <div class="tab-content" id="tab-ha-devices">
+        <div class="settings-sections">
+        <!-- HA Device Management -->
+        <div class="card settings-card">
+            <h3>🏡 Home Assistant Geräte verwalten</h3>
+            <p class="card-description">
+                Füge Home Assistant Entitäten hinzu, um deren Status zu überwachen und sie über das KI-System zu steuern.
+            </p>
+
+            <!-- Add New Entity Form -->
+            <div class="ha-add-entity-form" style="background: #f0fdf4; padding: 20px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 15px 0; color: #065f46;">➕ Neue Entität hinzufügen</h4>
+                
+                <div style="display: grid; grid-template-columns: 1fr 200px auto; gap: 15px; align-items: end;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="ha-entity-id" style="display: block; margin-bottom: 5px; font-weight: 600;">Entity ID:</label>
+                        <input type="text" id="ha-entity-id" class="form-control" 
+                               placeholder="z.B. switch.steckdose_1 oder light.wohnzimmer" 
+                               style="width: 100%; padding: 10px; border: 2px solid #d1fae5; border-radius: 6px;">
+                        <small class="help-text" style="margin-top: 4px; display: block; color: #6b7280;">
+                            Die vollständige Entity-ID aus Home Assistant (z.B. switch.xxx, light.xxx, sensor.xxx)
+                        </small>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="ha-entity-type" style="display: block; margin-bottom: 5px; font-weight: 600;">Gerätetyp:</label>
+                        <select id="ha-entity-type" class="form-control" 
+                                style="width: 100%; padding: 10px; border: 2px solid #d1fae5; border-radius: 6px;">
+                            <option value="switch">⚡ Schalter (Switch)</option>
+                            <option value="light">💡 Licht (Light)</option>
+                            <option value="sensor">📊 Sensor</option>
+                            <option value="binary_sensor">🔘 Binärer Sensor</option>
+                            <option value="climate">🌡️ Thermostat (Climate)</option>
+                            <option value="cover">🪟 Rollladen (Cover)</option>
+                            <option value="fan">💨 Lüfter (Fan)</option>
+                            <option value="media_player">🎵 Media Player</option>
+                            <option value="vacuum">🤖 Staubsauger</option>
+                            <option value="device_tracker">📱 Handy / Tracker</option>
+                            <option value="person">👤 Person</option>
+                            <option value="other">📦 Sonstiges</option>
+                        </select>
+                    </div>
+                    
+                    <button id="add-ha-entity" class="btn btn-primary" style="height: 44px; white-space: nowrap;">
+                        ➕ Hinzufügen
+                    </button>
+                </div>
+                
+                <div class="form-group" style="margin-top: 15px; margin-bottom: 0;">
+                    <label for="ha-entity-name" style="display: block; margin-bottom: 5px; font-weight: 600;">Anzeigename (optional):</label>
+                    <input type="text" id="ha-entity-name" class="form-control" 
+                           placeholder="Benutzerdefinierter Name für die Anzeige" 
+                           style="width: 100%; max-width: 400px; padding: 10px; border: 2px solid #d1fae5; border-radius: 6px;">
+                </div>
+                
+                <div id="ha-add-result" class="action-result" style="margin-top: 10px;"></div>
+            </div>
+
+            <!-- Entity List -->
+            <div class="ha-entities-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h4 style="margin: 0;">📋 Gespeicherte Entitäten</h4>
+                    <button id="refresh-ha-entities" class="btn btn-secondary btn-sm">
+                        🔄 Status aktualisieren
+                    </button>
+                </div>
+                
+                <div id="ha-entities-list" style="min-height: 100px;">
+                    <div class="loading">Lade Entitäten...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Info -->
+        <div class="card settings-card" style="margin-top: 20px;">
+            <h3>🔌 Home Assistant Verbindung</h3>
+            <div id="ha-connection-status" style="padding: 15px; background: #f9fafb; border-radius: 8px;">
+                <div class="loading">Prüfe Verbindung...</div>
+            </div>
+        </div>
+        </div>
+    </div>
+    <!-- Ende Tab: HA Geräte -->
 
     <!-- Tab: Sensoren -->
     <div class="tab-content" id="tab-sensors">
@@ -1150,6 +1236,62 @@ input[type="checkbox"]:checked {
 .btn-sm {
     padding: 6px 12px;
     font-size: 13px;
+}
+
+/* HA Entity Card Styles */
+.ha-entity-card {
+    transition: all 0.2s ease;
+}
+
+.ha-entity-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.entity-status.state-on {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+}
+
+.entity-status.state-off {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+}
+
+.entity-status.state-unavailable {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+}
+
+.entity-status.state-neutral {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+}
+
+.entity-state-badge.state-on {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.entity-state-badge.state-off {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.entity-state-badge.state-unavailable {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.entity-state-badge.state-neutral {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.btn-success {
+    background: #10b981 !important;
+    color: white !important;
+    border-color: #10b981 !important;
+}
+
+.btn-success:hover {
+    background: #059669 !important;
 }
 </style>
 

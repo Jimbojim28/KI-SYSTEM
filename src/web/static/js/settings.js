@@ -32,6 +32,9 @@ function initTabs() {
                 loadVersion();
             } else if (targetTab === 'notifications') {
                 loadNotificationConfig();
+            } else if (targetTab === 'ha-devices') {
+                loadHAEntities();
+                loadHAConnectionStatus();
             }
         });
     });
@@ -2514,3 +2517,430 @@ async function saveNotificationConfig() {
         resultEl.className = 'action-result error';
     }
 }
+
+// === HOME ASSISTANT ENTITIES ===
+
+// Initialisiere HA Entities Tab
+function initHAEntitiesTab() {
+    // Event Listener für Hinzufügen-Button
+    const addBtn = document.getElementById('add-ha-entity');
+    if (addBtn) {
+        addBtn.addEventListener('click', addHAEntity);
+    }
+    
+    // Event Listener für Aktualisieren-Button
+    const refreshBtn = document.getElementById('refresh-ha-entities');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadHAEntities);
+    }
+    
+    // Enter-Taste zum Hinzufügen
+    const entityInput = document.getElementById('ha-entity-id');
+    if (entityInput) {
+        entityInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addHAEntity();
+            }
+        });
+    }
+}
+
+// Lade alle HA Entitäten
+async function loadHAEntities() {
+    const listEl = document.getElementById('ha-entities-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div class="loading">Lade Entitäten...</div>';
+    
+    try {
+        const response = await fetch('/api/ha/entities');
+        const data = await response.json();
+        
+        if (data.success) {
+            renderHAEntitiesList(data.entities);
+        } else {
+            listEl.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+        }
+    } catch (error) {
+        listEl.innerHTML = `<div class="error-message">❌ Fehler: ${error.message}</div>`;
+    }
+}
+
+// Rendere die Entitäten-Liste
+function renderHAEntitiesList(entities) {
+    const listEl = document.getElementById('ha-entities-list');
+    if (!listEl) return;
+    
+    if (!entities || entities.length === 0) {
+        listEl.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #6b7280;">
+                <div style="font-size: 48px; margin-bottom: 15px;">📭</div>
+                <div style="font-size: 16px; font-weight: 600;">Keine Entitäten hinzugefügt</div>
+                <div style="font-size: 14px; margin-top: 8px;">Füge oben eine Home Assistant Entität hinzu, um deren Status zu überwachen.</div>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '<div class="ha-entities-grid" style="display: grid; gap: 15px;">';
+    
+    for (const entity of entities) {
+        const stateClass = getStateClass(entity.current_state, entity.available);
+        const stateIcon = getStateIcon(entity.type, entity.current_state);
+        const typeIcon = getTypeIcon(entity.type);
+        
+        html += `
+            <div class="ha-entity-card" style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 15px; display: flex; align-items: center; gap: 15px;">
+                <!-- Status Indicator -->
+                <div class="entity-status ${stateClass}" style="width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                    ${stateIcon}
+                </div>
+                
+                <!-- Entity Info -->
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${escapeHtml(entity.friendly_name || entity.name || entity.entity_id)}
+                    </div>
+                    <div style="font-size: 12px; color: #6b7280; font-family: monospace; margin-bottom: 6px;">
+                        ${escapeHtml(entity.entity_id)}
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <span class="entity-type-badge" style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px;">
+                            ${typeIcon} ${entity.type}
+                        </span>
+                        <span class="entity-state-badge ${stateClass}" style="padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                            ${entity.available ? entity.current_state : '⚠️ nicht verfügbar'}
+                        </span>
+                        ${renderEntityAttributes(entity)}
+                    </div>
+                </div>
+                
+                <!-- Actions -->
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    ${canToggle(entity.type) ? `
+                        <button class="btn btn-sm ${entity.current_state === 'on' ? 'btn-success' : 'btn-secondary'}" 
+                                onclick="toggleHAEntity('${escapeHtml(entity.entity_id)}')"
+                                style="min-width: 70px;">
+                            ${entity.current_state === 'on' ? '🔵 An' : '⚫ Aus'}
+                        </button>
+                    ` : ''}
+                    <button class="btn btn-sm btn-secondary" onclick="refreshHAEntityState('${escapeHtml(entity.entity_id)}')" title="Status aktualisieren">
+                        🔄
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteHAEntity('${escapeHtml(entity.entity_id)}')" title="Entfernen">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    html += '</div>';
+    listEl.innerHTML = html;
+}
+
+// Rendere zusätzliche Attribute
+function renderEntityAttributes(entity) {
+    if (!entity.attributes || !entity.available) return '';
+    
+    const attrs = entity.attributes;
+    let badges = '';
+    
+    // Brightness für Lichter
+    if (attrs.brightness !== undefined) {
+        const percent = Math.round((attrs.brightness / 255) * 100);
+        badges += `<span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px;">☀️ ${percent}%</span>`;
+    }
+    
+    // Temperature für Climate
+    if (attrs.temperature !== undefined) {
+        badges += `<span style="background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🌡️ ${attrs.temperature}°C</span>`;
+    }
+    
+    // Current Temperature
+    if (attrs.current_temperature !== undefined) {
+        badges += `<span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 11px;">📊 ${attrs.current_temperature}°C</span>`;
+    }
+    
+    // Power/Energy
+    if (attrs.power !== undefined) {
+        badges += `<span style="background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 4px; font-size: 11px;">⚡ ${attrs.power}W</span>`;
+    }
+    
+    // Unit of measurement für Sensoren
+    if (attrs.unit_of_measurement && entity.current_state !== 'unknown') {
+        const state = entity.current_state;
+        if (!isNaN(parseFloat(state))) {
+            badges += `<span style="background: #f3e8ff; color: #6b21a8; padding: 2px 8px; border-radius: 4px; font-size: 11px;">📏 ${state} ${attrs.unit_of_measurement}</span>`;
+        }
+    }
+    
+    return badges;
+}
+
+// Hole CSS-Klasse für Status
+function getStateClass(state, available) {
+    if (!available) return 'state-unavailable';
+    
+    switch (state) {
+        case 'on':
+        case 'playing':
+        case 'open':
+        case 'home':
+            return 'state-on';
+        case 'off':
+        case 'closed':
+        case 'idle':
+        case 'paused':
+            return 'state-off';
+        case 'unavailable':
+        case 'unknown':
+            return 'state-unavailable';
+        default:
+            return 'state-neutral';
+    }
+}
+
+// Hole Icon für Status
+function getStateIcon(type, state) {
+    if (state === 'unavailable' || state === 'unknown') return '❓';
+    
+    const icons = {
+        switch: state === 'on' ? '🔵' : '⚫',
+        light: state === 'on' ? '💡' : '🔦',
+        sensor: '📊',
+        binary_sensor: state === 'on' ? '🟢' : '⚪',
+        climate: '🌡️',
+        cover: state === 'open' ? '🪟' : '🚪',
+        fan: state === 'on' ? '💨' : '🌀',
+        media_player: state === 'playing' ? '▶️' : '⏸️',
+        vacuum: state === 'cleaning' ? '🧹' : '🤖',
+        device_tracker: state === 'home' ? '🏠' : '📍',
+        person: state === 'home' ? '🏠' : '🚶',
+        other: '📦'
+    };
+    
+    return icons[type] || '📦';
+}
+
+// Hole Icon für Typ
+function getTypeIcon(type) {
+    const icons = {
+        switch: '⚡',
+        light: '💡',
+        sensor: '📊',
+        binary_sensor: '🔘',
+        climate: '🌡️',
+        cover: '🪟',
+        fan: '💨',
+        media_player: '🎵',
+        vacuum: '🤖',
+        device_tracker: '📱',
+        person: '👤',
+        other: '📦'
+    };
+    
+    return icons[type] || '📦';
+}
+
+// Prüfe ob Toggle möglich
+function canToggle(type) {
+    return ['switch', 'light', 'fan', 'cover', 'media_player'].includes(type);
+}
+
+// Füge neue Entität hinzu
+async function addHAEntity() {
+    const entityIdEl = document.getElementById('ha-entity-id');
+    const entityTypeEl = document.getElementById('ha-entity-type');
+    const entityNameEl = document.getElementById('ha-entity-name');
+    const resultEl = document.getElementById('ha-add-result');
+    
+    const entityId = entityIdEl.value.trim();
+    const entityType = entityTypeEl.value;
+    const entityName = entityNameEl.value.trim();
+    
+    if (!entityId) {
+        resultEl.innerHTML = '<span style="color: #dc2626;">❌ Bitte Entity-ID eingeben</span>';
+        resultEl.style.display = 'block';
+        entityIdEl.focus();
+        return;
+    }
+    
+    resultEl.innerHTML = '<span style="color: #6b7280;">⏳ Füge Entität hinzu...</span>';
+    resultEl.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/ha/entities', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                entity_id: entityId,
+                type: entityType,
+                name: entityName
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            resultEl.innerHTML = `<span style="color: #059669;">✅ ${data.message}</span>`;
+            
+            // Zeige Status an
+            if (data.entity) {
+                const state = data.entity.current_state;
+                const available = data.entity.available;
+                if (available) {
+                    resultEl.innerHTML += ` <span style="color: #6b7280;">| Status: <strong>${state}</strong></span>`;
+                } else {
+                    resultEl.innerHTML += ` <span style="color: #f59e0b;">| ⚠️ Entität nicht erreichbar</span>`;
+                }
+            }
+            
+            // Felder leeren
+            entityIdEl.value = '';
+            entityNameEl.value = '';
+            
+            // Liste neu laden
+            loadHAEntities();
+            
+            // Erfolgsmeldung nach 3 Sekunden ausblenden
+            setTimeout(() => {
+                resultEl.style.display = 'none';
+            }, 3000);
+        } else {
+            resultEl.innerHTML = `<span style="color: #dc2626;">❌ ${data.error}</span>`;
+        }
+    } catch (error) {
+        resultEl.innerHTML = `<span style="color: #dc2626;">❌ Fehler: ${error.message}</span>`;
+    }
+}
+
+// Lösche Entität
+async function deleteHAEntity(entityId) {
+    if (!confirm(`Möchtest du die Entität "${entityId}" wirklich entfernen?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/ha/entities/${encodeURIComponent(entityId)}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            loadHAEntities();
+        } else {
+            alert(`Fehler: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Fehler: ${error.message}`);
+    }
+}
+
+// Toggle Entität
+async function toggleHAEntity(entityId) {
+    try {
+        const response = await fetch(`/api/ha/entities/${encodeURIComponent(entityId)}/toggle`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Status neu laden
+            loadHAEntities();
+        } else {
+            alert(`Fehler: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Fehler: ${error.message}`);
+    }
+}
+
+// Aktualisiere Status einer einzelnen Entität
+async function refreshHAEntityState(entityId) {
+    try {
+        // Einfach die ganze Liste neu laden
+        loadHAEntities();
+    } catch (error) {
+        console.error('Fehler beim Aktualisieren:', error);
+    }
+}
+
+// Lade HA Verbindungsstatus
+async function loadHAConnectionStatus() {
+    const statusEl = document.getElementById('ha-connection-status');
+    if (!statusEl) return;
+    
+    statusEl.innerHTML = '<div class="loading">Prüfe Verbindung...</div>';
+    
+    try {
+        const response = await fetch('/api/ha/connection');
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.connected) {
+                statusEl.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div style="width: 50px; height: 50px; background: #d1fae5; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                            ✅
+                        </div>
+                        <div>
+                            <div style="font-weight: 600; color: #059669; font-size: 16px;">Verbunden</div>
+                            <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">${escapeHtml(data.message)}</div>
+                            <div style="font-size: 12px; color: #9ca3af; margin-top: 2px; font-family: monospace;">${escapeHtml(data.url || '')}</div>
+                        </div>
+                    </div>
+                `;
+            } else if (data.configured) {
+                statusEl.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div style="width: 50px; height: 50px; background: #fee2e2; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                            ❌
+                        </div>
+                        <div>
+                            <div style="font-weight: 600; color: #dc2626; font-size: 16px;">Nicht verbunden</div>
+                            <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">${escapeHtml(data.message)}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                statusEl.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div style="width: 50px; height: 50px; background: #fef3c7; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                            ⚠️
+                        </div>
+                        <div>
+                            <div style="font-weight: 600; color: #d97706; font-size: 16px;">Nicht konfiguriert</div>
+                            <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">${escapeHtml(data.message)}</div>
+                            <div style="margin-top: 10px;">
+                                <a href="#" onclick="document.querySelector('[data-tab=connection]').click(); return false;" 
+                                   style="color: #3b82f6; text-decoration: underline;">
+                                    → Zur Verbindungseinstellung
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        } else {
+            statusEl.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+        }
+    } catch (error) {
+        statusEl.innerHTML = `<div class="error-message">❌ Fehler: ${error.message}</div>`;
+    }
+}
+
+// Escape HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Initialisiere beim Laden
+document.addEventListener('DOMContentLoaded', () => {
+    initHAEntitiesTab();
+});

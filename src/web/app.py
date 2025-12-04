@@ -25,6 +25,7 @@ from src.web.blueprints import (
 )
 from src.web.blueprints.api_notifications import notifications_bp, init_notifications_blueprint
 from src.web.blueprints.api_absence import absence_bp, init_absence_blueprint
+from src.web.blueprints.api_ha_entities import ha_entities_bp, init_ha_entities_blueprint
 
 import src  # Für Zugriff auf __version__
 from src.decision_engine.engine import DecisionEngine
@@ -302,6 +303,7 @@ class WebInterface:
             init_ventilation_blueprint(self.engine, self.db, self.config)
             init_notifications_blueprint(self.engine, self.db, self.config)
             init_absence_blueprint(self.engine, self.db, self.config)
+            init_ha_entities_blueprint(self.app)
             
             # Registriere Blueprints bei der Flask App
             self.app.register_blueprint(config_bp)
@@ -309,8 +311,9 @@ class WebInterface:
             self.app.register_blueprint(ventilation_bp)
             self.app.register_blueprint(notifications_bp)
             self.app.register_blueprint(absence_bp)
+            self.app.register_blueprint(ha_entities_bp)
             
-            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp, absence_bp")
+            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp, absence_bp, ha_entities_bp")
         except Exception as e:
             logger.error(f"Failed to register blueprints: {e}")
 
@@ -451,10 +454,28 @@ class WebInterface:
                 return jsonify({'error': 'Engine not initialized'}), 500
 
             try:
+                import json
                 devices = []
                 platform = self.engine.platform
                 
-                # Hole Zone-Namen für Raum-Zuordnung
+                # Lade rooms.json für device_types und assignments
+                rooms_file = Path('data/rooms.json')
+                device_types = {}
+                assignments = {}
+                rooms_data = {}
+                
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                        device_types = rooms_data.get('device_types', {})
+                        assignments = rooms_data.get('assignments', {})
+                
+                # Erstelle Raum-ID zu Name Mapping aus rooms.json
+                room_names = {}
+                for room in rooms_data.get('rooms', []):
+                    room_names[room.get('id')] = room.get('name', 'Unbekannt')
+                
+                # Hole Zone-Namen von Homey als Fallback
                 zone_names = {}
                 if hasattr(platform, 'get_zones'):
                     zones = platform.get_zones() or {}
@@ -469,14 +490,29 @@ class WebInterface:
                         all_devices = list(all_devices.values())
                     
                     for device in all_devices:
+                        device_id = device.get('id')
                         device_class = device.get('class', '').lower()
                         caps = device.get('capabilitiesObj', {})
                         capabilities_list = device.get('capabilities', [])
                         zone_id = device.get('zone', '')
                         
-                        # Bestimme Domain basierend auf class und capabilities
+                        # Prüfe ob Gerät in assignments ist (manuell zugewiesen)
+                        assigned_room_id = assignments.get(device_id)
+                        
+                        # Bestimme konfigurierten Gerätetyp aus device_types
+                        configured_type = device_types.get(device_id)  # 'light', 'device', oder None
+                        
+                        # Bestimme Domain basierend auf:
+                        # 1. Konfigurierter Typ aus device_types (höchste Priorität)
+                        # 2. Geräteklasse
+                        # 3. Capabilities
                         domain = 'other'
-                        if device_class == 'light' or ('onoff' in capabilities_list and 'dim' in capabilities_list):
+                        
+                        if configured_type == 'light':
+                            domain = 'light'
+                        elif configured_type == 'device':
+                            domain = 'switch'  # "device" = Steckdose/Schalter
+                        elif device_class == 'light' or ('onoff' in capabilities_list and 'dim' in capabilities_list):
                             domain = 'light'
                         elif device_class in ['thermostat', 'heater']:
                             domain = 'climate'
@@ -487,18 +523,28 @@ class WebInterface:
                         elif 'onoff' in capabilities_list:
                             domain = 'switch'
                         
+                        # Bestimme Raumnamen:
+                        # 1. Aus assignments (manuell zugewiesen)
+                        # 2. Aus Homey Zone
+                        if assigned_room_id:
+                            room_name = room_names.get(assigned_room_id, zone_names.get(zone_id, 'Ohne Raum'))
+                        else:
+                            room_name = zone_names.get(zone_id, 'Ohne Raum')
+                        
                         # Basis-Gerätedaten
                         device_data = {
-                            'id': device.get('id'),
-                            'entity_id': device.get('id'),
+                            'id': device_id,
+                            'entity_id': device_id,
                             'name': device.get('name', 'Unbekannt'),
                             'domain': domain,
                             'class': device_class,
-                            'zone': zone_id,
-                            'zoneName': zone_names.get(zone_id, 'Ohne Raum'),
+                            'zone': assigned_room_id or zone_id,
+                            'zoneName': room_name,
                             'available': device.get('available', True),
                             'capabilities': capabilities_list,
-                            'platform': 'homey'
+                            'platform': 'homey',
+                            'configured_type': configured_type,  # Zeige konfigurierten Typ
+                            'is_assigned': bool(assigned_room_id)  # Ob manuell zugewiesen
                         }
                         
                         # Status auslesen
@@ -590,6 +636,78 @@ class WebInterface:
                                 devices.append(device_data)
                         except Exception as e:
                             logger.warning(f"Error getting {domain} devices: {e}")
+
+                # === HOME ASSISTANT ENTITIES aus ha_entities.json hinzufügen ===
+                try:
+                    ha_entities_file = Path('data/ha_entities.json')
+                    if ha_entities_file.exists():
+                        with open(ha_entities_file, 'r') as f:
+                            ha_data = json.load(f)
+                        
+                        ha_entities = ha_data.get('entities', [])
+                        
+                        if ha_entities:
+                            # Hole HA Collector für Live-Status
+                            from src.web.blueprints.api_ha_entities import get_ha_collector, get_entity_state
+                            ha_collector = get_ha_collector()
+                            
+                            for entity in ha_entities:
+                                entity_id = entity.get('entity_id')
+                                entity_type = entity.get('type', 'other')
+                                
+                                # Hole Live-Status von Home Assistant
+                                state_info = get_entity_state(ha_collector, entity_id) if ha_collector else {}
+                                
+                                # Bestimme Domain aus entity_type
+                                domain_map = {
+                                    'switch': 'switch',
+                                    'light': 'light',
+                                    'sensor': 'sensor',
+                                    'binary_sensor': 'binary_sensor',
+                                    'climate': 'climate',
+                                    'cover': 'cover',
+                                    'fan': 'fan',
+                                    'media_player': 'media_player',
+                                    'vacuum': 'vacuum',
+                                    'device_tracker': 'device_tracker',
+                                    'person': 'person',
+                                    'other': 'other'
+                                }
+                                domain = domain_map.get(entity_type, 'other')
+                                
+                                # Erstelle Gerätedaten
+                                ha_device_data = {
+                                    'id': entity_id,
+                                    'entity_id': entity_id,
+                                    'name': entity.get('name') or state_info.get('friendly_name', entity_id),
+                                    'domain': domain,
+                                    'class': entity_type,
+                                    'state': state_info.get('state', 'unknown'),
+                                    'available': state_info.get('available', False),
+                                    'attributes': state_info.get('attributes', {}),
+                                    'last_changed': state_info.get('last_changed'),
+                                    'last_updated': state_info.get('last_updated'),
+                                    'platform': 'homeassistant',
+                                    'configured_type': entity_type,
+                                    'zone': state_info.get('state') if entity_type in ['device_tracker', 'person'] else '',
+                                    'zoneName': state_info.get('state') if entity_type in ['device_tracker', 'person'] else 'Home Assistant',
+                                    'is_ha_entity': True  # Markierung für HA-Entität aus Einstellungen
+                                }
+                                
+                                # Für device_tracker: Zeige Standort als Zone
+                                if entity_type in ['device_tracker', 'person']:
+                                    location = state_info.get('state', 'unknown')
+                                    if location not in ['unknown', 'unavailable', 'not_home']:
+                                        ha_device_data['zoneName'] = location
+                                    elif location == 'not_home':
+                                        ha_device_data['zoneName'] = 'Unterwegs'
+                                    else:
+                                        ha_device_data['zoneName'] = 'Unbekannt'
+                                
+                                devices.append(ha_device_data)
+                                
+                except Exception as e:
+                    logger.warning(f"Error loading HA entities: {e}")
 
                 return jsonify({'devices': devices, 'count': len(devices)})
 
@@ -7642,6 +7760,15 @@ class WebInterface:
         if self.ventilation_notifier:
             self.ventilation_notifier.start()
             logger.info("Ventilation Notifier started (checks every 60s)")
+
+        # Starte Presence Tracker (für Handy-Raum-Tracking)
+        try:
+            from src.background.presence_tracker import start_presence_tracker
+            self.presence_tracker = start_presence_tracker()
+            logger.info("Presence Tracker started (tracks device locations)")
+        except Exception as e:
+            logger.warning(f"Could not start Presence Tracker: {e}")
+            self.presence_tracker = None
 
         try:
             self.app.run(host=host, port=port, debug=debug)
