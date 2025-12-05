@@ -7770,6 +7770,16 @@ class WebInterface:
             logger.warning(f"Could not start Presence Tracker: {e}")
             self.presence_tracker = None
 
+        # Starte Forgotten Light Detector (erkennt vergessene Lampen)
+        try:
+            from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+            self.forgotten_light_detector = get_forgotten_light_detector(config=self.config, test_mode=True)
+            self.forgotten_light_detector.start()
+            logger.info("Forgotten Light Detector started (checks for forgotten lights)")
+        except Exception as e:
+            logger.warning(f"Could not start Forgotten Light Detector: {e}")
+            self.forgotten_light_detector = None
+
         try:
             self.app.run(host=host, port=port, debug=debug)
         finally:
@@ -7813,6 +7823,10 @@ class WebInterface:
             if self.ventilation_notifier:
                 self.ventilation_notifier.stop()
                 logger.info("Ventilation Notifier stopped")
+
+            if hasattr(self, 'forgotten_light_detector') and self.forgotten_light_detector:
+                self.forgotten_light_detector.stop()
+                logger.info("Forgotten Light Detector stopped")
 
 
 def create_app(config_path=None):
