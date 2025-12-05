@@ -699,9 +699,9 @@ class MLAutoTrainer:
                 self._update_progress(status='error', error=f'Zu wenig Samples: {len(X)} (benötigt: 30)')
                 return False
 
-            # Trainiere Modell
+            # Trainiere Modell (WICHTIG: benannte Parameter verwenden!)
             self._update_progress(progress=50, step=f'Trainiere Modell mit {len(X)} Samples...')
-            metrics = model.train(X, y)
+            metrics = model.train(X=X, y=y)
 
             if not metrics.get('accuracy'):
                 logger.warning("Forgotten Light Model training returned no accuracy metric")
@@ -749,6 +749,12 @@ class MLAutoTrainer:
             logger.info(f"Forgotten Light Model trained with accuracy: {metrics.get('accuracy', 0):.2f}, precision: {metrics.get('precision', 0):.2f}")
             if not comparison['improved']:
                 logger.warning(f"⚠️ New Forgotten Light model may be worse than previous version!")
+
+            # 7. Status speichern
+            status = self._load_status()
+            status['forgotten_light_trained'] = True
+            status['forgotten_light_last_trained'] = datetime.now().isoformat()
+            self._save_status(status)
 
             self._update_progress(progress=100, step='Forgotten Light Model erfolgreich trainiert!')
             return True

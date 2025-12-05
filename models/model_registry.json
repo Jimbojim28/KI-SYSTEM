@@ -257,5 +257,38 @@
         "model_path": "temperature_model.pkl"
       }
     ]
+  },
+  "forgotten_light_model": {
+    "current_version": "20251205_061314",
+    "versions": [
+      {
+        "version": "20251205_061314",
+        "timestamp": "2025-12-05T06:13:14.816042",
+        "metrics": {
+          "success": true,
+          "samples": 319,
+          "forgotten_samples": 46,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 7.66246197767028e-16,
+            "day_of_week": 1.7473725863754357e-16,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.1375176222048819,
+            "minutes_since_motion": 0.8624823777951172,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 5.090873486870812e-17,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 319",
+        "model_path": "forgotten_light_model.pkl"
+      }
+    ]
   }
 }
