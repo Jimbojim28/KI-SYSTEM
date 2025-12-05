@@ -433,11 +433,17 @@ async function updateMLPerformance() {
         // Confidence Trend Chart
         if (data.confidence_trends && data.confidence_trends.length > 0) {
             renderConfidenceChart(data.confidence_trends);
+            hideChartNoData('confidence-chart');
+        } else {
+            showChartNoData('confidence-chart', 'Noch keine Entscheidungen getroffen. Im Auto-Modus werden hier Confidence-Werte angezeigt.');
         }
 
         // Decision Types Chart
         if (data.decision_stats.by_type && data.decision_stats.by_type.length > 0) {
             renderDecisionTypesChart(data.decision_stats.by_type);
+            hideChartNoData('decision-types-chart');
+        } else {
+            showChartNoData('decision-types-chart', 'Noch keine Entscheidungen getroffen. Im Auto-Modus werden hier Entscheidungstypen angezeigt.');
         }
 
     } catch (error) {
@@ -487,6 +493,44 @@ function hideMLNoDataInfo() {
     const infoBox = document.getElementById('ml-no-data-info');
     if (infoBox) {
         infoBox.style.display = 'none';
+    }
+}
+
+function showChartNoData(chartId, message) {
+    const canvas = document.getElementById(chartId);
+    if (!canvas) return;
+    
+    // Verstecke Canvas
+    canvas.style.display = 'none';
+    
+    // Erstelle oder finde No-Data Nachricht
+    let noDataDiv = document.getElementById(chartId + '-no-data');
+    if (!noDataDiv) {
+        noDataDiv = document.createElement('div');
+        noDataDiv.id = chartId + '-no-data';
+        noDataDiv.style.cssText = 'text-align: center; padding: 40px 20px; color: #6b7280; background: linear-gradient(135deg, #f3f4f6 0%, #ffffff 100%); border-radius: 8px; margin: 10px 0;';
+        canvas.parentNode.insertBefore(noDataDiv, canvas.nextSibling);
+    }
+    
+    noDataDiv.innerHTML = `
+        <div style="font-size: 2em; margin-bottom: 10px;">📊</div>
+        <p style="margin: 0; font-size: 0.95em;">${message}</p>
+        <p style="margin-top: 10px; font-size: 0.85em; color: #9ca3af;">
+            💡 Wechsle in den <strong>Auto-Modus</strong> um automatische Entscheidungen zu aktivieren.
+        </p>
+    `;
+    noDataDiv.style.display = 'block';
+}
+
+function hideChartNoData(chartId) {
+    const canvas = document.getElementById(chartId);
+    if (canvas) {
+        canvas.style.display = 'block';
+    }
+    
+    const noDataDiv = document.getElementById(chartId + '-no-data');
+    if (noDataDiv) {
+        noDataDiv.style.display = 'none';
     }
 }
 
