@@ -1044,6 +1044,20 @@ def init_ventilation_blueprint(engine, db, config):
             if not db:
                 return jsonify({'success': False, 'error': 'Database not available'}), 500
             
+            # Lade Sensor-Mapping um zu prüfen, welche Räume CO2-Sensoren haben
+            sensor_mapping_data = _load_sensor_mapping()
+            room_mapping = sensor_mapping_data.get('rooms', {})
+            
+            # Erstelle Set von Räumen mit CO2-Sensoren
+            rooms_with_co2 = set()
+            for room_id, sensors in room_mapping.items():
+                if sensors.get('co2'):
+                    # Hole den Raumnamen aus den Zonen
+                    zones = _get_zones()
+                    room_name = zones.get(room_id, room_id) if isinstance(zones, dict) else room_id
+                    rooms_with_co2.add(room_name.lower())
+                    rooms_with_co2.add(room_id.lower())
+            
             # Hole alle abgeschlossenen Lüftungsereignisse
             query = """
                 SELECT 
@@ -1083,10 +1097,16 @@ def init_ventilation_blueprint(engine, db, config):
             
             events = []
             for row in rows:
-                # Berechne Zeit bis CO2 unter 600 ppm
+                room_name = row.get('room_name', '')
+                
+                # Prüfe ob dieser Raum einen CO2-Sensor hat
+                room_has_co2_sensor = room_name.lower() in rooms_with_co2
+                
+                # Berechne Zeit bis CO2 unter 600 ppm (nur wenn Raum CO2-Sensor hat)
                 co2_recovery_time = None
-                co2_start = row.get('co2_start')
-                co2_end = row.get('co2_end')
+                co2_start = row.get('co2_start') if room_has_co2_sensor else None
+                co2_end = row.get('co2_end') if room_has_co2_sensor else None
+                co2_change = row.get('co2_change') if room_has_co2_sensor else None
                 duration = row.get('duration_minutes') or 0
                 
                 if co2_start and co2_end:
@@ -1104,7 +1124,7 @@ def init_ventilation_blueprint(engine, db, config):
                 events.append({
                     'id': row.get('id'),
                     'device_name': row.get('device_name'),
-                    'room_name': row.get('room_name'),
+                    'room_name': room_name,
                     'opened_at': row.get('opened_at'),
                     'closed_at': row.get('closed_at'),
                     'duration_minutes': row.get('duration_minutes'),
@@ -1116,7 +1136,7 @@ def init_ventilation_blueprint(engine, db, config):
                     'humidity_change': row.get('humidity_change'),
                     'co2_start': co2_start,
                     'co2_end': co2_end,
-                    'co2_change': row.get('co2_change'),
+                    'co2_change': co2_change,
                     'outdoor_temp': row.get('outdoor_temp'),
                     'outdoor_humidity': row.get('outdoor_humidity'),
                     'season': row.get('season'),

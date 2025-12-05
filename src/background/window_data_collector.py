@@ -12,7 +12,9 @@ Hinweis: Türen werden explizit NICHT erfasst, nur Fenster!
 
 import threading
 import time
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, List
 from loguru import logger
 from src.utils.database import Database
@@ -36,8 +38,54 @@ class WindowDataCollector:
         
         # Tracke vorherigen Fenster-Status für Event-Erkennung
         self._previous_window_states: Dict[str, bool] = {}  # device_id -> is_open
+        
+        # Sensor-Mapping Datei für CO2-Sensor-Prüfung
+        self._sensor_mapping_file = Path('data/ventilation_sensor_mapping.json')
+        self._rooms_with_co2_cache: Optional[set] = None
+        self._cache_timestamp: Optional[datetime] = None
 
         logger.info(f"Window Data Collector initialized ({interval_seconds}s interval)")
+    
+    def _get_rooms_with_co2_sensors(self) -> set:
+        """Gibt ein Set von Raumnamen zurück, die CO2-Sensoren haben (aus Sensor-Mapping)"""
+        # Cache für 5 Minuten
+        if (self._rooms_with_co2_cache is not None and 
+            self._cache_timestamp is not None and
+            (datetime.now() - self._cache_timestamp).seconds < 300):
+            return self._rooms_with_co2_cache
+        
+        rooms_with_co2 = set()
+        
+        try:
+            if self._sensor_mapping_file.exists():
+                with open(self._sensor_mapping_file, 'r') as f:
+                    data = json.load(f)
+                
+                room_mapping = data.get('rooms', {})
+                
+                # Hole Zonen-Namen
+                zones = {}
+                if self.engine and self.engine.platform:
+                    try:
+                        zone_list = self.engine.platform.get_zones() or []
+                        zones = {z.get('id'): z.get('name') for z in zone_list}
+                    except:
+                        pass
+                
+                for room_id, sensors in room_mapping.items():
+                    if sensors.get('co2'):
+                        # Füge sowohl room_id als auch den Zone-Namen hinzu
+                        rooms_with_co2.add(room_id.lower())
+                        zone_name = zones.get(room_id, '')
+                        if zone_name:
+                            rooms_with_co2.add(zone_name.lower())
+        except Exception as e:
+            logger.debug(f"Error loading sensor mapping for CO2 check: {e}")
+        
+        self._rooms_with_co2_cache = rooms_with_co2
+        self._cache_timestamp = datetime.now()
+        
+        return rooms_with_co2
 
     def start(self):
         """Startet die kontinuierliche Datensammlung"""
@@ -122,11 +170,18 @@ class WindowDataCollector:
         return room_name if room_name else device_name.strip()
 
     def _get_room_climate(self, room_name: str) -> Dict:
-        """Holt aktuelle Klimadaten für einen Raum"""
+        """Holt aktuelle Klimadaten für einen Raum
+        
+        CO2-Werte werden nur gesammelt wenn der Raum einen CO2-Sensor im Sensor-Mapping hat.
+        """
         climate = {'temp': None, 'humidity': None, 'co2': None}
         
         if not room_name or not self.engine or not self.engine.platform:
             return climate
+        
+        # Prüfe ob dieser Raum einen CO2-Sensor im Mapping hat
+        rooms_with_co2 = self._get_rooms_with_co2_sensors()
+        room_has_co2_sensor = room_name.lower() in rooms_with_co2
             
         try:
             # Hole alle Geräte
@@ -183,24 +238,32 @@ class WindowDataCollector:
                     if val is not None and 0 <= val <= 100:
                         climate['humidity'] = val
                 
-                # CO2 - nur verwenden wenn das Gerät WIRKLICH in diesem Raum ist
-                # CO2-Sensoren sind selten, daher strengeres Matching
-                if climate['co2'] is None and 'measure_co2' in caps:
+                # CO2 - NUR sammeln wenn der Raum einen CO2-Sensor im Mapping hat
+                # Dies verhindert falsche CO2-Zuordnungen von anderen Räumen
+                if room_has_co2_sensor and climate['co2'] is None and 'measure_co2' in caps:
                     # Raum-Match: Zone enthält Raumnamen ODER Raum enthält Zone-Namen
                     # z.B. "schlafzimmer" matches "schlafzimmer (doppelbett)"
-                    co2_room_match = (
-                        device_room == room_lower or  # Exaktes Zone-Match
-                        room_lower in device_room or  # Raum ist Teil der Zone (z.B. "schlafzimmer" in "schlafzimmer (doppelbett)")
-                        device_room in room_lower or  # Zone ist Teil des Raums
-                        (room_lower in device_name and 'co2' in device_name.lower())  # CO2-Monitor mit Raumnamen
-                    )
+                    # WICHTIG: Leere Strings ausschließen und Mindestlänge prüfen
+                    co2_room_match = False
+                    if device_room and len(device_room) >= 3:  # Zone muss mindestens 3 Zeichen haben
+                        co2_room_match = (
+                            device_room == room_lower or  # Exaktes Zone-Match
+                            room_lower in device_room or  # Raum ist Teil der Zone
+                            (len(device_room) >= 3 and device_room in room_lower)  # Zone ist Teil des Raums
+                        )
+                    # Alternativ: CO2-Monitor mit explizitem Raumnamen im Gerätenamen
+                    if not co2_room_match and 'co2' in device_name.lower():
+                        co2_room_match = room_lower in device_name
+                    
                     if co2_room_match:
                         val = caps['measure_co2'].get('value')
                         if val is not None and 200 < val < 10000:  # Plausibilitätsprüfung
                             climate['co2'] = val
+                            logger.debug(f"CO2 for '{room_name}' from device '{device.get('name')}' in zone '{device_room}': {val} ppm")
             
-            # Wenn CO2 noch nicht gefunden, suche nach CO2-Sensor mit passendem Namen
-            if climate['co2'] is None:
+            # Wenn CO2 noch nicht gefunden UND Raum hat CO2-Sensor im Mapping,
+            # suche nach CO2-Sensor mit passendem Namen
+            if room_has_co2_sensor and climate['co2'] is None:
                 for device in devices:
                     if not isinstance(device, dict):
                         continue
@@ -213,6 +276,7 @@ class WindowDataCollector:
                             val = caps['measure_co2'].get('value')
                             if val is not None and 200 < val < 10000:
                                 climate['co2'] = val
+                                logger.debug(f"CO2 for '{room_name}' from device by name '{device.get('name')}': {val} ppm")
                                 break
                     
         except Exception as e:
