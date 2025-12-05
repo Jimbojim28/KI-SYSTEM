@@ -793,19 +793,22 @@ class MLAutoTrainer:
         except Exception as e:
             logger.error(f"Could not save training status: {e}")
 
-    def _save_training_metrics(self, model_name: str, metrics: Dict):
+
+    def _save_training_metrics(self, model_name: str, metrics: Dict, model_type: str = 'gradient_boosting'):
         """Speichert Trainingsmetriken in DB"""
         try:
+            import json
             self.db.execute(
-                "INSERT INTO training_history (timestamp, model_name, accuracy, samples_used, training_time) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO training_history (timestamp, model_name, model_type, metrics, model_path) VALUES (?, ?, ?, ?, ?)",
                 (
                     datetime.now().isoformat(),
                     model_name,
-                    metrics.get('accuracy', metrics.get('r2_score', 0)),
-                    metrics.get('samples_used', 0),
-                    metrics.get('training_time', 0)
+                    model_type,
+                    json.dumps(metrics),
+                    f"models/{model_name}_model.pkl"
                 )
             )
             logger.info(f"Training metrics saved for {model_name}")
         except Exception as e:
             logger.warning(f"Could not save training metrics: {e}")
+
