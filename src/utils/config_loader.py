@@ -46,6 +46,16 @@ DEFAULT_CONFIG = {
         'away_min_duration': 5,
         'test_mode': True
     },
+    'bathroom_automation': {
+        'enabled': False,
+        'humidity_threshold_high': 70,
+        'humidity_threshold_low': 55,  # Bei 55% wird ausgeschaltet (nicht 60%)
+        'target_temperature': 22,
+        'heating_boost_enabled': False,
+        'heating_boost_delta': 1.0,
+        'frost_protection_temperature': 12,
+        'dehumidifier_delay': 3  # Nur 3 Min. Verzögerung statt 5
+    },
     'heating': {
         'enabled': True,
         'eco_temperature': 18,
