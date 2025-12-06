@@ -19,6 +19,7 @@ from .ml_auto_trainer import MLAutoTrainer
 from .database_maintenance import DatabaseMaintenance
 
 from ..utils.config_loader import ConfigLoader
+from ..utils.config_manager import get_config_value, get_config_section
 
 
 class CollectorManager:
@@ -52,8 +53,8 @@ class CollectorManager:
         """Initialisiert alle aktivierten Collectors"""
 
         # 1. Heizungs-Daten Collector
-        if self.config.get('collectors.heating.enabled', True):
-            interval = self.config.get('collectors.heating.interval', 60)
+        if get_config_value('collectors.heating.enabled', True):
+            interval = get_config_value('collectors.heating.interval', 60)
             self.collectors['heating'] = HeatingDataCollector(
                 config_path=None,
                 interval=interval
@@ -61,8 +62,8 @@ class CollectorManager:
             logger.info(f"Heating collector initialized (interval: {interval}s)")
 
         # 2. Beleuchtungs-Daten Collector
-        if self.config.get('collectors.lighting.enabled', True):
-            interval = self.config.get('collectors.lighting.interval', 60)
+        if get_config_value('collectors.lighting.enabled', True):
+            interval = get_config_value('collectors.lighting.interval', 60)
             self.collectors['lighting'] = LightingDataCollector(
                 config_path=None,
                 interval=interval
@@ -70,8 +71,8 @@ class CollectorManager:
             logger.info(f"Lighting collector initialized (interval: {interval}s)")
 
         # 3. Fenster-Daten Collector
-        if self.config.get('collectors.windows.enabled', True):
-            interval = self.config.get('collectors.windows.interval', 60)
+        if get_config_value('collectors.windows.enabled', True):
+            interval = get_config_value('collectors.windows.interval', 60)
             self.collectors['windows'] = WindowDataCollector(
                 config_path=None,
                 interval=interval
@@ -79,8 +80,8 @@ class CollectorManager:
             logger.info(f"Window collector initialized (interval: {interval}s)")
 
         # 4. Temperatur-Daten Collector
-        if self.config.get('collectors.temperature.enabled', True):
-            interval = self.config.get('collectors.temperature.interval', 60)
+        if get_config_value('collectors.temperature.enabled', True):
+            interval = get_config_value('collectors.temperature.interval', 60)
             self.collectors['temperature'] = TemperatureDataCollector(
                 config_path=None,
                 interval=interval
@@ -88,8 +89,8 @@ class CollectorManager:
             logger.info(f"Temperature collector initialized (interval: {interval}s)")
 
         # 5. Badezimmer-Daten Collector
-        if self.config.get('collectors.bathroom.enabled', False):
-            interval = self.config.get('collectors.bathroom.interval', 60)
+        if get_config_value('collectors.bathroom.enabled', False):
+            interval = get_config_value('collectors.bathroom.interval', 60)
             try:
                 self.collectors['bathroom'] = BathroomDataCollector(
                     config_path=None,
@@ -100,8 +101,8 @@ class CollectorManager:
                 logger.warning(f"Bathroom collector not available: {e}")
 
         # 6. ML Auto-Trainer (täglich)
-        if self.config.get('ml_auto_trainer.enabled', True):
-            training_time = self.config.get('ml_auto_trainer.training_time', '03:00')
+        if get_config_value('ml_auto_trainer.enabled', True):
+            training_time = get_config_value('ml_auto_trainer.training_time', '03:00')
             try:
                 self.collectors['ml_trainer'] = MLAutoTrainer(
                     config_path=None,
@@ -112,8 +113,8 @@ class CollectorManager:
                 logger.warning(f"ML Auto-Trainer not available: {e}")
 
         # 7. Badezimmer-Optimizer (täglich)
-        if self.config.get('bathroom_optimizer.enabled', False):
-            optimization_time = self.config.get('bathroom_optimizer.optimization_time', '03:30')
+        if get_config_value('bathroom_optimizer.enabled', False):
+            optimization_time = get_config_value('bathroom_optimizer.optimization_time', '03:30')
             try:
                 self.collectors['bathroom_optimizer'] = BathroomOptimizer(
                     config_path=None,
@@ -124,9 +125,9 @@ class CollectorManager:
                 logger.warning(f"Bathroom Optimizer not available: {e}")
 
         # 8. Database Maintenance (täglich)
-        if self.config.get('database_maintenance.enabled', True):
-            cleanup_time = self.config.get('database_maintenance.cleanup_time', '04:00')
-            retention_days = self.config.get('database_maintenance.retention_days', 90)
+        if get_config_value('database_maintenance.enabled', True):
+            cleanup_time = get_config_value('database_maintenance.cleanup_time', '04:00')
+            retention_days = get_config_value('database_maintenance.retention_days', 90)
             try:
                 self.collectors['db_maintenance'] = DatabaseMaintenance(
                     config_path=None,

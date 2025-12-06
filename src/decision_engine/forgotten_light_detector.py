@@ -26,6 +26,7 @@ import requests
 
 from src.utils.database import Database
 from src.data_collector.platform_factory import PlatformFactory
+from src.utils.config_manager import get_config_section, get_config_value
 
 
 class ForgottenLightDetector:
@@ -53,8 +54,8 @@ class ForgottenLightDetector:
         self.running = False
         self.thread = None
         
-        # Konfigurierbare Schwellwerte
-        settings = self.config.get('forgotten_light', {})
+        # Konfigurierbare Schwellwerte (mit Defaults aus ConfigManager)
+        settings = get_config_section('forgotten_light')
         self.no_motion_threshold_minutes = settings.get('no_motion_threshold', 30)  # Min. ohne Bewegung
         self.sleep_hour_start = settings.get('sleep_hour_start', 23)  # Schlafenszeit Start
         self.sleep_hour_end = settings.get('sleep_hour_end', 6)  # Schlafenszeit Ende

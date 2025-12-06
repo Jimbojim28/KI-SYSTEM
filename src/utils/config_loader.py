@@ -16,6 +16,99 @@ except ImportError:
     logger.warning("Pydantic not available - config validation disabled. Install with: pip install pydantic")
 
 
+# Default-Konfigurationen für alle Bereiche
+# Diese werden mit der User-Config gemerged
+DEFAULT_CONFIG = {
+    'ventilation_notifications': {
+        'enabled': True,
+        'co2_high_alert': True,
+        'co2_threshold': 1000,
+        'humidity_high_alert': True,
+        'humidity_threshold': 70,
+        'ventilation_complete': False,
+        'frost_warning': True,
+        'frost_threshold': 2,
+        'mold_warning': True,
+        'window_opened_alert': True,
+        'window_away_alert': True
+    },
+    'forgotten_light': {
+        'enabled': True,
+        'notifications_enabled': True,
+        'no_motion_threshold': 30,
+        'sleep_hour_start': 23,
+        'sleep_hour_end': 6,
+        'daylight_lux_threshold': 200,
+        'min_on_duration': 15,
+        'check_interval': 60,
+        'use_ml': True,
+        'turn_off_when_away': True,
+        'away_min_duration': 5,
+        'test_mode': True
+    },
+    'heating': {
+        'enabled': True,
+        'eco_temperature': 18,
+        'comfort_temperature': 21,
+        'night_temperature': 17,
+        'away_temperature': 16,
+        'frost_protection_temp': 7,
+        'window_open_reduction': 5,
+        'presence_boost': True,
+        'weather_adjustment': True,
+        'schedule_enabled': True
+    },
+    'ml_auto_trainer': {
+        'enabled': True,
+        'run_hour': 2,
+        'min_samples_heating': 200,
+        'min_samples_lighting': 100
+    },
+    'collectors': {
+        'heating': {'enabled': True, 'interval': 60},
+        'lighting': {'enabled': True, 'interval': 60},
+        'windows': {'enabled': True, 'interval': 60},
+        'temperature': {'enabled': True, 'interval': 60},
+        'bathroom': {'enabled': False, 'interval': 60}
+    },
+    'database_maintenance': {
+        'enabled': True,
+        'cleanup_time': '04:00',
+        'retention_days': 90
+    },
+    'notifications': {
+        'pushover': {
+            'api_token': '',
+            'user_key': ''
+        }
+    },
+    'decision_engine': {
+        'mode': 'auto',
+        'confidence_threshold': 0.7,
+        'safety_checks': True
+    },
+    'logging': {
+        'level': 'INFO',
+        'path': 'logs/ki_system.log',
+        'max_size_mb': 100
+    }
+}
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    """Tiefes Mergen von zwei Dictionaries"""
+    from copy import deepcopy
+    result = deepcopy(base)
+    
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value) if isinstance(value, dict) else value
+    
+    return result
+
+
 class ConfigValidationError(Exception):
     """Custom exception for configuration validation errors"""
     pass
@@ -48,12 +141,18 @@ class ConfigLoader:
             self._validate_config()
 
     def _load_config(self) -> Dict[str, Any]:
-        """Lädt die YAML-Konfiguration"""
+        """Lädt die YAML-Konfiguration und merged mit Defaults"""
         if not self.config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+            logger.warning(f"Config file not found: {self.config_path}, using defaults")
+            return DEFAULT_CONFIG.copy()
 
         with open(self.config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
+            user_config = yaml.safe_load(f) or {}
+        
+        # Merge: User-Config überschreibt Defaults
+        merged = deep_merge(DEFAULT_CONFIG, user_config)
+        logger.debug("Config loaded and merged with defaults")
+        return merged
 
     def _merge_env_variables(self):
         """Überschreibt Config-Werte mit Umgebungsvariablen"""
