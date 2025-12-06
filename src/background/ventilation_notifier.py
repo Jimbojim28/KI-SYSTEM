@@ -57,7 +57,8 @@ class VentilationNotifier:
                     'ventilation_complete': False,
                     'frost_warning': True,
                     'frost_threshold': 2,
-                    'mold_warning': True
+                    'mold_warning': True,
+                    'window_opened_alert': True
                 })
         return {'enabled': False}
 
@@ -175,10 +176,55 @@ class VentilationNotifier:
             # Update tracked windows
             current_open = set(w['device_id'] for w in open_windows)
             
-            # Neue offene Fenster
+            # Neue offene Fenster - mit Benachrichtigung
+            new_windows = []
             for window in open_windows:
                 if window['device_id'] not in self._open_windows:
                     self._open_windows[window['device_id']] = datetime.now()
+                    new_windows.append(window)
+            
+            # === Fenster wurde geöffnet ===
+            if config.get('window_opened_alert', True) and new_windows:
+                for window in new_windows:
+                    room_name = window.get('room', 'Unbekannt')
+                    room_climate = room_data.get(room_name, {})
+                    
+                    # Berechne empfohlene Lüftungsdauer
+                    duration = self._calculate_ventilation_duration(
+                        outdoor_temp=outdoor_temp,
+                        indoor_temp=room_climate.get('temp'),
+                        humidity=room_climate.get('humidity'),
+                        co2=room_climate.get('co2')
+                    )
+                    
+                    # Baue Nachrichtentext
+                    message_parts = [f'🪟 <b>{window["name"]}</b> wurde geöffnet']
+                    
+                    # Zeige Raum-Klimadaten wenn verfügbar
+                    climate_info = []
+                    if room_climate.get('temp'):
+                        climate_info.append(f"🌡️ {room_climate['temp']:.1f}°C")
+                    if room_climate.get('humidity'):
+                        climate_info.append(f"💧 {room_climate['humidity']:.0f}%")
+                    if room_climate.get('co2'):
+                        climate_info.append(f"💨 {room_climate['co2']:.0f} ppm")
+                    
+                    if climate_info:
+                        message_parts.append(f"\n<b>{room_name}:</b> " + ' | '.join(climate_info))
+                    
+                    if outdoor_temp is not None:
+                        message_parts.append(f"\n🌤️ Außen: {outdoor_temp:.1f}°C")
+                    
+                    # Lüftungsempfehlung
+                    message_parts.append(f"\n\n⏱️ <b>Empfohlen:</b> {duration['text']}")
+                    if duration.get('reason'):
+                        message_parts.append(f"\n💡 {duration['reason']}")
+                    
+                    self._send_notification(
+                        '🪟 Fenster geöffnet',
+                        ''.join(message_parts),
+                        notification_key=f'window_opened_{window["device_id"]}'
+                    )
             
             # Geschlossene Fenster entfernen
             closed = set(self._open_windows.keys()) - current_open
@@ -341,6 +387,14 @@ class VentilationNotifier:
             else:
                 devices = self.engine.platform.get_states() or []
             
+            # Hole Zone-Mapping für Raum-Namen
+            zones = {}
+            try:
+                zone_list = self.engine.platform.get_zones() or []
+                zones = {z.get('id'): z.get('name') for z in zone_list}
+            except:
+                pass
+            
             for device in devices:
                 if not isinstance(device, dict):
                     continue
@@ -358,15 +412,91 @@ class VentilationNotifier:
                 if 'alarm_contact' in caps:
                     is_open = caps['alarm_contact'].get('value', False)
                     if is_open:
+                        # Hole Raum-Namen aus Zone
+                        zone_id = device.get('zone')
+                        room_name = zones.get(zone_id, 'Unbekannt')
+                        
                         windows.append({
                             'device_id': device.get('id'),
-                            'name': device.get('name', 'Unbekannt')
+                            'name': device.get('name', 'Unbekannt'),
+                            'room': room_name
                         })
                         
         except Exception as e:
             logger.error(f"Error getting open windows: {e}")
         
         return windows
+
+    def _calculate_ventilation_duration(self, outdoor_temp: float = None, 
+                                        indoor_temp: float = None,
+                                        humidity: float = None, 
+                                        co2: float = None) -> dict:
+        """Berechnet die empfohlene Lüftungsdauer basierend auf den Bedingungen"""
+        
+        # Standardwerte
+        min_duration = 5
+        max_duration = 15
+        reason = None
+        
+        # Außentemperatur-basierte Anpassung
+        if outdoor_temp is not None:
+            if outdoor_temp < 0:
+                min_duration = 3
+                max_duration = 5
+                reason = "Sehr kalt - kurzes Stoßlüften reicht"
+            elif outdoor_temp < 5:
+                min_duration = 5
+                max_duration = 8
+                reason = "Kalt - nicht zu lange lüften"
+            elif outdoor_temp < 15:
+                min_duration = 8
+                max_duration = 15
+                reason = "Gute Lüftungsbedingungen"
+            elif outdoor_temp < 25:
+                min_duration = 10
+                max_duration = 20
+                reason = "Angenehme Außentemperatur"
+            else:
+                min_duration = 5
+                max_duration = 10
+                reason = "Heiß - morgens/abends länger lüften"
+        
+        # CO2-basierte Anpassung
+        if co2 is not None:
+            if co2 > 2000:
+                min_duration = max(min_duration, 15)
+                max_duration = max(max_duration, 25)
+                reason = "CO₂ sehr hoch - ausgiebig lüften!"
+            elif co2 > 1400:
+                min_duration = max(min_duration, 10)
+                max_duration = max(max_duration, 20)
+                reason = "CO₂ erhöht - gründlich lüften"
+            elif co2 > 1000:
+                min_duration = max(min_duration, 8)
+                max_duration = max(max_duration, 15)
+        
+        # Luftfeuchtigkeit-basierte Anpassung
+        if humidity is not None:
+            if humidity > 75:
+                min_duration = max(min_duration, 10)
+                max_duration = max(max_duration, 20)
+                if not reason or 'CO₂' not in reason:
+                    reason = "Hohe Feuchtigkeit - länger lüften"
+            elif humidity > 65:
+                min_duration = max(min_duration, 8)
+        
+        # Erstelle Text
+        if min_duration == max_duration:
+            duration_text = f"ca. {min_duration} Minuten"
+        else:
+            duration_text = f"{min_duration}-{max_duration} Minuten"
+        
+        return {
+            'min_minutes': min_duration,
+            'max_minutes': max_duration,
+            'text': duration_text,
+            'reason': reason
+        }
 
     def get_status(self) -> dict:
         """Gibt den aktuellen Status zurück"""
