@@ -21,6 +21,8 @@ from pathlib import Path
 from threading import Thread
 from typing import Dict, List, Optional, Tuple
 from loguru import logger
+import yaml
+import requests
 
 from src.utils.database import Database
 from src.data_collector.platform_factory import PlatformFactory
@@ -490,6 +492,15 @@ class ForgottenLightDetector:
             logger.info(f"Forgotten light detected: {device_name} in {room_name} "
                        f"(confidence: {confidence:.0%}, reasons: {', '.join(reasons)})")
             
+            # Pushover-Benachrichtigung senden
+            self._send_forgotten_light_notification(
+                device_name=device_name,
+                room_name=room_name,
+                on_minutes=on_minutes,
+                reasons=reasons,
+                confidence=confidence
+            )
+            
             # Im aktiven Modus: Lampe ausschalten
             if not self.test_mode:
                 self._turn_off_light(device_id, device_name)
@@ -497,6 +508,89 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.error(f"Error saving forgotten light prediction: {e}")
     
+    def _send_forgotten_light_notification(self, device_name: str, room_name: str,
+                                            on_minutes: float, reasons: List[str],
+                                            confidence: float):
+        """Sendet Pushover-Benachrichtigung für vergessene Lampe"""
+        try:
+            config_path = Path('config/config.yaml')
+            if not config_path.exists():
+                return
+            
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+            
+            # Prüfe ob Benachrichtigungen aktiviert
+            forgotten_light_config = full_config.get('forgotten_light', {})
+            if not forgotten_light_config.get('notifications_enabled', True):
+                return
+            
+            # Hole Pushover-Credentials
+            notifications = full_config.get('notifications', {})
+            pushover = notifications.get('pushover', {})
+            api_key = pushover.get('api_token', '')
+            user_key = pushover.get('user_key', '')
+            
+            # Fallback: absence config
+            if not api_key or not user_key:
+                absence = full_config.get('absence', {})
+                if not api_key:
+                    api_key = absence.get('pushover_api_key', '')
+                if not user_key:
+                    user_key = absence.get('pushover_user_key', '')
+            
+            if not api_key or not user_key:
+                logger.debug("Pushover credentials not configured for forgotten light")
+                return
+            
+            # Erstelle Nachricht
+            is_away = not self.current_presence
+            if is_away:
+                title = "💡 Licht an - Niemand zuhause!"
+                away_time = ""
+                if self.away_since:
+                    away_minutes = (datetime.now() - self.away_since).total_seconds() / 60
+                    away_time = f"\n🏠 Niemand zuhause seit {int(away_minutes)} Min."
+                
+                message = (
+                    f"<b>{device_name}</b> in <b>{room_name}</b> ist noch an!{away_time}\n\n"
+                    f"⏱️ Eingeschaltet seit: {int(on_minutes)} Min.\n"
+                    f"📊 Konfidenz: {confidence:.0%}\n\n"
+                    f"💡 {'; '.join(reasons)}"
+                )
+                priority = 1  # Hohe Priorität bei Abwesenheit
+            else:
+                title = "💡 Vergessenes Licht?"
+                message = (
+                    f"<b>{device_name}</b> in <b>{room_name}</b>\n\n"
+                    f"⏱️ Eingeschaltet seit: {int(on_minutes)} Min.\n"
+                    f"📊 Konfidenz: {confidence:.0%}\n\n"
+                    f"💡 {'; '.join(reasons)}"
+                )
+                priority = 0
+            
+            # Sende Benachrichtigung
+            response = requests.post(
+                'https://api.pushover.net/1/messages.json',
+                data={
+                    'token': api_key,
+                    'user': user_key,
+                    'title': title,
+                    'message': message,
+                    'html': 1,
+                    'priority': priority
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Pushover notification sent for forgotten light: {device_name}")
+            else:
+                logger.error(f"Pushover error: {response.text}")
+                
+        except Exception as e:
+            logger.error(f"Error sending forgotten light notification: {e}")
+
     def _save_prediction_to_db(self, prediction: Dict):
         """Speichert Vorhersage in Datenbank"""
         conn = self.db._get_connection()
