@@ -40,6 +40,10 @@ class VentilationNotifier:
         # Tracke offene Fenster und deren Öffnungszeit
         self._open_windows: Dict[str, datetime] = {}  # device_id -> opened_at
         
+        # Anwesenheits-Tracking
+        self._presence_home: bool = True
+        self._away_since: Optional[datetime] = None
+        
         logger.info(f"Ventilation Notifier initialized ({check_interval}s interval)")
 
     def _load_config(self) -> dict:
@@ -295,8 +299,102 @@ class VentilationNotifier:
                                 notification_key=f'mold_{room}'
                             )
             
+            # === Fenster offen bei Abwesenheit ===
+            if config.get('window_away_alert', True):
+                presence_home = self._check_presence()
+                self._update_presence(presence_home)
+                
+                if not presence_home and open_windows:
+                    # Prüfe wie lange niemand zuhause ist
+                    away_minutes = 0
+                    if self._away_since:
+                        away_minutes = (datetime.now() - self._away_since).total_seconds() / 60
+                    
+                    # Nur warnen wenn mind. 5 Min. weg
+                    if away_minutes >= 5:
+                        for window in open_windows:
+                            device_id = window['device_id']
+                            opened_at = self._open_windows.get(device_id)
+                            minutes_open = 0
+                            if opened_at:
+                                minutes_open = (datetime.now() - opened_at).total_seconds() / 60
+                            
+                            room_name = window.get('room', 'Unbekannt')
+                            
+                            # Warnung senden
+                            message = (
+                                f'🪟 <b>{window["name"]}</b> ist offen!\n\n'
+                                f'🏠 <b>Niemand zuhause</b> seit {int(away_minutes)} Min.\n'
+                                f'⏱️ Fenster offen seit: {int(minutes_open)} Min.'
+                            )
+                            
+                            # Bei Kälte zusätzliche Warnung
+                            if outdoor_temp is not None and outdoor_temp < 10:
+                                message += f'\n\n❄️ Außentemperatur: {outdoor_temp:.1f}°C\n⚠️ Heizkosten steigen!'
+                            
+                            self._send_notification(
+                                '🚨 Fenster offen - Niemand zuhause!',
+                                message,
+                                priority=1,
+                                notification_key=f'window_away_{device_id}'
+                            )
+            
         except Exception as e:
             logger.error(f"Error checking ventilation conditions: {e}")
+
+    def _check_presence(self) -> bool:
+        """Prüft ob jemand zuhause ist"""
+        try:
+            if hasattr(self.engine.platform, '_device_cache'):
+                devices = list(self.engine.platform._device_cache.values()) if isinstance(
+                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            else:
+                devices = self.engine.platform.get_states() or []
+            
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                
+                name = device.get('name', '').lower()
+                caps = device.get('capabilitiesObj', {})
+                
+                # Prüfe Anwesenheits-Sensoren
+                if any(kw in name for kw in ['presence', 'anwesen', 'zuhause', 'home', 'person']):
+                    if 'homealarm_state' in caps:
+                        state = caps['homealarm_state'].get('value', '')
+                        # "armed" = niemand zuhause, "disarmed" = jemand zuhause
+                        if state == 'disarmed':
+                            return True
+                    if 'onoff' in caps:
+                        if caps['onoff'].get('value'):
+                            return True
+                
+                # Prüfe ob Smartphone zuhause
+                if 'phone' in name or 'handy' in name or 'iphone' in name:
+                    if 'onoff' in caps and caps['onoff'].get('value'):
+                        return True
+                        
+        except Exception as e:
+            logger.debug(f"Error checking presence: {e}")
+        
+        # Fallback: annehmen jemand ist zuhause
+        return True
+    
+    def _update_presence(self, presence_home: bool):
+        """Aktualisiert das Anwesenheits-Tracking"""
+        if not presence_home:
+            # Niemand zu Hause
+            if self._away_since is None:
+                self._away_since = datetime.now()
+                logger.info("🏠 Niemand mehr zu Hause - Fenster-Tracking aktiviert")
+            self._presence_home = False
+        else:
+            # Jemand ist zu Hause
+            if self._away_since is not None:
+                away_duration = (datetime.now() - self._away_since).total_seconds() / 60
+                logger.debug(f"🏠 Jemand ist wieder zu Hause (war {int(away_duration)} Min. weg)")
+            self._away_since = None
+            self._presence_home = True
 
     def _get_room_climate_data(self) -> Dict[str, Dict]:
         """Holt Klimadaten für alle Räume"""
