@@ -47,24 +47,34 @@ class VentilationNotifier:
         logger.info(f"Ventilation Notifier initialized ({check_interval}s interval)")
 
     def _load_config(self) -> dict:
-        """Lade Benachrichtigungs-Konfiguration"""
+        """Lade Benachrichtigungs-Konfiguration mit Defaults für fehlende Optionen"""
+        # Standard-Konfiguration (wird für fehlende Optionen verwendet)
+        defaults = {
+            'enabled': False,
+            'co2_high_alert': True,
+            'co2_threshold': 1000,
+            'humidity_high_alert': True,
+            'humidity_threshold': 70,
+            'ventilation_complete': False,
+            'frost_warning': True,
+            'frost_threshold': 2,
+            'mold_warning': True,
+            'window_opened_alert': True,
+            'window_away_alert': True
+        }
+        
         config_path = Path('config/config.yaml')
         if config_path.exists():
             with open(config_path, 'r') as f:
                 full_config = yaml.safe_load(f) or {}
-                return full_config.get('ventilation_notifications', {
-                    'enabled': False,
-                    'co2_high_alert': True,
-                    'co2_threshold': 1000,
-                    'humidity_high_alert': True,
-                    'humidity_threshold': 70,
-                    'ventilation_complete': False,
-                    'frost_warning': True,
-                    'frost_threshold': 2,
-                    'mold_warning': True,
-                    'window_opened_alert': True
-                })
-        return {'enabled': False}
+                user_config = full_config.get('ventilation_notifications', {})
+                
+                # Merge: User-Config überschreibt Defaults
+                merged = defaults.copy()
+                merged.update(user_config)
+                return merged
+        
+        return defaults
 
     def _get_pushover_credentials(self) -> tuple:
         """Hole Pushover-Credentials"""
