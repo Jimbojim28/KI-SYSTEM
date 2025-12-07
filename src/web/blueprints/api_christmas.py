@@ -420,3 +420,66 @@ def sync_christmas_zone():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@christmas_bp.route('/debug-devices', methods=['GET'])
+def debug_christmas_devices():
+    """Debug-Endpoint: Zeigt alle Geräte im Weihnachtsbeleuchtung-Raum"""
+    try:
+        if not _engine or not _engine.platform:
+            return jsonify({
+                'success': False,
+                'error': 'Platform nicht verfügbar'
+            }), 503
+        
+        # Hole Zonen
+        zones = {}
+        if hasattr(_engine.platform, 'get_zones'):
+            zones = _engine.platform.get_zones() or {}
+        
+        # Finde Christmas Zone
+        christmas_zone_id = None
+        christmas_zone_name = None
+        for zone_id, zone_data in zones.items():
+            zone_name = zone_data.get('name', '').lower() if isinstance(zone_data, dict) else ''
+            if 'weihnacht' in zone_name or 'christmas' in zone_name:
+                christmas_zone_id = zone_id
+                christmas_zone_name = zone_data.get('name', 'Unknown')
+                break
+        
+        # Hole alle Geräte
+        all_devices = _engine.platform.get_states() or []
+        
+        # Finde Geräte im Christmas-Raum
+        christmas_room_devices = []
+        for device in all_devices:
+            if not isinstance(device, dict):
+                continue
+            
+            if device.get('zone') == christmas_zone_id:
+                christmas_room_devices.append({
+                    'id': device.get('id'),
+                    'name': device.get('name'),
+                    'class': device.get('class'),
+                    'zone': device.get('zone'),
+                    'capabilities': device.get('capabilities', []),
+                    'capabilitiesObj_keys': list(device.get('capabilitiesObj', {}).keys()),
+                    'has_onoff': 'onoff' in device.get('capabilities', []) or 'onoff' in device.get('capabilitiesObj', {})
+                })
+        
+        return jsonify({
+            'success': True,
+            'christmas_zone_id': christmas_zone_id,
+            'christmas_zone_name': christmas_zone_name,
+            'total_devices': len(all_devices),
+            'devices_in_christmas_room': len(christmas_room_devices),
+            'devices': christmas_room_devices,
+            'all_zones': {k: v.get('name') if isinstance(v, dict) else str(v) for k, v in zones.items()}
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in debug-devices: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
