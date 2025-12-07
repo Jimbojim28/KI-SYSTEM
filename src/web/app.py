@@ -358,6 +358,11 @@ class WebInterface:
             """Neue Automatisierungs-Seite mit verbessertem UI"""
             return render_template('automations_new.html')
 
+        @self.app.route('/christmas')
+        def christmas_page():
+            """Weihnachtsbeleuchtung Seite"""
+            return render_template('christmas.html')
+
         @self.app.route('/rooms')
         def rooms_page():
             """Räume & Zonen Seite"""
