@@ -538,6 +538,14 @@ function initChristmasPage() {
     document.getElementById('christmas-test-off')?.addEventListener('click', () => testChristmasLights(false));
     document.getElementById('sync-christmas-zone')?.addEventListener('click', syncChristmasZone);
     
+    // Aktivieren/Deaktivieren Schalter - speichert sofort
+    document.getElementById('christmas-enabled')?.addEventListener('change', async (e) => {
+        christmasConfig.enabled = e.target.checked;
+        await saveChristmasConfig();
+        updateChristmasStatus();
+        showNotification(e.target.checked ? '🎄 Weihnachtsbeleuchtung aktiviert!' : '⭕ Weihnachtsbeleuchtung deaktiviert', 'success');
+    });
+    
     // Config laden
     loadChristmasConfig();
     
