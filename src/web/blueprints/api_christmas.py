@@ -180,8 +180,23 @@ def get_christmas_devices():
     """Hole verfügbare Geräte für Weihnachtsbeleuchtung"""
     try:
         devices = []
+        christmas_zone_id = None
+        christmas_zone_devices = []
         
         if _engine and _engine.platform:
+            # Hole Zonen (Räume) von Homey
+            zones = {}
+            if hasattr(_engine.platform, 'get_zones'):
+                zones = _engine.platform.get_zones() or {}
+            
+            # Finde den "Weihnachtsbeleuchtung" Raum
+            for zone_id, zone_data in zones.items():
+                zone_name = zone_data.get('name', '').lower() if isinstance(zone_data, dict) else ''
+                if 'weihnacht' in zone_name or 'christmas' in zone_name:
+                    christmas_zone_id = zone_id
+                    logger.debug(f"Found Christmas zone: {zone_data.get('name')} (ID: {zone_id})")
+                    break
+            
             all_devices = _engine.platform.get_states() or []
             
             for device in all_devices:
@@ -190,6 +205,7 @@ def get_christmas_devices():
                 
                 device_id = device.get('id', '')
                 name = device.get('name', 'Unbekannt')
+                zone = device.get('zone', '')
                 
                 # Filtere nur steuerbare Lichter/Steckdosen
                 capabilities = device.get('capabilities', [])
@@ -208,29 +224,111 @@ def get_christmas_devices():
                 device_class = device.get('class', '').lower()
                 is_relevant = device_class in ['light', 'socket', 'outlet', 'plug', 'switch', '']
                 
+                # Markiere ob Gerät im Weihnachts-Raum ist
+                is_in_christmas_zone = zone == christmas_zone_id if christmas_zone_id else False
+                
                 if is_controllable and is_relevant:
                     # Prüfe aktuellen Zustand
                     is_on = False
                     if 'onoff' in caps_obj:
                         is_on = caps_obj['onoff'].get('value', False)
                     
-                    devices.append({
+                    device_info = {
                         'id': device_id,
                         'name': name,
                         'is_on': is_on,
-                        'type': device_class or 'unknown'
-                    })
+                        'type': device_class or 'unknown',
+                        'is_christmas_zone': is_in_christmas_zone
+                    }
+                    devices.append(device_info)
+                    
+                    if is_in_christmas_zone:
+                        christmas_zone_devices.append(device_id)
         
-        # Sortiere alphabetisch
-        devices.sort(key=lambda x: x['name'].lower())
+        # Sortiere: Weihnachts-Raum-Geräte zuerst, dann alphabetisch
+        devices.sort(key=lambda x: (not x.get('is_christmas_zone', False), x['name'].lower()))
         
         return jsonify({
             'success': True,
             'devices': devices,
-            'count': len(devices)
+            'count': len(devices),
+            'christmas_zone_id': christmas_zone_id,
+            'christmas_zone_devices': christmas_zone_devices
         })
     except Exception as e:
         logger.error(f"Error getting christmas devices: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@christmas_bp.route('/sync-zone', methods=['POST'])
+def sync_christmas_zone():
+    """Synchronisiere Geräte aus dem Homey-Raum 'Weihnachtsbeleuchtung' mit der Config"""
+    try:
+        christmas_zone_id = None
+        christmas_devices = []
+        
+        if _engine and _engine.platform:
+            # Hole Zonen (Räume) von Homey
+            zones = {}
+            if hasattr(_engine.platform, 'get_zones'):
+                zones = _engine.platform.get_zones() or {}
+            
+            # Finde den "Weihnachtsbeleuchtung" Raum
+            for zone_id, zone_data in zones.items():
+                zone_name = zone_data.get('name', '').lower() if isinstance(zone_data, dict) else ''
+                if 'weihnacht' in zone_name or 'christmas' in zone_name:
+                    christmas_zone_id = zone_id
+                    break
+            
+            if not christmas_zone_id:
+                return jsonify({
+                    'success': False,
+                    'error': 'Kein Raum "Weihnachtsbeleuchtung" in Homey gefunden'
+                }), 404
+            
+            # Hole alle Geräte aus diesem Raum
+            all_devices = _engine.platform.get_states() or []
+            
+            for device in all_devices:
+                if not isinstance(device, dict):
+                    continue
+                
+                if device.get('zone') == christmas_zone_id:
+                    # Prüfe ob steuerbar
+                    capabilities = device.get('capabilities', [])
+                    caps_obj = device.get('capabilitiesObj', {})
+                    
+                    if 'onoff' in capabilities or 'onoff' in caps_obj:
+                        christmas_devices.append(device.get('id'))
+            
+            # Aktualisiere Config
+            if _christmas_controller:
+                config = _christmas_controller.get_config()
+                config['devices'] = christmas_devices
+                _christmas_controller.update_config(config)
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{len(christmas_devices)} Geräte aus Weihnachtsbeleuchtung-Raum synchronisiert',
+                    'devices': christmas_devices,
+                    'count': len(christmas_devices)
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Christmas Controller nicht verfügbar'
+                }), 503
+        
+        return jsonify({
+            'success': False,
+            'error': 'Platform nicht verfügbar'
+        }), 503
+        
+    except Exception as e:
+        logger.error(f"Error syncing christmas zone: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

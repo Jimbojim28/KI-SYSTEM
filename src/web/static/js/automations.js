@@ -395,6 +395,12 @@ function initChristmasTab() {
         testOffBtn.addEventListener('click', () => testChristmasLights(false));
     }
     
+    // Sync-Button für Homey-Raum
+    const syncBtn = document.getElementById('sync-christmas-zone');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', syncChristmasZone);
+    }
+    
     // Config laden
     loadChristmasConfig();
 }
@@ -444,12 +450,28 @@ function applyChristmasConfigToUI() {
 
 async function loadChristmasDevices() {
     const container = document.getElementById('christmas-devices');
+    const infoEl = document.getElementById('christmas-zone-info');
     if (!container) return;
     
     try {
         const response = await fetch('/api/christmas/devices');
         const data = await response.json();
         const devices = data.devices || [];
+        const christmasZoneId = data.christmas_zone_id;
+        const christmasZoneDevices = data.christmas_zone_devices || [];
+        
+        // Zeige Info über Weihnachtsraum
+        if (infoEl) {
+            if (christmasZoneId) {
+                infoEl.style.display = 'block';
+                infoEl.innerHTML = `🎄 <strong>Homey-Raum "Weihnachtsbeleuchtung" gefunden!</strong> 
+                    ${christmasZoneDevices.length} Gerät(e) im Raum. 
+                    <em>Klicke "Mit Homey-Raum synchronisieren" um alle automatisch auszuwählen.</em>`;
+            } else {
+                infoEl.style.display = 'block';
+                infoEl.innerHTML = `💡 <strong>Tipp:</strong> Erstelle in Homey einen Raum namens "Weihnachtsbeleuchtung" und füge deine Weihnachtsgeräte dort hinzu. Dann kannst du sie hier automatisch synchronisieren!`;
+            }
+        }
         
         if (devices.length === 0) {
             container.innerHTML = '<p class="empty-state">Keine Geräte verfügbar</p>';
@@ -459,8 +481,9 @@ async function loadChristmasDevices() {
         const html = devices.map(device => {
             const isSelected = christmasConfig.devices.includes(device.id);
             const icon = device.type === 'light' ? '💡' : '🔌';
+            const isFromZone = device.is_christmas_zone;
             return `
-                <div class="device-item christmas-device">
+                <div class="device-item christmas-device ${isFromZone ? 'from-zone' : ''}">
                     <label>
                         <input type="checkbox"
                                class="christmas-device-checkbox"
@@ -491,6 +514,43 @@ async function loadChristmasDevices() {
     } catch (error) {
         console.error('Error loading christmas devices:', error);
         container.innerHTML = '<p class="error">Fehler beim Laden der Geräte</p>';
+    }
+}
+
+async function syncChristmasZone() {
+    const syncBtn = document.getElementById('sync-christmas-zone');
+    if (syncBtn) {
+        syncBtn.disabled = true;
+        syncBtn.textContent = '🔄 Synchronisiere...';
+    }
+    
+    try {
+        const response = await fetch('/api/christmas/sync-zone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Aktualisiere lokale Config
+            christmasConfig.devices = data.devices || [];
+            
+            // Geräte-Liste neu laden
+            await loadChristmasDevices();
+            
+            showNotification(`🎄 ${data.count} Geräte synchronisiert!`, 'success');
+        } else {
+            showNotification(data.error || 'Synchronisierung fehlgeschlagen', 'error');
+        }
+    } catch (error) {
+        console.error('Error syncing christmas zone:', error);
+        showNotification('Fehler bei der Synchronisierung', 'error');
+    } finally {
+        if (syncBtn) {
+            syncBtn.disabled = false;
+            syncBtn.textContent = '🔄 Mit Homey-Raum synchronisieren';
+        }
     }
 }
 
