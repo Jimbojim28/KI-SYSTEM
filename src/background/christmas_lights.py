@@ -468,9 +468,21 @@ class ChristmasLightsController:
                 override_until = datetime.combine(now.date() + timedelta(days=1), datetime.strptime('06:00', '%H:%M').time())
             self._manual_override_until = override_until
             logger.info(f"🎄 Manual override set until {override_until.strftime('%H:%M')}")
+            
+            # Push-Benachrichtigung für manuelles Ausschalten
+            self._send_notification(
+                "🌙 Weihnachtsbeleuchtung manuell AUS",
+                f"{affected} Gerät(e) ausgeschaltet. Automatik pausiert bis {override_until.strftime('%H:%M')} Uhr."
+            )
         else:
             # Bei manuellem AN: Override aufheben
             self._manual_override_until = None
+            
+            # Push-Benachrichtigung für manuelles Einschalten
+            self._send_notification(
+                "🎄 Weihnachtsbeleuchtung manuell AN",
+                f"{affected} Gerät(e) eingeschaltet."
+            )
         
         logger.info(f"🎄 Christmas lights TEST: {'ON' if turn_on else 'OFF'} ({affected} devices)")
         return affected
