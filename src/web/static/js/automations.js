@@ -123,6 +123,30 @@ function populateExceptionsList() {
 
 // Tabs
 function setupTabs() {
+    // Haupt-Tabs (Regeln, Abwesenheit, Weihnachten, Geräte)
+    document.querySelectorAll('.main-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.dataset.maintab;
+            
+            // Update Buttons
+            document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // Update Content
+            document.querySelectorAll('.main-tab-content').forEach(content => {
+                content.style.display = 'none';
+                content.classList.remove('active');
+            });
+            
+            const targetTab = document.getElementById(`tab-${tabName}`);
+            if (targetTab) {
+                targetTab.style.display = 'block';
+                targetTab.classList.add('active');
+            }
+        });
+    });
+    
+    // Sub-Tabs (innerhalb der Geräte-Verwaltung)
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.tab;
