@@ -4,15 +4,24 @@
 
 {% block content %}
 <div class="christmas-page">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <div>
-            <h2>🎄 Weihnachtsbeleuchtung</h2>
-            <p class="subtitle">Automatische Steuerung deiner Weihnachtsdekoration</p>
+    <h2>🎄 Weihnachtsbeleuchtung</h2>
+    <p class="subtitle">Automatische Steuerung deiner Weihnachtsdekoration</p>
+
+    <!-- Große Aktivieren-Box -->
+    <div id="enable-card" class="card" style="margin: 20px 0; padding: 25px; background: linear-gradient(135deg, #fef3c7, #fde68a); border: 3px solid #f59e0b;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+            <div>
+                <h3 style="margin: 0 0 5px 0; font-size: 20px;">🔌 Automatik aktivieren</h3>
+                <p style="margin: 0; color: #92400e;">Schalte die automatische Weihnachtsbeleuchtung ein oder aus</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <span id="enable-status-text" style="font-weight: 700; font-size: 18px; color: #92400e;">⭕ AUS</span>
+                <label class="switch" style="transform: scale(1.5);" title="Weihnachtsbeleuchtung aktivieren/deaktivieren">
+                    <input type="checkbox" id="christmas-enabled">
+                    <span class="slider"></span>
+                </label>
+            </div>
         </div>
-        <label class="switch" style="transform: scale(1.2);">
-            <input type="checkbox" id="christmas-enabled">
-            <span class="slider"></span>
-        </label>
     </div>
 
     <div class="grid-2">
@@ -512,6 +521,30 @@ let christmasConfig = {
 // Alle Geräte (für Status)
 let allChristmasDevices = [];
 
+// Status-Text aktualisieren (global verfügbar)
+function updateEnableStatusText(enabled) {
+    const textEl = document.getElementById('enable-status-text');
+    const cardEl = document.getElementById('enable-card');
+    if (textEl) {
+        if (enabled) {
+            textEl.textContent = '🟢 AN';
+            textEl.style.color = '#065f46';
+        } else {
+            textEl.textContent = '⭕ AUS';
+            textEl.style.color = '#92400e';
+        }
+    }
+    if (cardEl) {
+        if (enabled) {
+            cardEl.style.background = 'linear-gradient(135deg, #d1fae5, #a7f3d0)';
+            cardEl.style.borderColor = '#10b981';
+        } else {
+            cardEl.style.background = 'linear-gradient(135deg, #fef3c7, #fde68a)';
+            cardEl.style.borderColor = '#f59e0b';
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initChristmasPage();
 });
@@ -541,6 +574,7 @@ function initChristmasPage() {
     // Aktivieren/Deaktivieren Schalter - speichert sofort
     document.getElementById('christmas-enabled')?.addEventListener('change', async (e) => {
         christmasConfig.enabled = e.target.checked;
+        updateEnableStatusText(e.target.checked);
         await saveChristmasConfig();
         updateChristmasStatus();
         showNotification(e.target.checked ? '🎄 Weihnachtsbeleuchtung aktiviert!' : '⭕ Weihnachtsbeleuchtung deaktiviert', 'success');
@@ -593,6 +627,9 @@ function applyConfigToUI() {
             }
         }
     }
+    
+    // Enable-Status Text aktualisieren
+    updateEnableStatusText(christmasConfig.enabled);
 }
 
 async function loadChristmasDevices() {
