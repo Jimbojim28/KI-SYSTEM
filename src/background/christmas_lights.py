@@ -58,6 +58,9 @@ class ChristmasLightsController:
         # Location für Sonnenuntergang (Berlin als Default)
         self.location = LocationInfo("Berlin", "Germany", "Europe/Berlin", 52.52, 13.405)
         
+        # Track device states to avoid redundant commands
+        self._device_states: Dict[str, bool] = {}  # device_id -> is_on
+        
         # Lade gespeicherte Config
         self._load_config()
         
@@ -164,6 +167,10 @@ class ChristmasLightsController:
                 # Über Mitternacht: z.B. 16:00 - 00:30
                 should_be_on = current_time >= on_time or current_time <= off_time
             
+            # Log die Entscheidung
+            device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
+            logger.debug(f"🎄 {device_label}: on={on_time}, off={off_time}, now={current_time}, should_be_on={should_be_on}")
+            
             if should_be_on:
                 any_on = True
                 # Schalte dieses Gerät ein (falls nicht schon an)
@@ -222,20 +229,32 @@ class ChristmasLightsController:
             return datetime.strptime('23:00', '%H:%M').time()
     
     def _turn_device_on(self, device_id: str):
-        """Schaltet ein einzelnes Gerät ein"""
+        """Schaltet ein einzelnes Gerät ein (nur wenn nicht schon an)"""
+        # Prüfe ob schon an
+        if self._device_states.get(device_id) == True:
+            return  # Schon an, nichts tun
+        
         try:
             if self.platform:
                 self.platform.turn_on(device_id)
-                logger.debug(f"🎄 Christmas device ON: {device_id}")
+                self._device_states[device_id] = True
+                device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
+                logger.info(f"🎄 Christmas ON: {device_label}")
         except Exception as e:
             logger.error(f"Error turning on christmas device {device_id}: {e}")
     
     def _turn_device_off(self, device_id: str):
-        """Schaltet ein einzelnes Gerät aus"""
+        """Schaltet ein einzelnes Gerät aus (nur wenn nicht schon aus)"""
+        # Prüfe ob schon aus
+        if self._device_states.get(device_id) == False:
+            return  # Schon aus, nichts tun
+        
         try:
             if self.platform:
                 self.platform.turn_off(device_id)
-                logger.debug(f"🎄 Christmas device OFF: {device_id}")
+                self._device_states[device_id] = False
+                device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
+                logger.info(f"🎄 Christmas OFF: {device_label}")
         except Exception as e:
             logger.error(f"Error turning off christmas device {device_id}: {e}")
     
