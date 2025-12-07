@@ -26,7 +26,15 @@ from src.web.blueprints import (
 from src.web.blueprints.api_notifications import notifications_bp, init_notifications_blueprint
 from src.web.blueprints.api_absence import absence_bp, init_absence_blueprint
 from src.web.blueprints.api_ha_entities import ha_entities_bp, init_ha_entities_blueprint
-from src.web.blueprints.api_christmas import christmas_bp, init_christmas_blueprint
+
+# Christmas Blueprint - optional
+try:
+    from src.web.blueprints.api_christmas import christmas_bp, init_christmas_blueprint
+    CHRISTMAS_BP_AVAILABLE = True
+except ImportError as e:
+    christmas_bp = None
+    init_christmas_blueprint = None
+    CHRISTMAS_BP_AVAILABLE = False
 
 import src  # Für Zugriff auf __version__
 from src.decision_engine.engine import DecisionEngine
@@ -40,8 +48,16 @@ from src.background.lighting_data_collector import LightingDataCollector
 from src.background.temperature_data_collector import TemperatureDataCollector
 from src.background.database_maintenance import DatabaseMaintenanceJob
 from src.background.ventilation_notifier import VentilationNotifier
-from src.background.christmas_lights import ChristmasLightsController
 from src.utils.database import Database
+
+# Christmas Controller - optional (falls astral nicht installiert)
+try:
+    from src.background.christmas_lights import ChristmasLightsController
+    CHRISTMAS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Christmas Lights Controller not available: {e}")
+    ChristmasLightsController = None
+    CHRISTMAS_AVAILABLE = False
 
 
 class WebInterface:
@@ -185,12 +201,13 @@ class WebInterface:
 
         # Christmas Lights Controller für Weihnachtsbeleuchtung
         self.christmas_controller = None
-        try:
-            platform = self.engine.platform if self.engine else None
-            self.christmas_controller = ChristmasLightsController(platform=platform)
-            logger.info("Christmas Lights Controller initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize Christmas Lights Controller: {e}")
+        if CHRISTMAS_AVAILABLE and ChristmasLightsController:
+            try:
+                platform = self.engine.platform if self.engine else None
+                self.christmas_controller = ChristmasLightsController(platform=platform)
+                logger.info("Christmas Lights Controller initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize Christmas Lights Controller: {e}")
 
         # Registriere Routen
         self._register_routes()
@@ -315,7 +332,6 @@ class WebInterface:
             init_notifications_blueprint(self.engine, self.db, self.config)
             init_absence_blueprint(self.engine, self.db, self.config)
             init_ha_entities_blueprint(self.app)
-            init_christmas_blueprint(self.engine, self.db, self.config, self.christmas_controller)
             
             # Registriere Blueprints bei der Flask App
             self.app.register_blueprint(config_bp)
@@ -324,9 +340,14 @@ class WebInterface:
             self.app.register_blueprint(notifications_bp)
             self.app.register_blueprint(absence_bp)
             self.app.register_blueprint(ha_entities_bp)
-            self.app.register_blueprint(christmas_bp)
             
-            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp, absence_bp, ha_entities_bp, christmas_bp")
+            # Christmas Blueprint - optional
+            if CHRISTMAS_BP_AVAILABLE and christmas_bp and init_christmas_blueprint:
+                init_christmas_blueprint(self.engine, self.db, self.config, self.christmas_controller)
+                self.app.register_blueprint(christmas_bp)
+                logger.info("Christmas Blueprint registered")
+            
+            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp, absence_bp, ha_entities_bp")
         except Exception as e:
             logger.error(f"Failed to register blueprints: {e}")
 

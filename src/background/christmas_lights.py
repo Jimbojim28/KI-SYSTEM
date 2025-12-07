@@ -259,7 +259,7 @@ class ChristmasLightsController:
         for device_id in devices:
             try:
                 if self.platform:
-                    self.platform.turn_on_device(device_id)
+                    self.platform.turn_on(device_id)
                     affected += 1
             except Exception as e:
                 logger.error(f"Error turning on christmas device {device_id}: {e}")
@@ -278,7 +278,7 @@ class ChristmasLightsController:
         for device_id in devices:
             try:
                 if self.platform:
-                    self.platform.turn_off_device(device_id)
+                    self.platform.turn_off(device_id)
                     affected += 1
             except Exception as e:
                 logger.error(f"Error turning off christmas device {device_id}: {e}")
@@ -296,9 +296,9 @@ class ChristmasLightsController:
             try:
                 if self.platform:
                     if turn_on:
-                        self.platform.turn_on_device(device_id)
+                        self.platform.turn_on(device_id)
                     else:
-                        self.platform.turn_off_device(device_id)
+                        self.platform.turn_off(device_id)
                     affected += 1
             except Exception as e:
                 logger.error(f"Error testing christmas device {device_id}: {e}")

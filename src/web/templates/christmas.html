@@ -77,16 +77,30 @@
     <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h3>💡 Weihnachtsgeräte</h3>
-            <button class="btn btn-primary" id="sync-christmas-zone">
-                🔄 Mit Homey-Raum synchronisieren
-            </button>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-secondary" id="refresh-devices">🔄 Aktualisieren</button>
+                <button class="btn btn-primary" id="sync-christmas-zone">
+                    🎄 Mit Homey-Raum sync
+                </button>
+            </div>
         </div>
         <p style="margin: 10px 0; color: #6b7280;">
-            Wähle die Geräte, die zur Weihnachtsbeleuchtung gehören, oder synchronisiere mit deinem Homey-Raum "Weihnachtsbeleuchtung".
+            Wähle die Geräte für deine Weihnachtsbeleuchtung. Der Status (🟢 an / ⚫ aus) wird live angezeigt.
         </p>
         <div id="christmas-zone-info" class="info-badge" style="display: none; margin-bottom: 15px;"></div>
         <div id="christmas-devices" class="device-grid">
             <p class="loading">Lade Geräte...</p>
+        </div>
+    </div>
+
+    <!-- Eigene Bezeichnung für Geräte -->
+    <div class="card" style="margin-top: 20px;">
+        <h3>🏷️ Geräte beschriften</h3>
+        <p style="margin: 10px 0; color: #6b7280;">
+            Gib deinen Weihnachtsgeräten eigene Namen zur besseren Übersicht:
+        </p>
+        <div id="christmas-labels" class="labels-container">
+            <p class="empty-state">Wähle zuerst Geräte oben aus</p>
         </div>
     </div>
 
@@ -239,6 +253,85 @@
     display: inline-block;
 }
 
+.christmas-device .device-status {
+    font-size: 12px;
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.christmas-device .device-status.on {
+    color: #10b981;
+}
+
+.christmas-device .device-status.off {
+    color: #6b7280;
+}
+
+.christmas-device .toggle-btn {
+    background: #e5e7eb;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-left: auto;
+}
+
+.christmas-device .toggle-btn:hover {
+    background: #d1d5db;
+}
+
+.labels-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.label-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 10px;
+}
+
+.label-item .device-icon {
+    font-size: 24px;
+}
+
+.label-item .device-info {
+    flex: 1;
+}
+
+.label-item .device-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.label-item .device-original {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+.label-item input[type="text"] {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    width: 200px;
+    font-size: 13px;
+}
+
+.label-item input[type="text"]:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
 .christmas-options {
     display: flex;
     flex-direction: column;
@@ -309,10 +402,14 @@ let christmasConfig = {
     start_date: '',
     end_date: '',
     devices: [],
+    device_labels: {},  // { device_id: "Mein Name" }
     presence_only: false,
     weekend_extended: false,
     random_delay: true
 };
+
+// Alle Geräte (für Status)
+let allChristmasDevices = [];
 
 document.addEventListener('DOMContentLoaded', () => {
     initChristmasPage();
@@ -335,6 +432,7 @@ function initChristmasPage() {
     
     // Event Listeners
     document.getElementById('save-christmas-config')?.addEventListener('click', saveChristmasConfig);
+    document.getElementById('refresh-devices')?.addEventListener('click', loadChristmasDevices);
     document.getElementById('christmas-test-on')?.addEventListener('click', () => testChristmasLights(true));
     document.getElementById('christmas-test-off')?.addEventListener('click', () => testChristmasLights(false));
     document.getElementById('sync-christmas-zone')?.addEventListener('click', syncChristmasZone);
@@ -393,12 +491,17 @@ async function loadChristmasDevices() {
     const infoEl = document.getElementById('christmas-zone-info');
     if (!container) return;
     
+    container.innerHTML = '<p class="loading">🔄 Lade Geräte...</p>';
+    
     try {
         const response = await fetch('/api/christmas/devices');
         const data = await response.json();
         const devices = data.devices || [];
         const christmasZoneId = data.christmas_zone_id;
         const christmasZoneDevices = data.christmas_zone_devices || [];
+        
+        // Speichere alle Geräte für späteren Zugriff
+        allChristmasDevices = devices;
         
         if (infoEl) {
             if (christmasZoneId) {
@@ -422,23 +525,36 @@ async function loadChristmasDevices() {
             const isSelected = christmasConfig.devices.includes(device.id);
             const icon = device.type === 'light' ? '💡' : '🔌';
             const isFromZone = device.is_christmas_zone;
+            const statusIcon = device.is_on ? '🟢' : '⚫';
+            const statusText = device.is_on ? 'AN' : 'AUS';
+            const statusClass = device.is_on ? 'on' : 'off';
+            const customLabel = christmasConfig.device_labels?.[device.id] || '';
+            const displayName = customLabel || device.name;
+            
             return `
-                <div class="christmas-device ${isFromZone ? 'from-zone' : ''} ${isSelected ? 'selected' : ''}">
+                <div class="christmas-device ${isFromZone ? 'from-zone' : ''} ${isSelected ? 'selected' : ''}" data-device-id="${device.id}">
                     <label>
                         <input type="checkbox"
                                class="christmas-device-checkbox"
                                data-device-id="${device.id}"
                                ${isSelected ? 'checked' : ''}>
-                        <span>${icon} ${device.name}</span>
+                        <span>${icon} ${displayName}</span>
                     </label>
+                    <div class="device-status ${statusClass}">
+                        ${statusIcon} ${statusText}
+                        <button class="toggle-btn" onclick="toggleSingleDevice('${device.id}', ${!device.is_on}); event.stopPropagation();">
+                            ${device.is_on ? '⭕ Aus' : '🔆 An'}
+                        </button>
+                    </div>
                     ${isFromZone ? '<span class="zone-badge">🎄 Weihnachtsraum</span>' : ''}
+                    ${customLabel ? `<span class="zone-badge" style="background: #e0e7ff; color: #4338ca;">📝 ${device.name}</span>` : ''}
                 </div>
             `;
         }).join('');
         
         container.innerHTML = html;
         
-        // Event Listeners
+        // Event Listeners für Checkboxen
         container.querySelectorAll('.christmas-device-checkbox').forEach(cb => {
             cb.addEventListener('change', (e) => {
                 const deviceId = e.target.dataset.deviceId;
@@ -453,13 +569,95 @@ async function loadChristmasDevices() {
                     christmasConfig.devices = christmasConfig.devices.filter(id => id !== deviceId);
                     deviceEl?.classList.remove('selected');
                 }
+                
+                // Labels-Bereich aktualisieren
+                updateLabelsSection();
             });
         });
+        
+        // Labels-Bereich aktualisieren
+        updateLabelsSection();
         
     } catch (error) {
         console.error('Error loading christmas devices:', error);
         container.innerHTML = '<p class="error">Fehler beim Laden der Geräte</p>';
     }
+}
+
+// Einzelnes Gerät schalten
+async function toggleSingleDevice(deviceId, turnOn) {
+    try {
+        const response = await fetch('/api/christmas/toggle-device', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, turn_on: turnOn })
+        });
+        
+        if (response.ok) {
+            showNotification(turnOn ? '🔆 Eingeschaltet' : '⭕ Ausgeschaltet', 'success');
+            // Nach kurzer Verzögerung neu laden um Status zu aktualisieren
+            setTimeout(loadChristmasDevices, 500);
+        } else {
+            showNotification('Fehler beim Schalten', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling device:', error);
+        showNotification('Fehler beim Schalten', 'error');
+    }
+}
+
+// Labels-Bereich aktualisieren
+function updateLabelsSection() {
+    const container = document.getElementById('christmas-labels');
+    if (!container) return;
+    
+    const selectedDevices = christmasConfig.devices;
+    
+    if (selectedDevices.length === 0) {
+        container.innerHTML = '<p class="empty-state">Wähle zuerst Geräte oben aus</p>';
+        return;
+    }
+    
+    const html = selectedDevices.map(deviceId => {
+        const device = allChristmasDevices.find(d => d.id === deviceId);
+        if (!device) return '';
+        
+        const icon = device.type === 'light' ? '💡' : '🔌';
+        const currentLabel = christmasConfig.device_labels?.[deviceId] || '';
+        
+        return `
+            <div class="label-item">
+                <span class="device-icon">${icon}</span>
+                <div class="device-info">
+                    <div class="device-name">${device.name}</div>
+                    <div class="device-original">Homey-Name</div>
+                </div>
+                <input type="text" 
+                       placeholder="Eigene Bezeichnung..."
+                       value="${currentLabel}"
+                       data-device-id="${deviceId}"
+                       onchange="updateDeviceLabel('${deviceId}', this.value)">
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html || '<p class="empty-state">Wähle zuerst Geräte oben aus</p>';
+}
+
+// Label für Gerät aktualisieren
+function updateDeviceLabel(deviceId, label) {
+    if (!christmasConfig.device_labels) {
+        christmasConfig.device_labels = {};
+    }
+    
+    if (label.trim()) {
+        christmasConfig.device_labels[deviceId] = label.trim();
+    } else {
+        delete christmasConfig.device_labels[deviceId];
+    }
+    
+    // Geräteliste aktualisieren um neuen Namen anzuzeigen
+    loadChristmasDevices();
 }
 
 async function saveChristmasConfig() {

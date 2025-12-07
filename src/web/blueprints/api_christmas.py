@@ -86,6 +86,7 @@ def save_christmas_config():
             'start_date': data.get('start_date', ''),
             'end_date': data.get('end_date', ''),
             'devices': data.get('devices', []),
+            'device_labels': data.get('device_labels', {}),
             'presence_only': data.get('presence_only', False),
             'weekend_extended': data.get('weekend_extended', False),
             'random_delay': data.get('random_delay', True)
@@ -169,6 +170,45 @@ def test_christmas_lights():
             }), 503
     except Exception as e:
         logger.error(f"Error testing christmas lights: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@christmas_bp.route('/toggle-device', methods=['POST'])
+def toggle_single_device():
+    """Schaltet ein einzelnes Gerät ein oder aus"""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('device_id')
+        turn_on = data.get('turn_on', True)
+        
+        if not device_id:
+            return jsonify({
+                'success': False,
+                'error': 'device_id required'
+            }), 400
+        
+        if _engine and _engine.platform:
+            if turn_on:
+                _engine.platform.turn_on(device_id)
+            else:
+                _engine.platform.turn_off(device_id)
+            
+            return jsonify({
+                'success': True,
+                'device_id': device_id,
+                'turned_on': turn_on
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Platform not available'
+            }), 503
+            
+    except Exception as e:
+        logger.error(f"Error toggling device {data.get('device_id')}: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
