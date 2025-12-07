@@ -431,6 +431,15 @@ class WebInterface:
 
         # === API Endpunkte ===
 
+        @self.app.route('/api/health')
+        def api_health():
+            """API: Health Check für Verbindungsprüfung"""
+            return jsonify({
+                'status': 'ok',
+                'version': src.__version__,
+                'timestamp': datetime.now().isoformat()
+            })
+
         @self.app.route('/api/status')
         def api_status():
             """API: Aktueller System-Status"""

@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Prevent caching of HTML pages -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>{% block title %}KI Smart Home System{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}">
 </head>
 <body>
     <nav class="navbar">
@@ -38,7 +42,120 @@
         <p>KI Smart Home System - Powered by Homey & Machine Learning</p>
     </footer>
 
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v={{ app_version }}"></script>
+    
+    <!-- Offline Detection & Auto-Reconnect -->
+    <script>
+    (function() {
+        let isOffline = false;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        const reconnectInterval = 3000; // 3 seconds
+        
+        // Create offline notification element
+        function createOfflineNotification() {
+            if (document.getElementById('offline-notification')) return;
+            const notification = document.createElement('div');
+            notification.id = 'offline-notification';
+            notification.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; background: #ff4444; color: white; 
+                            padding: 15px; text-align: center; z-index: 10000; font-weight: bold;">
+                    ⚠️ Server nicht erreichbar - Verbindung wird wiederhergestellt... 
+                    <span id="reconnect-countdown"></span>
+                    <button onclick="location.reload()" style="margin-left: 15px; padding: 5px 15px; 
+                            background: white; color: #ff4444; border: none; border-radius: 4px; cursor: pointer;">
+                        Jetzt neu laden
+                    </button>
+                </div>
+            `;
+            document.body.prepend(notification);
+        }
+        
+        function removeOfflineNotification() {
+            const notification = document.getElementById('offline-notification');
+            if (notification) notification.remove();
+        }
+        
+        // Check server connectivity
+        async function checkServer() {
+            try {
+                const response = await fetch('/api/health', { 
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                if (response.ok) {
+                    if (isOffline) {
+                        // Server is back online - reload page
+                        console.log('Server wieder erreichbar - Seite wird neu geladen');
+                        location.reload();
+                    }
+                    isOffline = false;
+                    reconnectAttempts = 0;
+                    removeOfflineNotification();
+                    return true;
+                }
+            } catch (error) {
+                console.warn('Server nicht erreichbar:', error.message);
+            }
+            
+            if (!isOffline) {
+                isOffline = true;
+                createOfflineNotification();
+            }
+            return false;
+        }
+        
+        // Auto-reconnect loop
+        function startReconnect() {
+            if (reconnectAttempts >= maxReconnectAttempts) {
+                const countdown = document.getElementById('reconnect-countdown');
+                if (countdown) countdown.textContent = '(Versuche erschöpft - bitte manuell neu laden)';
+                return;
+            }
+            
+            reconnectAttempts++;
+            const countdown = document.getElementById('reconnect-countdown');
+            if (countdown) countdown.textContent = `(Versuch ${reconnectAttempts}/${maxReconnectAttempts})`;
+            
+            checkServer().then(online => {
+                if (!online) {
+                    setTimeout(startReconnect, reconnectInterval);
+                }
+            });
+        }
+        
+        // Monitor online/offline events
+        window.addEventListener('online', () => checkServer());
+        window.addEventListener('offline', () => {
+            isOffline = true;
+            createOfflineNotification();
+            startReconnect();
+        });
+        
+        // Check server on fetch errors (intercept)
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            try {
+                const response = await originalFetch.apply(this, args);
+                return response;
+            } catch (error) {
+                if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                    if (!isOffline) {
+                        isOffline = true;
+                        createOfflineNotification();
+                        startReconnect();
+                    }
+                }
+                throw error;
+            }
+        };
+        
+        // Initial health check after page load
+        setTimeout(() => checkServer(), 1000);
+    })();
+    </script>
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>
