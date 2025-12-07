@@ -129,6 +129,10 @@
         <h3>⚙️ Zusätzliche Optionen</h3>
         <div class="christmas-options">
             <label class="checkbox-label">
+                <input type="checkbox" id="christmas-notifications-enabled" checked>
+                <span>🔔 Push-Benachrichtigung beim Ein-/Ausschalten</span>
+            </label>
+            <label class="checkbox-label">
                 <input type="checkbox" id="christmas-presence-only">
                 <span>Nur einschalten wenn jemand zuhause ist</span>
             </label>
@@ -515,7 +519,8 @@ let christmasConfig = {
     device_schedules: {},  // { device_id: { on_time: "16:00", off_time: "23:00" } }
     presence_only: false,
     weekend_extended: false,
-    random_delay: true
+    random_delay: true,
+    notifications_enabled: true
 };
 
 // Alle Geräte (für Status)
@@ -612,6 +617,7 @@ function applyConfigToUI() {
         'christmas-use-sunset': christmasConfig.use_sunset,
         'christmas-start-date': christmasConfig.start_date,
         'christmas-end-date': christmasConfig.end_date,
+        'christmas-notifications-enabled': christmasConfig.notifications_enabled !== false,
         'christmas-presence-only': christmasConfig.presence_only,
         'christmas-weekend-extended': christmasConfig.weekend_extended,
         'christmas-random-delay': christmasConfig.random_delay
@@ -896,6 +902,7 @@ async function saveChristmasConfig() {
     christmasConfig.use_sunset = document.getElementById('christmas-use-sunset')?.checked || false;
     christmasConfig.start_date = document.getElementById('christmas-start-date')?.value || '';
     christmasConfig.end_date = document.getElementById('christmas-end-date')?.value || '';
+    christmasConfig.notifications_enabled = document.getElementById('christmas-notifications-enabled')?.checked !== false;
     christmasConfig.presence_only = document.getElementById('christmas-presence-only')?.checked || false;
     christmasConfig.weekend_extended = document.getElementById('christmas-weekend-extended')?.checked || false;
     christmasConfig.random_delay = document.getElementById('christmas-random-delay')?.checked || true;

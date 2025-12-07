@@ -19,6 +19,12 @@ import random
 from loguru import logger
 
 try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
+try:
     from astral import LocationInfo
     from astral.sun import sun
     ASTRAL_AVAILABLE = True
@@ -52,7 +58,8 @@ class ChristmasLightsController:
             'device_schedules': {},  # Individuelle Zeitpläne pro Gerät {device_id: {on_time, off_time}}
             'presence_only': False,
             'weekend_extended': False,
-            'random_delay': True
+            'random_delay': True,
+            'notifications_enabled': True  # Push-Benachrichtigungen
         }
         
         # Location für Sonnenuntergang (Berlin als Default)
@@ -60,6 +67,12 @@ class ChristmasLightsController:
         
         # Track device states to avoid redundant commands
         self._device_states: Dict[str, bool] = {}  # device_id -> is_on
+        
+        # Manuelle Überschreibung - verhindert automatisches Wiedereinschalten bis zur nächsten Ausschaltzeit
+        self._manual_override_until: Optional[datetime] = None
+        
+        # Notification cooldown (verhindert Spam)
+        self._last_notification_time: Optional[datetime] = None
         
         # Lade gespeicherte Config
         self._load_config()
@@ -98,6 +111,61 @@ class ChristmasLightsController:
         """Gibt aktuelle Konfiguration zurück"""
         return self.config.copy()
     
+    def _get_pushover_credentials(self):
+        """Hole Pushover Credentials aus config.yaml"""
+        try:
+            import yaml
+            config_path = Path('config/config.yaml')
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    full_config = yaml.safe_load(f) or {}
+                    notifications = full_config.get('notifications', {})
+                    pushover = notifications.get('pushover', {})
+                    return pushover.get('api_key', ''), pushover.get('user_key', '')
+        except Exception as e:
+            logger.debug(f"Could not load pushover credentials: {e}")
+        return '', ''
+    
+    def _send_notification(self, title: str, message: str):
+        """Sende Push-Benachrichtigung via Pushover"""
+        if not self.config.get('notifications_enabled', True):
+            return
+        
+        if not REQUESTS_AVAILABLE:
+            logger.debug("requests library not available for notifications")
+            return
+        
+        # Cooldown: Max eine Notification pro 5 Minuten
+        if self._last_notification_time:
+            if datetime.now() - self._last_notification_time < timedelta(minutes=5):
+                logger.debug("Notification skipped (cooldown)")
+                return
+        
+        api_key, user_key = self._get_pushover_credentials()
+        if not api_key or not user_key:
+            logger.debug("Pushover credentials not configured")
+            return
+        
+        try:
+            response = requests.post(
+                'https://api.pushover.net/1/messages.json',
+                data={
+                    'token': api_key,
+                    'user': user_key,
+                    'title': title,
+                    'message': message,
+                    'priority': 0
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                self._last_notification_time = datetime.now()
+                logger.info(f"🔔 Christmas notification sent: {title}")
+            else:
+                logger.warning(f"Pushover notification failed: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error sending notification: {e}")
+    
     def start(self):
         """Startet den Background-Thread"""
         if self.running:
@@ -131,6 +199,16 @@ class ChristmasLightsController:
         """Prüft ob Lichter ein- oder ausgeschaltet werden sollen"""
         now = datetime.now()
         
+        # Prüfe manuelle Überschreibung
+        if self._manual_override_until:
+            if now < self._manual_override_until:
+                logger.debug(f"🎄 Manual override active until {self._manual_override_until.strftime('%H:%M')}")
+                return  # Nichts tun während Override aktiv ist
+            else:
+                # Override abgelaufen
+                logger.info("🎄 Manual override expired, resuming automatic schedule")
+                self._manual_override_until = None
+        
         # Prüfe Datumsgrenzen
         if not self._is_within_date_range(now):
             if self.lights_on:
@@ -148,6 +226,10 @@ class ChristmasLightsController:
         current_time = now.time()
         
         any_on = False
+        turned_on_count = 0
+        turned_off_count = 0
+        turned_on_names = []
+        turned_off_names = []
         
         for device_id in devices:
             # Hole individuelle Zeitplan oder Standard
@@ -171,13 +253,41 @@ class ChristmasLightsController:
             device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
             logger.debug(f"🎄 {device_label}: on={on_time}, off={off_time}, now={current_time}, should_be_on={should_be_on}")
             
+            # Track state changes for notifications
+            was_on = self._device_states.get(device_id)
+            
             if should_be_on:
                 any_on = True
                 # Schalte dieses Gerät ein (falls nicht schon an)
                 self._turn_device_on(device_id)
+                if was_on != True:
+                    turned_on_count += 1
+                    turned_on_names.append(device_label)
             else:
                 # Schalte dieses Gerät aus (falls nicht schon aus)
                 self._turn_device_off(device_id)
+                if was_on != False:
+                    turned_off_count += 1
+                    turned_off_names.append(device_label)
+        
+        # Sende Benachrichtigungen für Statusänderungen
+        if turned_on_count > 0:
+            names = ", ".join(turned_on_names[:3])
+            if turned_on_count > 3:
+                names += f" (+{turned_on_count - 3})"
+            self._send_notification(
+                "🎄 Weihnachtsbeleuchtung AN",
+                f"{turned_on_count} Gerät(e) eingeschaltet: {names}"
+            )
+        
+        if turned_off_count > 0:
+            names = ", ".join(turned_off_names[:3])
+            if turned_off_count > 3:
+                names += f" (+{turned_off_count - 3})"
+            self._send_notification(
+                "🌙 Weihnachtsbeleuchtung AUS",
+                f"{turned_off_count} Gerät(e) ausgeschaltet: {names}"
+            )
         
         self.lights_on = any_on
     
@@ -336,13 +446,32 @@ class ChristmasLightsController:
                 if self.platform:
                     if turn_on:
                         self.platform.turn_on(device_id)
+                        self._device_states[device_id] = True
                     else:
                         self.platform.turn_off(device_id)
+                        self._device_states[device_id] = False
                     affected += 1
             except Exception as e:
                 logger.error(f"Error testing christmas device {device_id}: {e}")
         
         self.lights_on = turn_on
+        
+        # Bei manuellem AUS: Override setzen bis zur nächsten regulären Ausschaltzeit
+        # Das verhindert, dass der automatische Scheduler sofort wieder einschaltet
+        if not turn_on:
+            now = datetime.now()
+            off_time = self._get_device_off_time(now, {})
+            # Override bis zur Ausschaltzeit + 1 Minute (damit der nächste Zyklus normal startet)
+            override_until = datetime.combine(now.date(), off_time) + timedelta(minutes=1)
+            # Falls Ausschaltzeit schon vorbei ist, Override bis morgen früh
+            if override_until <= now:
+                override_until = datetime.combine(now.date() + timedelta(days=1), datetime.strptime('06:00', '%H:%M').time())
+            self._manual_override_until = override_until
+            logger.info(f"🎄 Manual override set until {override_until.strftime('%H:%M')}")
+        else:
+            # Bei manuellem AN: Override aufheben
+            self._manual_override_until = None
+        
         logger.info(f"🎄 Christmas lights TEST: {'ON' if turn_on else 'OFF'} ({affected} devices)")
         return affected
     

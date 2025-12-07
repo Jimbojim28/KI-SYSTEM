@@ -92,7 +92,8 @@ def save_christmas_config():
             'device_schedules': data.get('device_schedules', {}),  # Individuelle Zeitpläne pro Gerät
             'presence_only': data.get('presence_only', False),
             'weekend_extended': data.get('weekend_extended', False),
-            'random_delay': data.get('random_delay', True)
+            'random_delay': data.get('random_delay', True),
+            'notifications_enabled': data.get('notifications_enabled', True)  # Push-Benachrichtigungen
         }
         
         if _christmas_controller:
