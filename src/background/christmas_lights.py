@@ -48,6 +48,8 @@ class ChristmasLightsController:
             'start_date': '',
             'end_date': '',
             'devices': [],
+            'device_labels': {},  # Benutzerdefinierte Namen für Geräte
+            'device_schedules': {},  # Individuelle Zeitpläne pro Gerät {device_id: {on_time, off_time}}
             'presence_only': False,
             'weekend_extended': False,
             'random_delay': True
@@ -129,63 +131,59 @@ class ChristmasLightsController:
         # Prüfe Datumsgrenzen
         if not self._is_within_date_range(now):
             if self.lights_on:
-                self._turn_lights_off("Outside date range")
+                self._turn_all_lights_off("Outside date range")
             return
         
         # Prüfe Anwesenheit (falls aktiviert)
         if self.config['presence_only'] and not self._is_someone_home():
             if self.lights_on:
-                self._turn_lights_off("No one home")
+                self._turn_all_lights_off("No one home")
             return
         
-        # Berechne Einschaltzeit
-        on_time = self._get_on_time(now)
-        off_time = self._get_off_time(now)
-        
+        devices = self.config.get('devices', [])
+        device_schedules = self.config.get('device_schedules', {})
         current_time = now.time()
         
-        # Entscheide ob Lichter an sein sollen
-        should_be_on = False
+        any_on = False
         
-        if on_time <= off_time:
-            # Normaler Fall: z.B. 16:00 - 23:00
-            should_be_on = on_time <= current_time <= off_time
-        else:
-            # Über Mitternacht: z.B. 16:00 - 00:30
-            should_be_on = current_time >= on_time or current_time <= off_time
+        for device_id in devices:
+            # Hole individuelle Zeitplan oder Standard
+            schedule = device_schedules.get(device_id, {})
+            
+            # Einschaltzeit für dieses Gerät
+            on_time = self._get_device_on_time(now, schedule)
+            off_time = self._get_device_off_time(now, schedule)
+            
+            # Entscheide ob Gerät an sein soll
+            should_be_on = False
+            
+            if on_time <= off_time:
+                # Normaler Fall: z.B. 16:00 - 23:00
+                should_be_on = on_time <= current_time <= off_time
+            else:
+                # Über Mitternacht: z.B. 16:00 - 00:30
+                should_be_on = current_time >= on_time or current_time <= off_time
+            
+            if should_be_on:
+                any_on = True
+                # Schalte dieses Gerät ein (falls nicht schon an)
+                self._turn_device_on(device_id)
+            else:
+                # Schalte dieses Gerät aus (falls nicht schon aus)
+                self._turn_device_off(device_id)
         
-        # Aktion ausführen
-        if should_be_on and not self.lights_on:
-            delay = self._get_random_delay() if self.config['random_delay'] else 0
-            if delay > 0:
-                logger.debug(f"Christmas lights: waiting {delay}s random delay")
-                time.sleep(delay)
-            self._turn_lights_on()
-        elif not should_be_on and self.lights_on:
-            delay = self._get_random_delay() if self.config['random_delay'] else 0
-            if delay > 0:
-                logger.debug(f"Christmas lights: waiting {delay}s random delay")
-                time.sleep(delay)
-            self._turn_lights_off("Scheduled off time")
+        self.lights_on = any_on
     
-    def _is_within_date_range(self, now: datetime) -> bool:
-        """Prüft ob aktuelles Datum im Weihnachtszeitraum liegt"""
-        start_str = self.config.get('start_date', '')
-        end_str = self.config.get('end_date', '')
+    def _get_device_on_time(self, now: datetime, schedule: dict):
+        """Berechnet Einschaltzeit für ein Gerät (mit Sonnenuntergang-Option)"""
+        # Individuelle Zeit hat Vorrang
+        if schedule.get('on_time'):
+            try:
+                return datetime.strptime(schedule['on_time'], '%H:%M').time()
+            except ValueError:
+                pass
         
-        if not start_str or not end_str:
-            # Kein Datumslimit gesetzt -> immer aktiv
-            return True
-        
-        try:
-            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            return start_date <= now.date() <= end_date
-        except ValueError:
-            return True
-    
-    def _get_on_time(self, now: datetime):
-        """Berechnet Einschaltzeit (mit Sonnenuntergang-Option)"""
+        # Fallback: globale Einstellung
         if self.config['use_sunset'] and ASTRAL_AVAILABLE:
             try:
                 s = sun(self.location.observer, date=now.date())
@@ -202,8 +200,16 @@ class ChristmasLightsController:
         except ValueError:
             return datetime.strptime('16:00', '%H:%M').time()
     
-    def _get_off_time(self, now: datetime):
-        """Berechnet Ausschaltzeit (mit Wochenend-Verlängerung)"""
+    def _get_device_off_time(self, now: datetime, schedule: dict):
+        """Berechnet Ausschaltzeit für ein Gerät (mit Wochenend-Verlängerung)"""
+        # Individuelle Zeit hat Vorrang
+        if schedule.get('off_time'):
+            try:
+                return datetime.strptime(schedule['off_time'], '%H:%M').time()
+            except ValueError:
+                pass
+        
+        # Fallback: globale Einstellung
         base_time = self.config['off_time']
         
         # Wochenend-Verlängerung
@@ -214,6 +220,59 @@ class ChristmasLightsController:
             return datetime.strptime(base_time, '%H:%M').time()
         except ValueError:
             return datetime.strptime('23:00', '%H:%M').time()
+    
+    def _turn_device_on(self, device_id: str):
+        """Schaltet ein einzelnes Gerät ein"""
+        try:
+            if self.platform:
+                self.platform.turn_on(device_id)
+                logger.debug(f"🎄 Christmas device ON: {device_id}")
+        except Exception as e:
+            logger.error(f"Error turning on christmas device {device_id}: {e}")
+    
+    def _turn_device_off(self, device_id: str):
+        """Schaltet ein einzelnes Gerät aus"""
+        try:
+            if self.platform:
+                self.platform.turn_off(device_id)
+                logger.debug(f"🎄 Christmas device OFF: {device_id}")
+        except Exception as e:
+            logger.error(f"Error turning off christmas device {device_id}: {e}")
+    
+    def _turn_all_lights_off(self, reason: str = ""):
+        """Schaltet alle Weihnachtslichter aus"""
+        devices = self.config.get('devices', [])
+        if not devices:
+            return
+        
+        affected = 0
+        for device_id in devices:
+            try:
+                if self.platform:
+                    self.platform.turn_off(device_id)
+                    affected += 1
+            except Exception as e:
+                logger.error(f"Error turning off christmas device {device_id}: {e}")
+        
+        self.lights_on = False
+        self._last_action_time = datetime.now()
+        logger.info(f"🎄 Christmas lights OFF ({affected} devices) - {reason}")
+    
+    def _is_within_date_range(self, now: datetime) -> bool:
+        """Prüft ob aktuelles Datum im Weihnachtszeitraum liegt"""
+        start_str = self.config.get('start_date', '')
+        end_str = self.config.get('end_date', '')
+        
+        if not start_str or not end_str:
+            # Kein Datumslimit gesetzt -> immer aktiv
+            return True
+        
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+            return start_date <= now.date() <= end_date
+        except ValueError:
+            return True
     
     def _get_random_delay(self) -> int:
         """Gibt zufällige Verzögerung in Sekunden zurück (0-300s = 0-5min)"""
@@ -248,45 +307,6 @@ class ChristmasLightsController:
         
         return True  # Fallback
     
-    def _turn_lights_on(self):
-        """Schaltet alle Weihnachtslichter ein"""
-        devices = self.config.get('devices', [])
-        if not devices:
-            logger.debug("No christmas devices configured")
-            return
-        
-        affected = 0
-        for device_id in devices:
-            try:
-                if self.platform:
-                    self.platform.turn_on(device_id)
-                    affected += 1
-            except Exception as e:
-                logger.error(f"Error turning on christmas device {device_id}: {e}")
-        
-        self.lights_on = True
-        self._last_action_time = datetime.now()
-        logger.info(f"🎄 Christmas lights ON ({affected} devices)")
-    
-    def _turn_lights_off(self, reason: str = ""):
-        """Schaltet alle Weihnachtslichter aus"""
-        devices = self.config.get('devices', [])
-        if not devices:
-            return
-        
-        affected = 0
-        for device_id in devices:
-            try:
-                if self.platform:
-                    self.platform.turn_off(device_id)
-                    affected += 1
-            except Exception as e:
-                logger.error(f"Error turning off christmas device {device_id}: {e}")
-        
-        self.lights_on = False
-        self._last_action_time = datetime.now()
-        logger.info(f"🎄 Christmas lights OFF ({affected} devices) - {reason}")
-    
     def test_lights(self, turn_on: bool) -> int:
         """Testet die Lichter (manuelles Ein/Ausschalten)"""
         devices = self.config.get('devices', [])
@@ -311,11 +331,11 @@ class ChristmasLightsController:
         """Gibt aktuellen Status zurück"""
         now = datetime.now()
         
-        # Berechne nächste Aktion
+        # Berechne nächste Aktion basierend auf Standard-Zeit
         next_action = "--"
         if self.config['enabled']:
-            on_time = self._get_on_time(now)
-            off_time = self._get_off_time(now)
+            on_time = self._get_device_on_time(now, {})
+            off_time = self._get_device_off_time(now, {})
             
             if self.lights_on:
                 next_action = f"Aus um {off_time.strftime('%H:%M')}"
@@ -330,5 +350,6 @@ class ChristmasLightsController:
             'next_action': next_action,
             'active_devices': len(self.config.get('devices', [])),
             'last_action': self._last_action_time.isoformat() if self._last_action_time else None,
-            'within_date_range': self._is_within_date_range(now)
+            'within_date_range': self._is_within_date_range(now),
+            'device_schedules': self.config.get('device_schedules', {})
         }

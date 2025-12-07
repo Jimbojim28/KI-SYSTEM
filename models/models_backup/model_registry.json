@@ -1,0 +1,294 @@
+{
+  "lighting_model": {
+    "current_version": "20251204_020425",
+    "versions": [
+      {
+        "version": "20251128_082436",
+        "timestamp": "2025-11-28T08:24:36.584967",
+        "metrics": {
+          "accuracy": 0.9300699300699301,
+          "cv_accuracy_mean": 0.9015758888998325,
+          "cv_accuracy_std": 0.14191580625608083,
+          "samples_train": 570,
+          "samples_test": 143,
+          "feature_importance": {
+            "hour_of_day": 0.05997361125847598,
+            "day_of_week": 0.045221650386793176,
+            "brightness": 0.0,
+            "motion_detected": 0.0067755307878694495,
+            "presence_home": 0.006187797426100956,
+            "weather_condition_clear": 0.2776551882450335,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "is_weekend": 0.006301523592891415,
+            "is_evening": 0.0,
+            "is_night": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.930, Samples: 713",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20251202_210051",
+        "timestamp": "2025-12-02T21:00:51.640690",
+        "metrics": {
+          "accuracy": 0.9365994236311239,
+          "cv_accuracy_mean": 0.6039555705261757,
+          "cv_accuracy_std": 0.04982140499261408,
+          "samples_train": 2773,
+          "samples_test": 694,
+          "feature_importance": {
+            "hour_of_day": 0.06614904467312006,
+            "day_of_week": 0.058003802288356984,
+            "is_weekend": 0.009685885473098451,
+            "is_evening": 0.013635292812521233,
+            "is_night": 0.004736814378640217,
+            "brightness": 0.2680584955378166,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.006460988454723557,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2847484422668098,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2354205868024585,
+            "month": 0.025332455903517827,
+            "is_winter": 0.027768191408936715,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.937, Samples: 3467",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20251202_210103",
+        "timestamp": "2025-12-02T21:01:03.100103",
+        "metrics": {
+          "accuracy": 0.9365994236311239,
+          "cv_accuracy_mean": 0.6039555705261757,
+          "cv_accuracy_std": 0.04982140499261408,
+          "samples_train": 2773,
+          "samples_test": 694,
+          "feature_importance": {
+            "hour_of_day": 0.06614904467312006,
+            "day_of_week": 0.058003802288356984,
+            "is_weekend": 0.009685885473098451,
+            "is_evening": 0.013635292812521233,
+            "is_night": 0.004736814378640217,
+            "brightness": 0.2680584955378166,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.006460988454723557,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2847484422668098,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2354205868024585,
+            "month": 0.025332455903517827,
+            "is_winter": 0.027768191408936715,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.937, Samples: 3467",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20251204_020425",
+        "timestamp": "2025-12-04T02:04:25.161295",
+        "metrics": {
+          "accuracy": 0.9274092615769712,
+          "cv_accuracy_mean": 0.49206244647915154,
+          "cv_accuracy_std": 0.14913968845632408,
+          "samples_train": 3192,
+          "samples_test": 799,
+          "feature_importance": {
+            "hour_of_day": 0.06387779464748257,
+            "day_of_week": 0.07666888280327008,
+            "is_weekend": 0.0069165935845571435,
+            "is_evening": 0.013110038538668921,
+            "is_night": 0.004933068547197851,
+            "brightness": 0.23808935120575334,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.006691716905198408,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.29468206034917416,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2460193711600803,
+            "month": 0.02404602695929558,
+            "is_winter": 0.024965095299321817,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.927, Samples: 3991",
+        "model_path": "lighting_model.pkl"
+      }
+    ]
+  },
+  "temperature_model": {
+    "current_version": "20251202_210149",
+    "versions": [
+      {
+        "version": "20251128_082454",
+        "timestamp": "2025-11-28T08:24:54.488344",
+        "metrics": {
+          "mae": 0.12451363370414169,
+          "rmse": 0.32129836831194525,
+          "r2_score": 0.9676887076009071,
+          "cv_mae_mean": 0.5537680030774392,
+          "cv_mae_std": 0.20138131776081925,
+          "cv_r2_mean": 0.7318167686305257,
+          "cv_r2_std": 0.18690006376128648,
+          "samples_train": 5475,
+          "samples_test": 1369,
+          "feature_importance": {
+            "hour_of_day": 0.0694319588837182,
+            "day_of_week": 0.025312228088979063,
+            "outdoor_temperature": 0.0,
+            "current_temperature": 0.010336460703772516,
+            "presence_home": 0.011861961869767507,
+            "is_sleeping_hours": 0.0,
+            "is_work_hours": 0.14255556614562015,
+            "weather_condition": 0.40698735476120135,
+            "energy_price_level": 0.0,
+            "is_weekend": 0.0,
+            "humidity": 0.0
+          },
+          "model_type": "gradient_boosting",
+          "version": "1.0.0"
+        },
+        "notes": "R\u00b2: 0.968, MAE: 0.12, Samples: 6844",
+        "model_path": "temperature_model.pkl"
+      },
+      {
+        "version": "20251202_210138",
+        "timestamp": "2025-12-02T21:01:38.697133",
+        "metrics": {
+          "mae": 0.22291853423464794,
+          "rmse": 0.40871806639431585,
+          "r2_score": 0.953008995884925,
+          "cv_mae_mean": 0.8300983857658737,
+          "cv_mae_std": 0.20322174793168415,
+          "cv_r2_mean": 0.5716465756978174,
+          "cv_r2_std": 0.11624971069423357,
+          "samples_train": 12476,
+          "samples_test": 3119,
+          "feature_importance": {
+            "hour_of_day": 0.0727209653579324,
+            "day_of_week": 0.04277328781261341,
+            "is_weekend": 0.005300034678826189,
+            "is_sleeping_hours": 0.007563435015145025,
+            "is_work_hours": 0.047940319096675746,
+            "outdoor_temperature": 0.0,
+            "current_temperature": 0.25823932999599875,
+            "humidity": 0.1847204707470823,
+            "presence_home": 0.0,
+            "weather_condition": 0.0,
+            "energy_price_level": 0.0,
+            "temp_rolling_6h": 0.02121882448026102,
+            "outdoor_temp_rolling_6h": 0.0,
+            "temp_rolling_24h": 0.017582783651783715,
+            "temp_trend": 0.0799454291008092,
+            "outdoor_temp_trend": 0.0,
+            "month": 0.0028806761829968247,
+            "is_winter": 0.0025528638005796107,
+            "is_summer": 0.0,
+            "is_transition": 0.0015053074210491955,
+            "temp_diff": 0.2550562726582466
+          },
+          "model_type": "gradient_boosting",
+          "version": "1.0.0"
+        },
+        "notes": "R\u00b2: 0.953, MAE: 0.22, Samples: 15595",
+        "model_path": "temperature_model.pkl"
+      },
+      {
+        "version": "20251202_210149",
+        "timestamp": "2025-12-02T21:01:49.626398",
+        "metrics": {
+          "mae": 0.22268855396247728,
+          "rmse": 0.40298763035973695,
+          "r2_score": 0.9541967184173156,
+          "cv_mae_mean": 0.8301820044249333,
+          "cv_mae_std": 0.1793028560340335,
+          "cv_r2_mean": 0.5658313537517549,
+          "cv_r2_std": 0.10249494662383263,
+          "samples_train": 12480,
+          "samples_test": 3121,
+          "feature_importance": {
+            "hour_of_day": 0.07439826650038135,
+            "day_of_week": 0.03878475630040333,
+            "is_weekend": 0.007855728794999394,
+            "is_sleeping_hours": 0.00936317772836544,
+            "is_work_hours": 0.04819867009485019,
+            "outdoor_temperature": 0.0,
+            "current_temperature": 0.2719889969809628,
+            "humidity": 0.18716687698651,
+            "presence_home": 0.0,
+            "weather_condition": 0.0,
+            "energy_price_level": 0.0,
+            "temp_rolling_6h": 0.028025350685797645,
+            "outdoor_temp_rolling_6h": 0.0,
+            "temp_rolling_24h": 0.013256131486023236,
+            "temp_trend": 0.07462945921276663,
+            "outdoor_temp_trend": 0.0,
+            "month": 0.002289638618274417,
+            "is_winter": 0.0036712798974600663,
+            "is_summer": 0.0,
+            "is_transition": 0.0029303495563207937,
+            "temp_diff": 0.23744131715688468
+          },
+          "model_type": "gradient_boosting",
+          "version": "1.0.0"
+        },
+        "notes": "R\u00b2: 0.954, MAE: 0.22, Samples: 15601",
+        "model_path": "temperature_model.pkl"
+      }
+    ]
+  },
+  "forgotten_light_model": {
+    "current_version": "20251205_061314",
+    "versions": [
+      {
+        "version": "20251205_061314",
+        "timestamp": "2025-12-05T06:13:14.816042",
+        "metrics": {
+          "success": true,
+          "samples": 319,
+          "forgotten_samples": 46,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 7.66246197767028e-16,
+            "day_of_week": 1.7473725863754357e-16,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.1375176222048819,
+            "minutes_since_motion": 0.8624823777951172,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 5.090873486870812e-17,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 319",
+        "model_path": "forgotten_light_model.pkl"
+      }
+    ]
+  }
+}

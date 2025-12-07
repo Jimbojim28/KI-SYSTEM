@@ -93,6 +93,17 @@
         </div>
     </div>
 
+    <!-- Individuelle Zeitpläne pro Gerät -->
+    <div class="card" style="margin-top: 20px;">
+        <h3>⏱️ Individuelle Zeitpläne</h3>
+        <p style="margin: 10px 0; color: #6b7280;">
+            Setze für jedes Gerät eigene Ein-/Ausschaltzeiten. Wenn leer, gilt der Standard-Zeitplan oben.
+        </p>
+        <div id="christmas-schedules" class="schedules-container">
+            <p class="empty-state">Wähle zuerst Geräte oben aus</p>
+        </div>
+    </div>
+
     <!-- Eigene Bezeichnung für Geräte -->
     <div class="card" style="margin-top: 20px;">
         <h3>🏷️ Geräte beschriften</h3>
@@ -332,6 +343,95 @@
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+.schedules-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.schedule-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    background: #f9fafb;
+    border-radius: 10px;
+    flex-wrap: wrap;
+}
+
+.schedule-item .device-info {
+    flex: 1;
+    min-width: 150px;
+}
+
+.schedule-item .device-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.schedule-item .device-status {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+.schedule-item .time-inputs {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.schedule-item .time-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.schedule-item .time-group label {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+}
+
+.schedule-item input[type="time"] {
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 100px;
+}
+
+.schedule-item input[type="time"]:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.schedule-item .toggle-btn-inline {
+    background: #e5e7eb;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.schedule-item .toggle-btn-inline:hover {
+    background: #d1d5db;
+}
+
+.schedule-item .toggle-btn-inline.on {
+    background: #10b981;
+    color: white;
+}
+
+.schedule-item .toggle-btn-inline.off {
+    background: #6b7280;
+    color: white;
+}
+
 .christmas-options {
     display: flex;
     flex-direction: column;
@@ -403,6 +503,7 @@ let christmasConfig = {
     end_date: '',
     devices: [],
     device_labels: {},  // { device_id: "Mein Name" }
+    device_schedules: {},  // { device_id: { on_time: "16:00", off_time: "23:00" } }
     presence_only: false,
     weekend_extended: false,
     random_delay: true
@@ -570,13 +671,15 @@ async function loadChristmasDevices() {
                     deviceEl?.classList.remove('selected');
                 }
                 
-                // Labels-Bereich aktualisieren
+                // Labels- und Zeitplan-Bereiche aktualisieren
                 updateLabelsSection();
+                updateSchedulesSection();
             });
         });
         
-        // Labels-Bereich aktualisieren
+        // Labels- und Zeitplan-Bereiche aktualisieren
         updateLabelsSection();
+        updateSchedulesSection();
         
     } catch (error) {
         console.error('Error loading christmas devices:', error);
@@ -658,6 +761,87 @@ function updateDeviceLabel(deviceId, label) {
     
     // Geräteliste aktualisieren um neuen Namen anzuzeigen
     loadChristmasDevices();
+}
+
+// Zeitpläne-Bereich aktualisieren
+function updateSchedulesSection() {
+    const container = document.getElementById('christmas-schedules');
+    if (!container) return;
+    
+    const selectedDevices = christmasConfig.devices;
+    
+    if (selectedDevices.length === 0) {
+        container.innerHTML = '<p class="empty-state">Wähle zuerst Geräte oben aus</p>';
+        return;
+    }
+    
+    const html = selectedDevices.map(deviceId => {
+        const device = allChristmasDevices.find(d => d.id === deviceId);
+        if (!device) return '';
+        
+        const icon = device.type === 'light' ? '💡' : '🔌';
+        const customLabel = christmasConfig.device_labels?.[deviceId] || '';
+        const displayName = customLabel || device.name;
+        const schedule = christmasConfig.device_schedules?.[deviceId] || {};
+        const isOn = device.is_on;
+        const statusIcon = isOn ? '🟢' : '⚫';
+        
+        return `
+            <div class="schedule-item" data-device-id="${deviceId}">
+                <div class="device-info">
+                    <div class="device-name">${icon} ${displayName}</div>
+                    <div class="device-status">${statusIcon} ${isOn ? 'An' : 'Aus'}</div>
+                </div>
+                <div class="time-inputs">
+                    <div class="time-group">
+                        <label>🌅 An:</label>
+                        <input type="time" 
+                               value="${schedule.on_time || ''}"
+                               placeholder="${christmasConfig.on_time}"
+                               data-device-id="${deviceId}"
+                               data-field="on_time"
+                               onchange="updateDeviceSchedule('${deviceId}', 'on_time', this.value)">
+                    </div>
+                    <div class="time-group">
+                        <label>🌙 Aus:</label>
+                        <input type="time" 
+                               value="${schedule.off_time || ''}"
+                               placeholder="${christmasConfig.off_time}"
+                               data-device-id="${deviceId}"
+                               data-field="off_time"
+                               onchange="updateDeviceSchedule('${deviceId}', 'off_time', this.value)">
+                    </div>
+                </div>
+                <button class="toggle-btn-inline ${isOn ? 'on' : 'off'}" 
+                        onclick="toggleSingleDevice('${deviceId}', ${!isOn})">
+                    ${isOn ? '⭕ Aus' : '🔆 An'}
+                </button>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html || '<p class="empty-state">Wähle zuerst Geräte oben aus</p>';
+}
+
+// Zeitplan für Gerät aktualisieren
+function updateDeviceSchedule(deviceId, field, value) {
+    if (!christmasConfig.device_schedules) {
+        christmasConfig.device_schedules = {};
+    }
+    
+    if (!christmasConfig.device_schedules[deviceId]) {
+        christmasConfig.device_schedules[deviceId] = {};
+    }
+    
+    if (value.trim()) {
+        christmasConfig.device_schedules[deviceId][field] = value.trim();
+    } else {
+        delete christmasConfig.device_schedules[deviceId][field];
+        // Leeren Eintrag entfernen
+        if (Object.keys(christmasConfig.device_schedules[deviceId]).length === 0) {
+            delete christmasConfig.device_schedules[deviceId];
+        }
+    }
 }
 
 async function saveChristmasConfig() {

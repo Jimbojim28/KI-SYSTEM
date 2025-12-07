@@ -48,6 +48,8 @@ def get_christmas_config():
                     'start_date': '',
                     'end_date': '',
                     'devices': [],
+                    'device_labels': {},
+                    'device_schedules': {},  # Individuelle Zeitpläne pro Gerät
                     'presence_only': False,
                     'weekend_extended': False,
                     'random_delay': True
@@ -87,6 +89,7 @@ def save_christmas_config():
             'end_date': data.get('end_date', ''),
             'devices': data.get('devices', []),
             'device_labels': data.get('device_labels', {}),
+            'device_schedules': data.get('device_schedules', {}),  # Individuelle Zeitpläne pro Gerät
             'presence_only': data.get('presence_only', False),
             'weekend_extended': data.get('weekend_extended', False),
             'random_delay': data.get('random_delay', True)
@@ -251,27 +254,41 @@ def get_christmas_devices():
             zones = _engine.platform.get_zones() or {}
             logger.debug(f"Retrieved {len(zones)} zones from platform")
         
-        # Finde den "Weihnachtsbeleuchtung" Raum
+        # Finde ALLE "Weihnachtsbeleuchtung" Räume (es könnte mehrere geben!)
+        christmas_zone_ids = []
         for zone_id, zone_data in zones.items():
             zone_name = zone_data.get('name', '').lower() if isinstance(zone_data, dict) else ''
             if 'weihnacht' in zone_name or 'christmas' in zone_name:
-                christmas_zone_id = zone_id
+                christmas_zone_ids.append(zone_id)
                 logger.debug(f"Found Christmas zone: {zone_data.get('name')} (ID: {zone_id})")
-                break
         
-        all_devices = _engine.platform.get_states() or []
+        christmas_zone_id = christmas_zone_ids[0] if christmas_zone_ids else None
+        
+        all_devices_dict = _engine.platform.get_states() or {}
+        # get_states() gibt ein Dict zurück mit device_id als Key
+        if isinstance(all_devices_dict, dict):
+            all_devices = list(all_devices_dict.values())
+        else:
+            all_devices = all_devices_dict
         logger.debug(f"Retrieved {len(all_devices)} devices from platform")
         
         for device in all_devices:
             if not isinstance(device, dict):
                 continue
             
-            device_id = device.get('id', '')
-            name = device.get('name', 'Unbekannt')
-            zone = device.get('zone', '')
+            # ID kann 'id' oder 'entity_id' sein (je nach Quelle)
+            device_id = device.get('entity_id', device.get('id', ''))
+            # Name kann in verschiedenen Feldern sein
+            attrs = device.get('attributes', {})
+            name = attrs.get('friendly_name', device.get('name', 'Unbekannt'))
+            # Zone kann direkt oder in attributes sein
+            zone = attrs.get('zone', device.get('zone', ''))
             
             # Filtere nur steuerbare Lichter/Steckdosen
-            capabilities = device.get('capabilities', [])
+            # Capabilities können in verschiedenen Feldern sein
+            capabilities = attrs.get('capabilities', device.get('capabilities', []))
+            if isinstance(capabilities, dict):
+                capabilities = list(capabilities.keys())
             caps_obj = device.get('capabilitiesObj', {})
             
             # Prüfe ob Gerät steuerbar ist (onoff capability)
@@ -287,10 +304,11 @@ def get_christmas_devices():
             device_class = device.get('class', '').lower()
             is_relevant = device_class in ['light', 'socket', 'outlet', 'plug', 'switch', '']
             
-            # Markiere ob Gerät im Weihnachts-Raum ist
-            is_in_christmas_zone = zone == christmas_zone_id if christmas_zone_id else False
+            # Prüfe ob Gerät im Weihnachts-Raum ist (prüfe ALLE Weihnachts-Zonen!)
+            is_in_christmas_zone = zone in christmas_zone_ids if christmas_zone_ids else False
             
-            if is_controllable and is_relevant:
+            # NUR Geräte aus dem Weihnachts-Raum anzeigen!
+            if is_controllable and is_relevant and is_in_christmas_zone:
                 # Prüfe aktuellen Zustand
                 is_on = False
                 if 'onoff' in caps_obj:
@@ -301,12 +319,10 @@ def get_christmas_devices():
                     'name': name,
                     'is_on': is_on,
                     'type': device_class or 'unknown',
-                    'is_christmas_zone': is_in_christmas_zone
+                    'is_christmas_zone': True
                 }
                 devices.append(device_info)
-                
-                if is_in_christmas_zone:
-                    christmas_zone_devices.append(device_id)
+                christmas_zone_devices.append(device_id)
         
         # Sortiere: Weihnachts-Raum-Geräte zuerst, dann alphabetisch
         devices.sort(key=lambda x: (not x.get('is_christmas_zone', False), x['name'].lower()))
@@ -348,16 +364,16 @@ def sync_christmas_zone():
         else:
             logger.warning("Platform has no get_zones method")
         
-        # Finde den "Weihnachtsbeleuchtung" Raum
+        # Finde ALLE "Weihnachtsbeleuchtung" Räume (es könnte mehrere geben!)
+        christmas_zone_ids = []
         for zone_id, zone_data in zones.items():
             zone_name = zone_data.get('name', '').lower() if isinstance(zone_data, dict) else ''
             logger.debug(f"Checking zone: {zone_data.get('name', 'unknown')} (ID: {zone_id})")
             if 'weihnacht' in zone_name or 'christmas' in zone_name:
-                christmas_zone_id = zone_id
+                christmas_zone_ids.append(zone_id)
                 logger.info(f"Found Christmas zone: {zone_data.get('name')} (ID: {zone_id})")
-                break
         
-        if not christmas_zone_id:
+        if not christmas_zone_ids:
             # Liste alle gefundenen Zonen für Debug
             zone_names = [z.get('name', 'unknown') if isinstance(z, dict) else str(z) for z in zones.values()]
             logger.warning(f"No Christmas zone found. Available zones: {zone_names}")
@@ -366,26 +382,41 @@ def sync_christmas_zone():
                 'error': f'Kein Raum "Weihnachtsbeleuchtung" in Homey gefunden. Verfügbare Räume: {", ".join(zone_names[:10])}'
             }), 404
         
+        christmas_zone_id = christmas_zone_ids[0]  # Für Rückgabe
+        
         # Hole alle Geräte aus diesem Raum
-        all_devices = _engine.platform.get_states() or []
+        all_devices_dict = _engine.platform.get_states() or {}
+        # get_states() gibt ein Dict zurück mit device_id als Key
+        if isinstance(all_devices_dict, dict):
+            all_devices = list(all_devices_dict.values())
+        else:
+            all_devices = all_devices_dict
         logger.debug(f"Total devices from platform: {len(all_devices)}")
         
         for device in all_devices:
             if not isinstance(device, dict):
                 continue
             
-            if device.get('zone') == christmas_zone_id:
+            # Zone kann direkt oder in attributes sein
+            attrs = device.get('attributes', {})
+            device_zone = attrs.get('zone', device.get('zone', ''))
+            
+            # Prüfe ob in einer der Weihnachts-Zonen
+            if device_zone in christmas_zone_ids:
                 # Prüfe ob steuerbar
-                capabilities = device.get('capabilities', [])
+                capabilities = attrs.get('capabilities', device.get('capabilities', []))
+                if isinstance(capabilities, dict):
+                    capabilities = list(capabilities.keys())
                 caps_obj = device.get('capabilitiesObj', {})
                 
                 if 'onoff' in capabilities or 'onoff' in caps_obj:
-                    device_id = device.get('id')
-                    device_name = device.get('name', 'Unknown')
+                    # ID kann 'id' oder 'entity_id' sein
+                    device_id = device.get('entity_id', device.get('id'))
+                    device_name = attrs.get('friendly_name', device.get('name', 'Unknown'))
                     christmas_devices.append(device_id)
                     logger.debug(f"Added Christmas device: {device_name} (ID: {device_id})")
         
-        logger.info(f"Found {len(christmas_devices)} devices in Christmas zone")
+        logger.info(f"Found {len(christmas_devices)} devices in Christmas zone(s)")
         
         # Aktualisiere Config - entweder über Controller oder direkt
         if _christmas_controller:
@@ -437,40 +468,56 @@ def debug_christmas_devices():
         if hasattr(_engine.platform, 'get_zones'):
             zones = _engine.platform.get_zones() or {}
         
-        # Finde Christmas Zone
-        christmas_zone_id = None
-        christmas_zone_name = None
+        # Finde ALLE Christmas Zonen
+        christmas_zone_ids = []
+        christmas_zone_names = []
         for zone_id, zone_data in zones.items():
             zone_name = zone_data.get('name', '').lower() if isinstance(zone_data, dict) else ''
             if 'weihnacht' in zone_name or 'christmas' in zone_name:
-                christmas_zone_id = zone_id
-                christmas_zone_name = zone_data.get('name', 'Unknown')
-                break
+                christmas_zone_ids.append(zone_id)
+                christmas_zone_names.append(zone_data.get('name', 'Unknown'))
         
         # Hole alle Geräte
-        all_devices = _engine.platform.get_states() or []
+        all_devices_dict = _engine.platform.get_states() or {}
+        # get_states() gibt ein Dict zurück mit device_id als Key
+        if isinstance(all_devices_dict, dict):
+            all_devices = list(all_devices_dict.values())
+        else:
+            all_devices = all_devices_dict
         
-        # Finde Geräte im Christmas-Raum
+        # Finde Geräte in den Christmas-Räumen
         christmas_room_devices = []
         for device in all_devices:
             if not isinstance(device, dict):
                 continue
             
-            if device.get('zone') == christmas_zone_id:
+            # Zone kann direkt oder in attributes sein
+            attrs = device.get('attributes', {})
+            device_zone = attrs.get('zone', device.get('zone', ''))
+            
+            if device_zone in christmas_zone_ids:
+                # Capabilities können in verschiedenen Feldern sein
+                capabilities = attrs.get('capabilities', device.get('capabilities', []))
+                if isinstance(capabilities, dict):
+                    capabilities = list(capabilities.keys())
+                caps_obj = device.get('capabilitiesObj', {})
+                
                 christmas_room_devices.append({
-                    'id': device.get('id'),
-                    'name': device.get('name'),
+                    'id': device.get('entity_id', device.get('id')),
+                    'name': attrs.get('friendly_name', device.get('name')),
                     'class': device.get('class'),
-                    'zone': device.get('zone'),
-                    'capabilities': device.get('capabilities', []),
-                    'capabilitiesObj_keys': list(device.get('capabilitiesObj', {}).keys()),
-                    'has_onoff': 'onoff' in device.get('capabilities', []) or 'onoff' in device.get('capabilitiesObj', {})
+                    'zone': device_zone,
+                    'capabilities': capabilities,
+                    'capabilitiesObj_keys': list(caps_obj.keys()) if caps_obj else [],
+                    'has_onoff': 'onoff' in capabilities or 'onoff' in caps_obj
                 })
         
         return jsonify({
             'success': True,
-            'christmas_zone_id': christmas_zone_id,
-            'christmas_zone_name': christmas_zone_name,
+            'christmas_zone_ids': christmas_zone_ids,
+            'christmas_zone_names': christmas_zone_names,
+            'christmas_zone_id': christmas_zone_ids[0] if christmas_zone_ids else None,
+            'christmas_zone_name': christmas_zone_names[0] if christmas_zone_names else None,
             'total_devices': len(all_devices),
             'devices_in_christmas_room': len(christmas_room_devices),
             'devices': christmas_room_devices,
