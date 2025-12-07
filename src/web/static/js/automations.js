@@ -34,6 +34,20 @@ let automationRules = {
     }
 };
 
+// Weihnachtsbeleuchtung Config
+let christmasConfig = {
+    enabled: false,
+    on_time: '16:00',
+    off_time: '23:00',
+    use_sunset: false,
+    start_date: '',
+    end_date: '',
+    devices: [],
+    presence_only: false,
+    weekend_extended: false,
+    random_delay: true
+};
+
 // Lade alle Geräte
 async function loadDevices() {
     try {
@@ -338,7 +352,260 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDevices();
     loadConfig();
     updatePresenceStatus();
+    
+    // Weihnachtsbeleuchtung initialisieren
+    initChristmasTab();
 
     // Auto-refresh presence alle 30 Sekunden
     setInterval(updatePresenceStatus, 30000);
 });
+
+// =====================
+// WEIHNACHTSBELEUCHTUNG
+// =====================
+
+function initChristmasTab() {
+    // Standard-Datumswerte setzen (1. Dezember bis 6. Januar)
+    const now = new Date();
+    const year = now.getMonth() >= 10 ? now.getFullYear() : now.getFullYear() - 1;
+    
+    const startDateInput = document.getElementById('christmas-start-date');
+    const endDateInput = document.getElementById('christmas-end-date');
+    
+    if (startDateInput && !startDateInput.value) {
+        startDateInput.value = `${year}-12-01`;
+    }
+    if (endDateInput && !endDateInput.value) {
+        endDateInput.value = `${year + 1}-01-06`;
+    }
+    
+    // Event Listener
+    const saveBtn = document.getElementById('save-christmas-config');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', saveChristmasConfig);
+    }
+    
+    const testOnBtn = document.getElementById('christmas-test-on');
+    if (testOnBtn) {
+        testOnBtn.addEventListener('click', () => testChristmasLights(true));
+    }
+    
+    const testOffBtn = document.getElementById('christmas-test-off');
+    if (testOffBtn) {
+        testOffBtn.addEventListener('click', () => testChristmasLights(false));
+    }
+    
+    // Config laden
+    loadChristmasConfig();
+}
+
+async function loadChristmasConfig() {
+    try {
+        const response = await fetch('/api/christmas/config');
+        if (response.ok) {
+            const data = await response.json();
+            const config = data.config || data;
+            christmasConfig = { ...christmasConfig, ...config };
+            applyChristmasConfigToUI();
+        }
+    } catch (error) {
+        console.error('Error loading christmas config:', error);
+    }
+    
+    // Geräte laden für Weihnachts-Tab
+    loadChristmasDevices();
+    updateChristmasStatus();
+}
+
+function applyChristmasConfigToUI() {
+    const elements = {
+        'christmas-enabled': christmasConfig.enabled,
+        'christmas-on-time': christmasConfig.on_time,
+        'christmas-off-time': christmasConfig.off_time,
+        'christmas-use-sunset': christmasConfig.use_sunset,
+        'christmas-start-date': christmasConfig.start_date,
+        'christmas-end-date': christmasConfig.end_date,
+        'christmas-presence-only': christmasConfig.presence_only,
+        'christmas-weekend-extended': christmasConfig.weekend_extended,
+        'christmas-random-delay': christmasConfig.random_delay
+    };
+    
+    for (const [id, value] of Object.entries(elements)) {
+        const el = document.getElementById(id);
+        if (el) {
+            if (el.type === 'checkbox') {
+                el.checked = value;
+            } else {
+                el.value = value || '';
+            }
+        }
+    }
+}
+
+async function loadChristmasDevices() {
+    const container = document.getElementById('christmas-devices');
+    if (!container) return;
+    
+    try {
+        const response = await fetch('/api/christmas/devices');
+        const data = await response.json();
+        const devices = data.devices || [];
+        
+        if (devices.length === 0) {
+            container.innerHTML = '<p class="empty-state">Keine Geräte verfügbar</p>';
+            return;
+        }
+        
+        const html = devices.map(device => {
+            const isSelected = christmasConfig.devices.includes(device.id);
+            const icon = device.type === 'light' ? '💡' : '🔌';
+            return `
+                <div class="device-item christmas-device">
+                    <label>
+                        <input type="checkbox"
+                               class="christmas-device-checkbox"
+                               data-device-id="${device.id}"
+                               ${isSelected ? 'checked' : ''}>
+                        <span>${icon} ${device.name}</span>
+                    </label>
+                </div>
+            `;
+        }).join('');
+        
+        container.innerHTML = html;
+        
+        // Event Listener
+        container.querySelectorAll('.christmas-device-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const deviceId = e.target.dataset.deviceId;
+                if (e.target.checked) {
+                    if (!christmasConfig.devices.includes(deviceId)) {
+                        christmasConfig.devices.push(deviceId);
+                    }
+                } else {
+                    christmasConfig.devices = christmasConfig.devices.filter(id => id !== deviceId);
+                }
+            });
+        });
+        
+    } catch (error) {
+        console.error('Error loading christmas devices:', error);
+        container.innerHTML = '<p class="error">Fehler beim Laden der Geräte</p>';
+    }
+}
+
+async function saveChristmasConfig() {
+    // Sammle Config aus UI
+    christmasConfig.enabled = document.getElementById('christmas-enabled')?.checked || false;
+    christmasConfig.on_time = document.getElementById('christmas-on-time')?.value || '16:00';
+    christmasConfig.off_time = document.getElementById('christmas-off-time')?.value || '23:00';
+    christmasConfig.use_sunset = document.getElementById('christmas-use-sunset')?.checked || false;
+    christmasConfig.start_date = document.getElementById('christmas-start-date')?.value || '';
+    christmasConfig.end_date = document.getElementById('christmas-end-date')?.value || '';
+    christmasConfig.presence_only = document.getElementById('christmas-presence-only')?.checked || false;
+    christmasConfig.weekend_extended = document.getElementById('christmas-weekend-extended')?.checked || false;
+    christmasConfig.random_delay = document.getElementById('christmas-random-delay')?.checked || true;
+    
+    try {
+        const response = await fetch('/api/christmas/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(christmasConfig)
+        });
+        
+        if (response.ok) {
+            showNotification('🎄 Weihnachts-Konfiguration gespeichert!', 'success');
+            updateChristmasStatus();
+        } else {
+            showNotification('Fehler beim Speichern', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving christmas config:', error);
+        showNotification('Fehler beim Speichern', 'error');
+    }
+}
+
+async function testChristmasLights(turnOn) {
+    try {
+        const response = await fetch('/api/christmas/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showNotification(
+                turnOn ? `🎄 ${result.affected || 0} Geräte eingeschaltet` : 
+                        `⭕ ${result.affected || 0} Geräte ausgeschaltet`,
+                'success'
+            );
+        }
+    } catch (error) {
+        console.error('Error testing christmas lights:', error);
+        showNotification('Fehler beim Testen', 'error');
+    }
+}
+
+async function updateChristmasStatus() {
+    try {
+        const response = await fetch('/api/christmas/status');
+        if (response.ok) {
+            const data = await response.json();
+            const status = data.status || data;
+            
+            const statusEl = document.getElementById('christmas-current-status');
+            const nextActionEl = document.getElementById('christmas-next-action');
+            const activeDevicesEl = document.getElementById('christmas-active-devices');
+            
+            if (statusEl) {
+                if (status.lights_on) {
+                    statusEl.textContent = '🟢 Lichter AN';
+                    statusEl.className = 'status-badge active';
+                } else if (status.enabled) {
+                    statusEl.textContent = '⏸️ Wartet';
+                    statusEl.className = 'status-badge waiting';
+                } else {
+                    statusEl.textContent = '⭕ Deaktiviert';
+                    statusEl.className = 'status-badge inactive';
+                }
+            }
+            
+            if (nextActionEl) {
+                nextActionEl.textContent = status.next_action || '--';
+            }
+            
+            if (activeDevicesEl) {
+                activeDevicesEl.textContent = status.active_devices || '0';
+            }
+        }
+    } catch (error) {
+        console.log('Christmas status not available');
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Einfache Notification
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 25px;
+        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
