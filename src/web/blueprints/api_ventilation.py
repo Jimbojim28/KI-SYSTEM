@@ -879,10 +879,14 @@ def init_ventilation_blueprint(engine, db, config):
                                 is_open = False
                             elif tilt_value is not None:
                                 # Kontakt offen + Tilt vorhanden
+                                closed_angle = calibration.get('closed_angle', 0)
                                 tilted_min = calibration.get('tilted_min', 5)
                                 tilted_max = calibration.get('tilted_max', 45)
                                 
-                                if tilt_value >= tilted_min and tilt_value <= tilted_max:
+                                # Berechne Differenz zum geschlossenen Winkel (wie bei /rooms)
+                                diff = abs(tilt_value - closed_angle)
+                                
+                                if diff >= tilted_min and diff <= tilted_max:
                                     window_state = 'tilted'
                                     is_open = True
                                 else:
