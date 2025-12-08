@@ -603,10 +603,14 @@ class VentilationNotifier:
                         window_state = 'open'  # Default
                         tilt_value = None
                         
-                        # Prüfe ob Tilt-Sensor verfügbar
-                        if 'tilt' in caps:
-                            tilt_value = caps['tilt'].get('value', 0)
-                            
+                        # Prüfe ob Tilt-Sensor verfügbar (verschiedene mögliche Namen)
+                        tilt_caps = ['tilt', 'windowcoverings_tilt_set', 'measure_tilt', 'tilt_angle']
+                        for tilt_cap in tilt_caps:
+                            if tilt_cap in caps:
+                                tilt_value = caps[tilt_cap].get('value')
+                                break
+                        
+                        if tilt_value is not None:
                             # Hole Kalibrierung für diese Zone
                             calibration = calibrations.get(zone_id, {
                                 'closed_angle': 0,
@@ -621,11 +625,15 @@ class VentilationNotifier:
                             # Logik: Winkel im Kippbereich (5°-45°) = gekippt
                             diff = abs(tilt_value - closed_angle)
                             
+                            logger.debug(f"Window {device.get('name')}: tilt={tilt_value}, diff={diff}, tilted_min={tilted_min}, tilted_max={tilted_max}")
+                            
                             if diff >= tilted_min and diff <= tilted_max:
                                 window_state = 'tilted'
                             else:
                                 # Winkel nahe geschlossen (0°) oder sehr groß (>45°) = weit offen
                                 window_state = 'open'
+                        else:
+                            logger.debug(f"Window {device.get('name')}: No tilt sensor, caps: {list(caps.keys())}")
                         
                         windows.append({
                             'device_id': device.get('id'),

@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
         'frost_threshold': 2,
         'mold_warning': True,
         'window_opened_alert': True,
+        'window_closed_alert': True,
         'window_away_alert': True
     },
     
