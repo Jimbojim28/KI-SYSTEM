@@ -147,6 +147,8 @@ class VentilationNotifier:
                 config = self._load_config()
                 if config.get('enabled'):
                     self._check_conditions(config)
+                else:
+                    logger.debug("Ventilation notifications disabled in config")
             except Exception as e:
                 logger.error(f"Error in ventilation notification check: {e}")
             
@@ -155,6 +157,7 @@ class VentilationNotifier:
     def _check_conditions(self, config: dict):
         """Prüft alle Benachrichtigungs-Bedingungen"""
         if not self.engine or not self.engine.platform:
+            logger.debug("No engine/platform available for ventilation check")
             return
         
         try:
@@ -162,6 +165,10 @@ class VentilationNotifier:
             room_data = self._get_room_climate_data()
             outdoor_temp = self._get_outdoor_temp()
             open_windows = self._get_open_windows()
+            
+            logger.debug(f"Ventilation check: {len(open_windows)} open windows found")
+            for w in open_windows:
+                logger.debug(f"  - {w['name']} ({w['room']}): state={w.get('state')}, tilt={w.get('tilt')}")
             
             # Update tracked windows
             current_open = set(w['device_id'] for w in open_windows)
