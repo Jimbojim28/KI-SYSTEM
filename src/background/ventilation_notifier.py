@@ -813,7 +813,19 @@ class VentilationNotifier:
         if max_score > 0:
             percentage = int((score / max_score) * 100)
         else:
-            percentage = 50  # Keine Daten
+            # Keine Sensordaten - bewerte nur anhand der Dauer
+            if duration_minutes >= 5 and duration_minutes <= 15:
+                percentage = 75
+                comments.append("Gute Lüftungsdauer")
+            elif duration_minutes >= 3 and duration_minutes <= 25:
+                percentage = 60
+                comments.append("Akzeptable Lüftungsdauer")
+            elif duration_minutes < 3:
+                percentage = 30
+                comments.append("Zu kurz gelüftet")
+            else:
+                percentage = 50
+                comments.append("Keine Sensordaten verfügbar")
         
         # Rating und Emoji
         if percentage >= 80:
