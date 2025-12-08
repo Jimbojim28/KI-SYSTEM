@@ -565,6 +565,10 @@ class VentilationNotifier:
         windows = []
         
         try:
+            # Wichtig: Cache refreshen um aktuelle Werte zu bekommen!
+            if hasattr(self.engine.platform, '_refresh_device_cache'):
+                self.engine.platform._refresh_device_cache()
+            
             if hasattr(self.engine.platform, '_device_cache'):
                 devices = list(self.engine.platform._device_cache.values()) if isinstance(
                     self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
