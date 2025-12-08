@@ -40,7 +40,7 @@ class VentilationNotifier:
         self._cooldown_minutes = 30  # Mindestens 30 Min zwischen gleichen Benachrichtigungen
         
         # Tracke offene Fenster und deren Öffnungszeit
-        self._open_windows: Dict[str, datetime] = {}  # device_id -> opened_at
+        self._open_windows: Dict[str, dict] = {}  # device_id -> {opened_at, room, name, climate_start}
         
         # Anwesenheits-Tracking
         self._presence_home: bool = True
@@ -170,7 +170,21 @@ class VentilationNotifier:
             new_windows = []
             for window in open_windows:
                 if window['device_id'] not in self._open_windows:
-                    self._open_windows[window['device_id']] = datetime.now()
+                    room_name = window.get('room', 'Unbekannt')
+                    room_climate = room_data.get(room_name, {})
+                    
+                    # Speichere Fensterdaten inkl. Klima-Startwerte
+                    self._open_windows[window['device_id']] = {
+                        'opened_at': datetime.now(),
+                        'room': room_name,
+                        'name': window.get('name', 'Unbekannt'),
+                        'climate_start': {
+                            'temp': room_climate.get('temp'),
+                            'humidity': room_climate.get('humidity'),
+                            'co2': room_climate.get('co2'),
+                            'outdoor_temp': outdoor_temp
+                        }
+                    }
                     new_windows.append(window)
             
             # === Fenster wurde geöffnet ===
@@ -178,6 +192,7 @@ class VentilationNotifier:
                 for window in new_windows:
                     room_name = window.get('room', 'Unbekannt')
                     room_climate = room_data.get(room_name, {})
+                    window_state = window.get('state', 'open')
                     
                     # Berechne empfohlene Lüftungsdauer
                     duration = self._calculate_ventilation_duration(
@@ -187,8 +202,10 @@ class VentilationNotifier:
                         co2=room_climate.get('co2')
                     )
                     
-                    # Baue Nachrichtentext
-                    message_parts = [f'🪟 <b>{window["name"]}</b> wurde geöffnet']
+                    # Baue Nachrichtentext mit Zustand (gekippt/offen)
+                    state_emoji = '📐' if window_state == 'tilted' else '🪟'
+                    state_text = 'gekippt' if window_state == 'tilted' else 'geöffnet'
+                    message_parts = [f'{state_emoji} <b>{window["name"]}</b> wurde {state_text}']
                     
                     # Zeige Raum-Klimadaten wenn verfügbar
                     climate_info = []
@@ -210,14 +227,82 @@ class VentilationNotifier:
                     if duration.get('reason'):
                         message_parts.append(f"\n💡 {duration['reason']}")
                     
+                    title = '📐 Fenster gekippt' if window_state == 'tilted' else '🪟 Fenster geöffnet'
                     self._send_notification(
-                        '🪟 Fenster geöffnet',
+                        title,
                         ''.join(message_parts),
                         notification_key=f'window_opened_{window["device_id"]}'
                     )
             
-            # Geschlossene Fenster entfernen
+            # === Fenster wurde geschlossen - Benachrichtigung mit Dauer und Effektivität ===
             closed = set(self._open_windows.keys()) - current_open
+            if config.get('window_closed_alert', True) and closed:
+                for device_id in closed:
+                    window_info = self._open_windows.get(device_id, {})
+                    opened_at = window_info.get('opened_at')
+                    window_name = window_info.get('name', 'Fenster')
+                    room_name = window_info.get('room', 'Unbekannt')
+                    climate_start = window_info.get('climate_start', {})
+                    
+                    # Berechne Dauer
+                    if opened_at:
+                        duration_seconds = (datetime.now() - opened_at).total_seconds()
+                        duration_minutes = int(duration_seconds / 60)
+                    else:
+                        duration_minutes = 0
+                    
+                    # Formatiere Dauer
+                    if duration_minutes >= 60:
+                        hours = duration_minutes // 60
+                        mins = duration_minutes % 60
+                        duration_text = f"{hours}h {mins}min" if mins > 0 else f"{hours}h"
+                    else:
+                        duration_text = f"{duration_minutes} Minuten"
+                    
+                    # Hole aktuelle Klimadaten für Vergleich
+                    room_climate_now = room_data.get(room_name, {})
+                    
+                    # Berechne Effektivität
+                    effectiveness = self._calculate_ventilation_effectiveness(
+                        climate_start, room_climate_now, duration_minutes
+                    )
+                    
+                    # Baue Nachrichtentext
+                    message_parts = [f'✅ <b>{window_name}</b> geschlossen']
+                    message_parts.append(f'\n\n⏱️ <b>Lüftungsdauer:</b> {duration_text}')
+                    
+                    # Zeige Klima-Veränderungen
+                    changes = []
+                    if climate_start.get('temp') and room_climate_now.get('temp'):
+                        temp_diff = room_climate_now['temp'] - climate_start['temp']
+                        arrow = '↓' if temp_diff < 0 else '↑' if temp_diff > 0 else '→'
+                        changes.append(f"🌡️ {climate_start['temp']:.1f}→{room_climate_now['temp']:.1f}°C ({arrow}{abs(temp_diff):.1f}°)")
+                    
+                    if climate_start.get('humidity') and room_climate_now.get('humidity'):
+                        hum_diff = room_climate_now['humidity'] - climate_start['humidity']
+                        arrow = '↓' if hum_diff < 0 else '↑' if hum_diff > 0 else '→'
+                        changes.append(f"💧 {climate_start['humidity']:.0f}→{room_climate_now['humidity']:.0f}% ({arrow}{abs(hum_diff):.0f}%)")
+                    
+                    if climate_start.get('co2') and room_climate_now.get('co2'):
+                        co2_diff = room_climate_now['co2'] - climate_start['co2']
+                        arrow = '↓' if co2_diff < 0 else '↑' if co2_diff > 0 else '→'
+                        changes.append(f"💨 {climate_start['co2']:.0f}→{room_climate_now['co2']:.0f} ppm ({arrow}{abs(co2_diff):.0f})")
+                    
+                    if changes:
+                        message_parts.append(f"\n\n<b>Veränderung:</b>\n" + '\n'.join(changes))
+                    
+                    # Effektivitäts-Bewertung
+                    message_parts.append(f"\n\n{effectiveness['emoji']} <b>Effektivität:</b> {effectiveness['rating']}")
+                    if effectiveness.get('comment'):
+                        message_parts.append(f"\n{effectiveness['comment']}")
+                    
+                    self._send_notification(
+                        '✅ Lüftung beendet',
+                        ''.join(message_parts),
+                        notification_key=f'window_closed_{device_id}'
+                    )
+            
+            # Geschlossene Fenster aus Tracking entfernen
             for device_id in closed:
                 del self._open_windows[device_id]
             
@@ -253,7 +338,8 @@ class VentilationNotifier:
                 if outdoor_temp < frost_threshold:
                     for window in open_windows:
                         device_id = window['device_id']
-                        opened_at = self._open_windows.get(device_id)
+                        window_info = self._open_windows.get(device_id, {})
+                        opened_at = window_info.get('opened_at') if isinstance(window_info, dict) else None
                         if opened_at:
                             minutes_open = (datetime.now() - opened_at).total_seconds() / 60
                             if minutes_open >= 10:  # Mind. 10 Min offen
@@ -300,7 +386,8 @@ class VentilationNotifier:
                     if away_minutes >= 5:
                         for window in open_windows:
                             device_id = window['device_id']
-                            opened_at = self._open_windows.get(device_id)
+                            window_info = self._open_windows.get(device_id, {})
+                            opened_at = window_info.get('opened_at') if isinstance(window_info, dict) else None
                             minutes_open = 0
                             if opened_at:
                                 minutes_open = (datetime.now() - opened_at).total_seconds() / 60
@@ -479,6 +566,18 @@ class VentilationNotifier:
             except:
                 pass
             
+            # Lade Kalibrierungsdaten aus rooms.json (wie bei /rooms)
+            calibrations = {}
+            try:
+                rooms_file = Path('data/rooms.json')
+                if rooms_file.exists():
+                    import json
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                    calibrations = rooms_data.get('window_calibration', {})
+            except:
+                pass
+            
             for device in devices:
                 if not isinstance(device, dict):
                     continue
@@ -494,16 +593,46 @@ class VentilationNotifier:
                 
                 caps = device.get('capabilitiesObj', {})
                 if 'alarm_contact' in caps:
-                    is_open = caps['alarm_contact'].get('value', False)
-                    if is_open:
+                    is_contact_open = caps['alarm_contact'].get('value', False)
+                    if is_contact_open:
                         # Hole Raum-Namen aus Zone
                         zone_id = device.get('zone')
                         room_name = zones.get(zone_id, 'Unbekannt')
                         
+                        # Ermittle Fensterzustand (gekippt vs offen) - gleiche Logik wie /rooms
+                        window_state = 'open'  # Default
+                        tilt_value = None
+                        
+                        # Prüfe ob Tilt-Sensor verfügbar
+                        if 'tilt' in caps:
+                            tilt_value = caps['tilt'].get('value', 0)
+                            
+                            # Hole Kalibrierung für diese Zone
+                            calibration = calibrations.get(zone_id, {
+                                'closed_angle': 0,
+                                'tilted_min': 5,
+                                'tilted_max': 45
+                            })
+                            
+                            closed_angle = calibration.get('closed_angle', 0)
+                            tilted_min = calibration.get('tilted_min', 5)
+                            tilted_max = calibration.get('tilted_max', 45)
+                            
+                            # Logik: Winkel im Kippbereich (5°-45°) = gekippt
+                            diff = abs(tilt_value - closed_angle)
+                            
+                            if diff >= tilted_min and diff <= tilted_max:
+                                window_state = 'tilted'
+                            else:
+                                # Winkel nahe geschlossen (0°) oder sehr groß (>45°) = weit offen
+                                window_state = 'open'
+                        
                         windows.append({
                             'device_id': device.get('id'),
                             'name': device.get('name', 'Unbekannt'),
-                            'room': room_name
+                            'room': room_name,
+                            'state': window_state,
+                            'tilt': tilt_value
                         })
                         
         except Exception as e:
@@ -580,6 +709,138 @@ class VentilationNotifier:
             'max_minutes': max_duration,
             'text': duration_text,
             'reason': reason
+        }
+
+    def _calculate_ventilation_effectiveness(self, climate_start: dict, 
+                                             climate_now: dict, 
+                                             duration_minutes: int) -> dict:
+        """Berechnet die Effektivität der Lüftung basierend auf Klima-Veränderungen"""
+        
+        score = 0
+        max_score = 0
+        comments = []
+        
+        # CO2-Reduktion (wichtigster Faktor)
+        co2_start = climate_start.get('co2')
+        co2_now = climate_now.get('co2')
+        if co2_start and co2_now:
+            max_score += 40
+            co2_reduction = co2_start - co2_now
+            
+            if co2_start > 1000:
+                # Bei hohem CO2 - wie viel wurde reduziert?
+                if co2_now < 800:
+                    score += 40
+                    comments.append("CO₂ deutlich gesenkt 👍")
+                elif co2_reduction > 300:
+                    score += 30
+                elif co2_reduction > 150:
+                    score += 20
+                elif co2_reduction > 50:
+                    score += 10
+                else:
+                    comments.append("CO₂ kaum verändert")
+            else:
+                # CO2 war schon OK
+                if co2_now < 1000:
+                    score += 35
+                    comments.append("CO₂ blieb gut")
+        
+        # Luftfeuchtigkeit
+        hum_start = climate_start.get('humidity')
+        hum_now = climate_now.get('humidity')
+        if hum_start and hum_now:
+            max_score += 30
+            hum_diff = hum_start - hum_now
+            
+            if hum_start > 65:
+                # Bei hoher Feuchtigkeit - wurde sie gesenkt?
+                if hum_now < 60:
+                    score += 30
+                    comments.append("Feuchtigkeit gesenkt 👍")
+                elif hum_diff > 10:
+                    score += 25
+                elif hum_diff > 5:
+                    score += 15
+                elif hum_diff > 0:
+                    score += 8
+            elif hum_start < 40 and hum_now > hum_start:
+                # Bei zu niedriger Feuchtigkeit - Erhöhung ist gut
+                score += 25
+                comments.append("Feuchtigkeit erhöht 👍")
+            else:
+                # Feuchtigkeit war OK
+                if 40 <= hum_now <= 65:
+                    score += 25
+        
+        # Temperatur (situationsabhängig)
+        temp_start = climate_start.get('temp')
+        temp_now = climate_now.get('temp')
+        outdoor_temp = climate_start.get('outdoor_temp')
+        if temp_start and temp_now:
+            max_score += 30
+            temp_diff = temp_now - temp_start
+            
+            # Im Winter sollte nicht zu viel auskühlen
+            if outdoor_temp is not None and outdoor_temp < 10:
+                if abs(temp_diff) < 2:
+                    score += 30
+                    comments.append("Temperatur stabil gehalten")
+                elif abs(temp_diff) < 4:
+                    score += 20
+                else:
+                    score += 5
+                    comments.append("Raum stark abgekühlt")
+            else:
+                # Im Sommer ist Kühlung OK
+                if temp_start > 24 and temp_diff < -1:
+                    score += 30
+                    comments.append("Raum erfrischt 👍")
+                elif abs(temp_diff) < 3:
+                    score += 25
+                else:
+                    score += 15
+        
+        # Dauer-Bewertung
+        if duration_minutes < 3:
+            comments.append("Sehr kurze Lüftung")
+            score = int(score * 0.7)  # Abzug
+        elif duration_minutes > 30 and outdoor_temp is not None and outdoor_temp < 5:
+            comments.append("Lange Lüftung bei Kälte")
+            score = int(score * 0.8)  # Abzug
+        
+        # Berechne Prozentsatz
+        if max_score > 0:
+            percentage = int((score / max_score) * 100)
+        else:
+            percentage = 50  # Keine Daten
+        
+        # Rating und Emoji
+        if percentage >= 80:
+            rating = "Sehr gut"
+            emoji = "🌟"
+        elif percentage >= 60:
+            rating = "Gut"
+            emoji = "✅"
+        elif percentage >= 40:
+            rating = "OK"
+            emoji = "👌"
+        elif percentage >= 20:
+            rating = "Mäßig"
+            emoji = "⚠️"
+        else:
+            rating = "Gering"
+            emoji = "❌"
+        
+        # Füge Prozent zum Rating
+        rating = f"{rating} ({percentage}%)"
+        
+        return {
+            'rating': rating,
+            'emoji': emoji,
+            'percentage': percentage,
+            'comment': comments[0] if comments else None,
+            'all_comments': comments
         }
 
     def get_status(self) -> dict:

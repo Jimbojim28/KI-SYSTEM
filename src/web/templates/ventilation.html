@@ -170,6 +170,30 @@
                     </div>
                 </div>
                 
+                <!-- Fenster geöffnet -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="window-opened-alert" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">🪟 Fenster geöffnet</span>
+                    </div>
+                    <p class="option-description">Benachrichtigung beim Öffnen eines Fensters (inkl. gekippt/offen Status)</p>
+                </div>
+                
+                <!-- Fenster geschlossen -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="window-closed-alert" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">✅ Fenster geschlossen</span>
+                    </div>
+                    <p class="option-description">Benachrichtigung beim Schließen mit Dauer und Lüftungs-Effektivität</p>
+                </div>
+                
                 <!-- Lüftung abgeschlossen -->
                 <div class="notification-option">
                     <div class="option-header">
@@ -177,7 +201,7 @@
                             <input type="checkbox" id="ventilation-complete">
                             <span class="toggle-slider"></span>
                         </label>
-                        <span class="option-title">✅ Lüftung abgeschlossen</span>
+                        <span class="option-title">🎯 Lüftungsziel erreicht</span>
                     </div>
                     <p class="option-description">Benachrichtigung wenn gute Luftqualität erreicht wurde</p>
                 </div>
@@ -2003,6 +2027,8 @@ async function loadNotificationSettings() {
             updateNotificationStatus(settings.enabled);
             
             // Einzelne Optionen
+            document.getElementById('window-opened-alert').checked = settings.window_opened_alert !== false;
+            document.getElementById('window-closed-alert').checked = settings.window_closed_alert !== false;
             document.getElementById('co2-high-alert').checked = settings.co2_high_alert;
             document.getElementById('co2-threshold').value = settings.co2_threshold || 1000;
             document.getElementById('humidity-high-alert').checked = settings.humidity_high_alert;
@@ -2051,6 +2077,8 @@ function updateNotificationStatus(enabled) {
 async function saveNotificationSettings() {
     const settings = {
         enabled: document.getElementById('notifications-enabled').checked,
+        window_opened_alert: document.getElementById('window-opened-alert').checked,
+        window_closed_alert: document.getElementById('window-closed-alert').checked,
         co2_high_alert: document.getElementById('co2-high-alert').checked,
         co2_threshold: parseInt(document.getElementById('co2-threshold').value),
         humidity_high_alert: document.getElementById('humidity-high-alert').checked,
