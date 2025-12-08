@@ -243,6 +243,12 @@ class VentilationNotifier:
             
             # === Fenster wurde geschlossen - Benachrichtigung mit Dauer und Effektivität ===
             closed = set(self._open_windows.keys()) - current_open
+            
+            # Debug: Zeige Tracking-Status
+            logger.debug(f"Tracking {len(self._open_windows)} windows, {len(closed)} just closed")
+            if closed:
+                logger.info(f"Windows closed: {closed}")
+            
             if config.get('window_closed_alert', True) and closed:
                 for device_id in closed:
                     window_info = self._open_windows.get(device_id, {})

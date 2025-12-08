@@ -1453,6 +1453,29 @@ def init_ventilation_blueprint(engine, db, config):
             elif notification_type == 'frost_warning':
                 title = '❄️ Frostwarnung!'
                 message = '<b>Test-Warnung</b>\n\n⚠️ Bei Frost bitte Fenster schließen um Heizkosten zu sparen.'
+            
+            elif notification_type == 'window_closed':
+                # Simuliere eine Fenster-Schließen Benachrichtigung
+                title = '✅ Lüftung beendet'
+                parts = ['✅ <b>Test-Fenster</b> geschlossen']
+                parts.append('\n\n⏱️ <b>Lüftungsdauer:</b> 12 Minuten')
+                
+                # Zeige echte Klimadaten wenn verfügbar
+                if max_co2_room:
+                    d = real_data.get(max_co2_room, {})
+                    changes = []
+                    if d.get('temperature'):
+                        changes.append(f"🌡️ Aktuell: {d['temperature']:.1f}°C")
+                    if d.get('humidity'):
+                        changes.append(f"💧 Aktuell: {d['humidity']:.0f}%")
+                    if d.get('co2'):
+                        changes.append(f"💨 Aktuell: {int(d['co2'])} ppm")
+                    if changes:
+                        parts.append(f"\n\n<b>Raumklima ({max_co2_room}):</b>\n" + '\n'.join(changes))
+                
+                parts.append('\n\n🌟 <b>Effektivität:</b> Sehr gut (85%)')
+                parts.append('\nCO₂ deutlich gesenkt 👍')
+                message = ''.join(parts)
                 
             elif notification_type == 'mold_warning':
                 if max_humidity_room and max_humidity > 60:
