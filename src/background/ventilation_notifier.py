@@ -177,7 +177,10 @@ class VentilationNotifier:
             outdoor_temp = self._get_outdoor_temp()
             open_windows = self._get_open_windows()
             
-            logger.debug(f"Ventilation check: {len(open_windows)} open windows found")
+            # DEBUG: Zeige geladene Klimadaten
+            logger.info(f"Ventilation check: {len(open_windows)} open windows, {len(room_data)} rooms with climate data")
+            for room, data in room_data.items():
+                logger.debug(f"  Room '{room}': {data}")
             for w in open_windows:
                 logger.debug(f"  - {w['name']} ({w['room']}): state={w.get('state')}, tilt={w.get('tilt')}")
             
@@ -197,15 +200,17 @@ class VentilationNotifier:
                     room_name = window.get('room', 'Unbekannt')
                     room_climate = room_data.get(room_name, {})
                     
-                    # Fallback: Versuche Raumnamen-Varianten
+                    # Fallback: Versuche Raumnamen-Varianten (case-insensitive)
                     if not room_climate:
+                        room_name_lower = room_name.lower()
                         for key in room_data.keys():
-                            if key.lower() == room_name.lower() or room_name.lower() in key.lower():
+                            key_lower = key.lower()
+                            if key_lower == room_name_lower or room_name_lower in key_lower or key_lower in room_name_lower:
                                 room_climate = room_data[key]
                                 logger.debug(f"Found climate data for {room_name} via fallback key: {key}")
                                 break
                     
-                    logger.debug(f"Window {window.get('name')} in {room_name}: climate={room_climate}")
+                    logger.info(f"Window opened - {window.get('name')} in {room_name}: climate_start={room_climate}")
                     
                     # Speichere Fensterdaten inkl. Klima-Startwerte
                     self._open_windows[window['device_id']] = {
@@ -302,14 +307,17 @@ class VentilationNotifier:
                     # Hole aktuelle Klimadaten für Vergleich
                     room_climate_now = room_data.get(room_name, {})
                     
-                    # Fallback: Versuche Raumnamen-Varianten
+                    # Fallback: Versuche Raumnamen-Varianten (case-insensitive)
                     if not room_climate_now:
+                        room_name_lower = room_name.lower()
                         for key in room_data.keys():
-                            if key.lower() == room_name.lower() or room_name.lower() in key.lower():
+                            key_lower = key.lower()
+                            if key_lower == room_name_lower or room_name_lower in key_lower or key_lower in room_name_lower:
                                 room_climate_now = room_data[key]
+                                logger.debug(f"Found climate_now for {room_name} via key: {key}")
                                 break
                     
-                    logger.debug(f"Window closed - {window_name}: climate_start={climate_start}, climate_now={room_climate_now}")
+                    logger.info(f"Window closed - {window_name} in {room_name}: climate_start={climate_start}, climate_now={room_climate_now}")
                     
                     # Berechne Effektivität
                     effectiveness = self._calculate_ventilation_effectiveness(
