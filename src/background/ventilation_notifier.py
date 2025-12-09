@@ -316,8 +316,8 @@ class VentilationNotifier:
                     )
                     
                     # Baue Nachrichtentext
-                    message_parts = [f'✅ <b>{window_name}</b> geschlossen']
-                    message_parts.append(f'\n\n⏱️ <b>Lüftungsdauer:</b> {duration_text}')
+                    message_parts = [f'✅ {window_name} geschlossen']
+                    message_parts.append(f'\n\n⏱️ Lüftungsdauer: {duration_text}')
                     
                     # Zeige Klima-Veränderungen (wenn Vorher/Nachher verfügbar)
                     changes = []
@@ -342,7 +342,7 @@ class VentilationNotifier:
                             changes.append(f"💨 {climate_start['co2']:.0f}→{room_climate_now['co2']:.0f} ppm ({arrow}{abs(co2_diff):.0f})")
                         
                         if changes:
-                            message_parts.append(f"\n\n<b>Veränderung ({room_name}):</b>\n" + '\n'.join(changes))
+                            message_parts.append(f"\n\nVeränderung:\n" + '\n'.join(changes))
                     
                     elif has_now_data:
                         # Nur aktuelle Daten verfügbar
@@ -355,7 +355,7 @@ class VentilationNotifier:
                             current_info.append(f"💨 {room_climate_now['co2']:.0f} ppm")
                         
                         if current_info:
-                            message_parts.append(f"\n\n<b>Aktuell ({room_name}):</b>\n" + '\n'.join(current_info))
+                            message_parts.append(f"\n\nAktuell:\n" + '\n'.join(current_info))
                     
                     else:
                         # Keine Sensordaten - zeige Außentemperatur wenn verfügbar
@@ -365,7 +365,7 @@ class VentilationNotifier:
                             message_parts.append(f"\n\n<i>Keine Sensordaten für {room_name} verfügbar</i>")
                     
                     # Effektivitäts-Bewertung
-                    message_parts.append(f"\n\n{effectiveness['emoji']} <b>Effektivität:</b> {effectiveness['rating']}")
+                    message_parts.append(f"\n\n{effectiveness['emoji']} Effektivität: {effectiveness['rating']}")
                     if effectiveness.get('comment'):
                         message_parts.append(f"\n{effectiveness['comment']}")
                     
@@ -817,117 +817,112 @@ class VentilationNotifier:
                                              duration_minutes: int) -> dict:
         """Berechnet die Effektivität der Lüftung basierend auf Klima-Veränderungen"""
         
-        score = 0
-        max_score = 0
+        score = 0.0
+        weights = 0.0
         comments = []
         
-        # CO2-Reduktion (wichtigster Faktor)
+        # Daten extrahieren
         co2_start = climate_start.get('co2')
         co2_now = climate_now.get('co2')
-        if co2_start and co2_now:
-            max_score += 40
-            co2_reduction = co2_start - co2_now
-            
-            if co2_start > 1000:
-                # Bei hohem CO2 - wie viel wurde reduziert?
-                if co2_now < 800:
-                    score += 40
-                    comments.append("CO₂ deutlich gesenkt 👍")
-                elif co2_reduction > 300:
-                    score += 30
-                elif co2_reduction > 150:
-                    score += 20
-                elif co2_reduction > 50:
-                    score += 10
-                else:
-                    comments.append("CO₂ kaum verändert")
-            else:
-                # CO2 war schon OK
-                if co2_now < 1000:
-                    score += 35
-                    comments.append("CO₂ blieb gut")
-        
-        # Luftfeuchtigkeit
         hum_start = climate_start.get('humidity')
         hum_now = climate_now.get('humidity')
-        if hum_start and hum_now:
-            max_score += 30
-            hum_diff = hum_start - hum_now
-            
-            if hum_start > 65:
-                # Bei hoher Feuchtigkeit - wurde sie gesenkt?
-                if hum_now < 60:
-                    score += 30
-                    comments.append("Feuchtigkeit gesenkt 👍")
-                elif hum_diff > 10:
-                    score += 25
-                elif hum_diff > 5:
-                    score += 15
-                elif hum_diff > 0:
-                    score += 8
-            elif hum_start < 40 and hum_now > hum_start:
-                # Bei zu niedriger Feuchtigkeit - Erhöhung ist gut
-                score += 25
-                comments.append("Feuchtigkeit erhöht 👍")
-            else:
-                # Feuchtigkeit war OK
-                if 40 <= hum_now <= 65:
-                    score += 25
-        
-        # Temperatur (situationsabhängig)
         temp_start = climate_start.get('temp')
         temp_now = climate_now.get('temp')
         outdoor_temp = climate_start.get('outdoor_temp')
-        if temp_start and temp_now:
-            max_score += 30
-            temp_diff = temp_now - temp_start
+        
+        # === 1. CO2-Reduktion (40%) ===
+        if co2_start and co2_now:
+            weights += 0.40
+            co2_change = co2_now - co2_start
             
-            # Im Winter sollte nicht zu viel auskühlen
-            if outdoor_temp is not None and outdoor_temp < 10:
-                if abs(temp_diff) < 2:
-                    score += 30
-                    comments.append("Temperatur stabil gehalten")
-                elif abs(temp_diff) < 4:
-                    score += 20
-                else:
-                    score += 5
-                    comments.append("Raum stark abgekühlt")
+            if co2_change < -400:
+                score += 1.0 * 0.40
+                comments.append("CO₂ deutlich gesenkt 👍")
+            elif co2_change < -250:
+                score += 0.85 * 0.40
+                comments.append("CO₂ gut gesenkt")
+            elif co2_change < -150:
+                score += 0.65 * 0.40
+            elif co2_change < -50:
+                score += 0.40 * 0.40
             else:
-                # Im Sommer ist Kühlung OK
-                if temp_start > 24 and temp_diff < -1:
-                    score += 30
-                    comments.append("Raum erfrischt 👍")
-                elif abs(temp_diff) < 3:
-                    score += 25
+                score += 0.15 * 0.40
+                if co2_start > 800:
+                    comments.append("CO₂ kaum verändert")
+            
+            # Bonus für Effizienz (schneller Austausch)
+            co2_per_minute = abs(co2_change) / max(duration_minutes, 1)
+            if co2_per_minute > 30:
+                score += 0.10
+            elif co2_per_minute > 15:
+                score += 0.05
+        
+        # === 2. Feuchtigkeit (30%) ===
+        if hum_start and hum_now:
+            weights += 0.30
+            hum_change = hum_now - hum_start
+            
+            if hum_change < -15:
+                score += 1.0 * 0.30
+                comments.append("Feuchtigkeit stark gesenkt 👍")
+            elif hum_change < -10:
+                score += 0.85 * 0.30
+            elif hum_change < -5:
+                score += 0.65 * 0.30
+            elif hum_change < 0:
+                score += 0.45 * 0.30
+            else:
+                score += 0.25 * 0.30
+        
+        # === 3. Temperatur (30%) ===
+        if temp_start and temp_now and outdoor_temp is not None:
+            weights += 0.30
+            temp_change = temp_now - temp_start
+            
+            if outdoor_temp < 10:  # Winter
+                # Wenig Temperaturverlust ist gut, ABER nur wenn auch Luftaustausch stattfand
+                co2_ok = (co2_start is None) or (co2_now is not None and (co2_now - co2_start) < -50)
+                
+                if co2_ok:
+                    if temp_change > -1:
+                        score += 1.0 * 0.30
+                        comments.append("Wärme gut gehalten")
+                    elif temp_change > -2:
+                        score += 0.80 * 0.30
+                    elif temp_change > -4:
+                        score += 0.55 * 0.30
+                    else:
+                        score += 0.25 * 0.30
+                        comments.append("Stark abgekühlt")
                 else:
-                    score += 15
+                    # CO2 kaum gesunken = schlechter Luftaustausch -> Wenig Temp-Verlust ist kein Verdienst
+                    score += 0.20 * 0.30
+            else:  # Sommer
+                if temp_change < 0:
+                    score += 0.80 * 0.30
+                    comments.append("Raum abgekühlt 👍")
+                else:
+                    score += 0.50 * 0.30
         
-        # Dauer-Bewertung
-        if duration_minutes < 3:
-            comments.append("Sehr kurze Lüftung")
-            score = int(score * 0.7)  # Abzug
-        elif duration_minutes > 30 and outdoor_temp is not None and outdoor_temp < 5:
-            comments.append("Lange Lüftung bei Kälte")
-            score = int(score * 0.8)  # Abzug
-        
-        # Berechne Prozentsatz
-        if max_score > 0:
-            percentage = int((score / max_score) * 100)
+        # Berechnung Prozent
+        if weights > 0:
+            percentage = int((score / weights) * 100)
+            percentage = min(100, max(0, percentage))
         else:
-            # Keine Sensordaten - bewerte nur anhand der Dauer
-            if duration_minutes >= 5 and duration_minutes <= 15:
+            # Fallback auf Dauer (keine Sensordaten)
+            if 5 <= duration_minutes <= 15:
                 percentage = 75
                 comments.append("Gute Lüftungsdauer")
-            elif duration_minutes >= 3 and duration_minutes <= 25:
+            elif 3 <= duration_minutes <= 25:
                 percentage = 60
-                comments.append("Akzeptable Lüftungsdauer")
+                comments.append("Akzeptable Dauer")
             elif duration_minutes < 3:
                 percentage = 30
                 comments.append("Zu kurz gelüftet")
             else:
                 percentage = 50
                 comments.append("Keine Sensordaten verfügbar")
-        
+
         # Rating und Emoji
         if percentage >= 80:
             rating = "Sehr gut"
@@ -944,12 +939,11 @@ class VentilationNotifier:
         else:
             rating = "Gering"
             emoji = "❌"
-        
-        # Füge Prozent zum Rating
-        rating = f"{rating} ({percentage}%)"
+            
+        rating_text = f"{rating} ({percentage}%)"
         
         return {
-            'rating': rating,
+            'rating': rating_text,
             'emoji': emoji,
             'percentage': percentage,
             'comment': comments[0] if comments else None,
