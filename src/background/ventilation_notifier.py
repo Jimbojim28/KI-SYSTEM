@@ -173,12 +173,28 @@ class VentilationNotifier:
             # Update tracked windows
             current_open = set(w['device_id'] for w in open_windows)
             
+            # Debug: Zeige verfügbare Klimadaten
+            if room_data:
+                logger.debug(f"Room climate data available for: {list(room_data.keys())}")
+            else:
+                logger.debug("No room climate data available")
+            
             # Neue offene Fenster - mit Benachrichtigung
             new_windows = []
             for window in open_windows:
                 if window['device_id'] not in self._open_windows:
                     room_name = window.get('room', 'Unbekannt')
                     room_climate = room_data.get(room_name, {})
+                    
+                    # Fallback: Versuche Raumnamen-Varianten
+                    if not room_climate:
+                        for key in room_data.keys():
+                            if key.lower() == room_name.lower() or room_name.lower() in key.lower():
+                                room_climate = room_data[key]
+                                logger.debug(f"Found climate data for {room_name} via fallback key: {key}")
+                                break
+                    
+                    logger.debug(f"Window {window.get('name')} in {room_name}: climate={room_climate}")
                     
                     # Speichere Fensterdaten inkl. Klima-Startwerte
                     self._open_windows[window['device_id']] = {
@@ -275,6 +291,15 @@ class VentilationNotifier:
                     # Hole aktuelle Klimadaten für Vergleich
                     room_climate_now = room_data.get(room_name, {})
                     
+                    # Fallback: Versuche Raumnamen-Varianten
+                    if not room_climate_now:
+                        for key in room_data.keys():
+                            if key.lower() == room_name.lower() or room_name.lower() in key.lower():
+                                room_climate_now = room_data[key]
+                                break
+                    
+                    logger.debug(f"Window closed - {window_name}: climate_start={climate_start}, climate_now={room_climate_now}")
+                    
                     # Berechne Effektivität
                     effectiveness = self._calculate_ventilation_effectiveness(
                         climate_start, room_climate_now, duration_minutes
@@ -284,25 +309,50 @@ class VentilationNotifier:
                     message_parts = [f'✅ <b>{window_name}</b> geschlossen']
                     message_parts.append(f'\n\n⏱️ <b>Lüftungsdauer:</b> {duration_text}')
                     
-                    # Zeige Klima-Veränderungen
+                    # Zeige Klima-Veränderungen (wenn Vorher/Nachher verfügbar)
                     changes = []
-                    if climate_start.get('temp') and room_climate_now.get('temp'):
-                        temp_diff = room_climate_now['temp'] - climate_start['temp']
-                        arrow = '↓' if temp_diff < 0 else '↑' if temp_diff > 0 else '→'
-                        changes.append(f"🌡️ {climate_start['temp']:.1f}→{room_climate_now['temp']:.1f}°C ({arrow}{abs(temp_diff):.1f}°)")
+                    has_start_data = climate_start.get('temp') or climate_start.get('humidity') or climate_start.get('co2')
+                    has_now_data = room_climate_now.get('temp') or room_climate_now.get('humidity') or room_climate_now.get('co2')
                     
-                    if climate_start.get('humidity') and room_climate_now.get('humidity'):
-                        hum_diff = room_climate_now['humidity'] - climate_start['humidity']
-                        arrow = '↓' if hum_diff < 0 else '↑' if hum_diff > 0 else '→'
-                        changes.append(f"💧 {climate_start['humidity']:.0f}→{room_climate_now['humidity']:.0f}% ({arrow}{abs(hum_diff):.0f}%)")
+                    if has_start_data and has_now_data:
+                        # Vollständiger Vergleich
+                        if climate_start.get('temp') and room_climate_now.get('temp'):
+                            temp_diff = room_climate_now['temp'] - climate_start['temp']
+                            arrow = '↓' if temp_diff < 0 else '↑' if temp_diff > 0 else '→'
+                            changes.append(f"🌡️ {climate_start['temp']:.1f}→{room_climate_now['temp']:.1f}°C ({arrow}{abs(temp_diff):.1f}°)")
+                        
+                        if climate_start.get('humidity') and room_climate_now.get('humidity'):
+                            hum_diff = room_climate_now['humidity'] - climate_start['humidity']
+                            arrow = '↓' if hum_diff < 0 else '↑' if hum_diff > 0 else '→'
+                            changes.append(f"💧 {climate_start['humidity']:.0f}→{room_climate_now['humidity']:.0f}% ({arrow}{abs(hum_diff):.0f}%)")
+                        
+                        if climate_start.get('co2') and room_climate_now.get('co2'):
+                            co2_diff = room_climate_now['co2'] - climate_start['co2']
+                            arrow = '↓' if co2_diff < 0 else '↑' if co2_diff > 0 else '→'
+                            changes.append(f"💨 {climate_start['co2']:.0f}→{room_climate_now['co2']:.0f} ppm ({arrow}{abs(co2_diff):.0f})")
+                        
+                        if changes:
+                            message_parts.append(f"\n\n<b>Veränderung ({room_name}):</b>\n" + '\n'.join(changes))
                     
-                    if climate_start.get('co2') and room_climate_now.get('co2'):
-                        co2_diff = room_climate_now['co2'] - climate_start['co2']
-                        arrow = '↓' if co2_diff < 0 else '↑' if co2_diff > 0 else '→'
-                        changes.append(f"💨 {climate_start['co2']:.0f}→{room_climate_now['co2']:.0f} ppm ({arrow}{abs(co2_diff):.0f})")
+                    elif has_now_data:
+                        # Nur aktuelle Daten verfügbar
+                        current_info = []
+                        if room_climate_now.get('temp'):
+                            current_info.append(f"🌡️ {room_climate_now['temp']:.1f}°C")
+                        if room_climate_now.get('humidity'):
+                            current_info.append(f"💧 {room_climate_now['humidity']:.0f}%")
+                        if room_climate_now.get('co2'):
+                            current_info.append(f"💨 {room_climate_now['co2']:.0f} ppm")
+                        
+                        if current_info:
+                            message_parts.append(f"\n\n<b>Aktuell ({room_name}):</b>\n" + '\n'.join(current_info))
                     
-                    if changes:
-                        message_parts.append(f"\n\n<b>Veränderung:</b>\n" + '\n'.join(changes))
+                    else:
+                        # Keine Sensordaten - zeige Außentemperatur wenn verfügbar
+                        if outdoor_temp is not None:
+                            message_parts.append(f"\n\n🌤️ Außentemperatur: {outdoor_temp:.1f}°C")
+                        else:
+                            message_parts.append(f"\n\n<i>Keine Sensordaten für {room_name} verfügbar</i>")
                     
                     # Effektivitäts-Bewertung
                     message_parts.append(f"\n\n{effectiveness['emoji']} <b>Effektivität:</b> {effectiveness['rating']}")
