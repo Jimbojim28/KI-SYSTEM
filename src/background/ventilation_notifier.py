@@ -12,8 +12,11 @@ Ventilation Notifier - Sendet Benachrichtigungen bei Lüftungs-Ereignissen
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from src.decision_engine.engine import DecisionEngine
 import yaml
 import requests
 from loguru import logger
@@ -24,13 +27,13 @@ from src.utils.config_manager import get_config_section
 class VentilationNotifier:
     """Sendet Pushover-Benachrichtigungen für Lüftungs-Ereignisse"""
 
-    def __init__(self, engine=None, check_interval: int = 60):
+    def __init__(self, engine: Optional["DecisionEngine"] = None, check_interval: int = 60):
         """
         Args:
             engine: DecisionEngine Instanz
             check_interval: Prüf-Intervall in Sekunden (default: 60)
         """
-        self.engine = engine
+        self.engine: Optional["DecisionEngine"] = engine
         self.check_interval = check_interval
         self.running = False
         self.thread = None
@@ -47,6 +50,13 @@ class VentilationNotifier:
         self._away_since: Optional[datetime] = None
         
         logger.info(f"Ventilation Notifier initialized ({check_interval}s interval)")
+
+    @property
+    def _platform(self) -> Any:
+        """Sicherer Zugriff auf die Plattform (vermeidet Type-Checker Warnungen)"""
+        if self.engine and self.engine.platform:
+            return self.engine.platform
+        return None
 
     def _load_config(self) -> dict:
         """Lade Benachrichtigungs-Konfiguration mit Defaults für fehlende Optionen"""
@@ -77,7 +87,7 @@ class VentilationNotifier:
         return '', ''
 
     def _send_notification(self, title: str, message: str, priority: int = 0, 
-                          notification_key: str = None) -> bool:
+                          notification_key: Optional[str] = None) -> bool:
         """Sende Pushover-Benachrichtigung mit Cooldown"""
         
         # Prüfe Cooldown
@@ -480,12 +490,16 @@ class VentilationNotifier:
 
     def _check_presence(self) -> bool:
         """Prüft ob jemand zuhause ist"""
+        platform = self._platform
+        if not platform:
+            return True  # Fallback: annehmen jemand ist zuhause
+            
         try:
-            if hasattr(self.engine.platform, '_device_cache'):
-                devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            if hasattr(platform, '_device_cache'):
+                devices = list(platform._device_cache.values()) if isinstance(
+                    platform._device_cache, dict) else platform._device_cache
             else:
-                devices = self.engine.platform.get_states() or []
+                devices = platform.get_states() or []
             
             for device in devices:
                 if not isinstance(device, dict):
@@ -536,18 +550,22 @@ class VentilationNotifier:
         """Holt Klimadaten für alle Räume"""
         rooms = {}
         
+        platform = self._platform
+        if not platform:
+            return rooms
+        
         try:
-            if hasattr(self.engine.platform, '_device_cache'):
-                self.engine.platform._refresh_device_cache()
-                devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            if hasattr(platform, '_device_cache'):
+                platform._refresh_device_cache()
+                devices = list(platform._device_cache.values()) if isinstance(
+                    platform._device_cache, dict) else platform._device_cache
             else:
-                devices = self.engine.platform.get_states() or []
+                devices = platform.get_states() or []
             
             # Hole Zone-Mapping
             zones = {}
             try:
-                zone_list = self.engine.platform.get_zones() or []
+                zone_list = platform.get_zones() or []
                 zones = {z.get('id'): z.get('name') for z in zone_list}
             except:
                 pass
@@ -591,12 +609,16 @@ class VentilationNotifier:
 
     def _get_outdoor_temp(self) -> Optional[float]:
         """Holt Außentemperatur"""
+        platform = self._platform
+        if not platform:
+            return None
+            
         try:
-            if hasattr(self.engine.platform, '_device_cache'):
-                devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            if hasattr(platform, '_device_cache'):
+                devices = list(platform._device_cache.values()) if isinstance(
+                    platform._device_cache, dict) else platform._device_cache
             else:
-                devices = self.engine.platform.get_states() or []
+                devices = platform.get_states() or []
             
             for device in devices:
                 if not isinstance(device, dict):
@@ -614,21 +636,25 @@ class VentilationNotifier:
         """Holt alle offenen Fenster"""
         windows = []
         
+        platform = self._platform
+        if not platform:
+            return windows
+        
         try:
             # Wichtig: Cache refreshen um aktuelle Werte zu bekommen!
-            if hasattr(self.engine.platform, '_refresh_device_cache'):
-                self.engine.platform._refresh_device_cache()
+            if hasattr(platform, '_refresh_device_cache'):
+                platform._refresh_device_cache()
             
-            if hasattr(self.engine.platform, '_device_cache'):
-                devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                    self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
+            if hasattr(platform, '_device_cache'):
+                devices = list(platform._device_cache.values()) if isinstance(
+                    platform._device_cache, dict) else platform._device_cache
             else:
-                devices = self.engine.platform.get_states() or []
+                devices = platform.get_states() or []
             
             # Hole Zone-Mapping für Raum-Namen
             zones = {}
             try:
-                zone_list = self.engine.platform.get_zones() or []
+                zone_list = platform.get_zones() or []
                 zones = {z.get('id'): z.get('name') for z in zone_list}
             except:
                 pass
@@ -715,10 +741,10 @@ class VentilationNotifier:
         
         return windows
 
-    def _calculate_ventilation_duration(self, outdoor_temp: float = None, 
-                                        indoor_temp: float = None,
-                                        humidity: float = None, 
-                                        co2: float = None) -> dict:
+    def _calculate_ventilation_duration(self, outdoor_temp: Optional[float] = None, 
+                                        indoor_temp: Optional[float] = None,
+                                        humidity: Optional[float] = None, 
+                                        co2: Optional[float] = None) -> dict:
         """Berechnet die empfohlene Lüftungsdauer basierend auf den Bedingungen"""
         
         # Standardwerte
