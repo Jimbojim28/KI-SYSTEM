@@ -11,6 +11,7 @@ Ventilation Notifier - Sendet Benachrichtigungen bei Lüftungs-Ereignissen
 
 import threading
 import time
+import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, TYPE_CHECKING
 from pathlib import Path
@@ -546,69 +547,175 @@ class VentilationNotifier:
             self._away_since = None
             self._presence_home = True
 
-    def _get_room_climate_data(self) -> Dict[str, Dict]:
-        """Holt Klimadaten für alle Räume"""
-        rooms = {}
-        
-        platform = self._platform
-        if not platform:
-            return rooms
-        
-        try:
-            if hasattr(platform, '_device_cache'):
-                platform._refresh_device_cache()
-                devices = list(platform._device_cache.values()) if isinstance(
-                    platform._device_cache, dict) else platform._device_cache
-            else:
-                devices = platform.get_states() or []
-            
-            # Hole Zone-Mapping
-            zones = {}
+    def _load_sensor_mapping(self) -> dict:
+        """Lade Sensor-Mapping aus Datei"""
+        mapping_file = Path('data/ventilation_sensor_mapping.json')
+        if mapping_file.exists():
             try:
-                zone_list = platform.get_zones() or []
-                zones = {z.get('id'): z.get('name') for z in zone_list}
-            except:
-                pass
+                with open(mapping_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading sensor mapping: {e}")
+        return {}
+
+    def _get_sensor_value_by_id(self, entity_id: str) -> Optional[float]:
+        """Hole den aktuellen Wert eines Sensors anhand der ID"""
+        if not entity_id:
+            return None
             
-            for device in devices:
-                if not isinstance(device, dict):
-                    continue
-                
-                zone_id = device.get('zone')
-                room_name = zones.get(zone_id)
-                if not room_name:
-                    continue
-                
-                caps = device.get('capabilitiesObj', {})
-                
-                if room_name not in rooms:
-                    rooms[room_name] = {}
-                
-                # Temperatur
-                if 'measure_temperature' in caps:
-                    val = caps['measure_temperature'].get('value')
-                    if val is not None and -40 < val < 60:
-                        rooms[room_name]['temp'] = val
-                
-                # Luftfeuchtigkeit
-                if 'measure_humidity' in caps:
-                    val = caps['measure_humidity'].get('value')
-                    if val is not None and 0 <= val <= 100:
-                        rooms[room_name]['humidity'] = val
-                
-                # CO2
-                if 'measure_co2' in caps:
-                    val = caps['measure_co2'].get('value')
-                    if val is not None and 200 < val < 10000:
-                        rooms[room_name]['co2'] = val
+        try:
+            if entity_id.startswith('homey:'):
+                # Homey Sensor: homey:device_id:capability
+                parts = entity_id.split(':')
+                if len(parts) >= 3:
+                    device_id = parts[1]
+                    capability = f'measure_{parts[2]}'
+                    
+                    platform = self._platform
+                    if platform:
+                        # Versuche direkten Zugriff oder Cache
+                        device = None
+                        if hasattr(platform, 'get_device'):
+                            device = platform.get_device(device_id)
                         
+                        if not device and hasattr(platform, '_device_cache'):
+                            if isinstance(platform._device_cache, dict):
+                                device = platform._device_cache.get(device_id)
+                        
+                        if not device and hasattr(platform, 'get_all_devices'):
+                             all_devices = platform.get_all_devices()
+                             if isinstance(all_devices, dict):
+                                 device = all_devices.get(device_id)
+                            
+                        if device:
+                            caps_obj = device.get('capabilitiesObj', {})
+                            if capability in caps_obj:
+                                return caps_obj[capability].get('value')
+            else:
+                # Home Assistant Sensor
+                if self.engine and hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                    ha_platform = self.engine.platforms['homeassistant']
+                    if hasattr(ha_platform, 'get_all_devices'):
+                        ha_devices = ha_platform.get_all_devices()
+                        if ha_devices and entity_id in ha_devices:
+                            state = ha_devices[entity_id].get('state')
+                            try:
+                                return float(state)
+                            except (ValueError, TypeError):
+                                pass
         except Exception as e:
-            logger.error(f"Error getting room climate data: {e}")
+            logger.debug(f"Error getting sensor value for {entity_id}: {e}")
+        return None
+
+    def _get_room_climate_data(self) -> Dict[str, Dict]:
+        """Holt Klimadaten für alle Räume (Mapping + Auto-Discovery)"""
+        rooms_data = {}
         
-        return rooms
+        # 1. Versuche Mapping
+        mapping = self._load_sensor_mapping()
+        room_mapping = mapping.get('rooms', {})
+        
+        # Lade Raum-Namen aus rooms.json
+        rooms_file = Path('data/rooms.json')
+        room_names = {}
+        if rooms_file.exists():
+            try:
+                with open(rooms_file, 'r') as f:
+                    content = json.load(f)
+                    room_list = content.get('rooms', []) if isinstance(content, dict) else content
+                    for r in room_list:
+                        rid = r.get('id') or r.get('name', '').lower().replace(' ', '_')
+                        room_names[rid] = r.get('name', rid)
+            except Exception as e:
+                logger.error(f"Error loading rooms.json: {e}")
+
+        # Daten aus Mapping holen
+        for room_id, sensors in room_mapping.items():
+            room_name = room_names.get(room_id, room_id)
+            
+            temp = self._get_sensor_value_by_id(sensors.get('temperature'))
+            humidity = self._get_sensor_value_by_id(sensors.get('humidity'))
+            co2 = self._get_sensor_value_by_id(sensors.get('co2'))
+            
+            if temp is not None or humidity is not None or co2 is not None:
+                if room_name not in rooms_data:
+                    rooms_data[room_name] = {}
+                if temp is not None:
+                    rooms_data[room_name]['temp'] = temp
+                if humidity is not None:
+                    rooms_data[room_name]['humidity'] = humidity
+                if co2 is not None:
+                    rooms_data[room_name]['co2'] = co2
+
+        # 2. Fallback: Auto-Discovery via Homey Zones (wie in /rooms)
+        platform = self._platform
+        if platform:
+            try:
+                if hasattr(platform, '_device_cache'):
+                    platform._refresh_device_cache()
+                    devices = list(platform._device_cache.values()) if isinstance(
+                        platform._device_cache, dict) else platform._device_cache
+                else:
+                    devices = platform.get_states() or []
+                
+                # Hole Zone-Mapping
+                zones = {}
+                try:
+                    zone_list = platform.get_zones() or []
+                    zones = {z.get('id'): z.get('name') for z in zone_list}
+                except:
+                    pass
+                
+                for device in devices:
+                    if not isinstance(device, dict):
+                        continue
+                    
+                    zone_id = device.get('zone')
+                    room_name = zones.get(zone_id)
+                    if not room_name:
+                        continue
+                    
+                    if room_name not in rooms_data:
+                        rooms_data[room_name] = {}
+                    
+                    caps = device.get('capabilitiesObj', {})
+                    
+                    # Temperatur
+                    if 'measure_temperature' in caps and 'temp' not in rooms_data[room_name]:
+                        val = caps['measure_temperature'].get('value')
+                        if val is not None and -40 < val < 60:
+                            rooms_data[room_name]['temp'] = val
+                    
+                    # Luftfeuchtigkeit
+                    if 'measure_humidity' in caps and 'humidity' not in rooms_data[room_name]:
+                        val = caps['measure_humidity'].get('value')
+                        if val is not None and 0 <= val <= 100:
+                            rooms_data[room_name]['humidity'] = val
+                    
+                    # CO2
+                    if 'measure_co2' in caps and 'co2' not in rooms_data[room_name]:
+                        val = caps['measure_co2'].get('value')
+                        if val is not None and 200 < val < 10000:
+                            rooms_data[room_name]['co2'] = val
+                            
+            except Exception as e:
+                logger.error(f"Error in auto-discovery: {e}")
+                    
+        return rooms_data
 
     def _get_outdoor_temp(self) -> Optional[float]:
         """Holt Außentemperatur"""
+        # Versuche Mapping zuerst
+        mapping = self._load_sensor_mapping()
+        outdoor_sensors = mapping.get('outdoor_sensors', {})
+        temp_sensor = outdoor_sensors.get('temperature')
+        
+        if temp_sensor:
+            val = self._get_sensor_value_by_id(temp_sensor)
+            if val is not None:
+                return val
+                
+        # Fallback: Alte Logik
         platform = self._platform
         if not platform:
             return None
