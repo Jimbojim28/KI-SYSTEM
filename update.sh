@@ -179,20 +179,36 @@ if command -v pm2 &> /dev/null; then
         pm2 stop ki-smart-home 2>/dev/null || true
         sleep 2
         
-        # Beende alle Prozesse auf Port 8080
+        # Beende alle Prozesse auf Port 8080 (funktioniert auf Linux und macOS)
         echo "   Gebe Port 8080 frei..."
-        fuser -k 8080/tcp 2>/dev/null || kill $(lsof -ti:8080) 2>/dev/null || true
-        sleep 2
+        if command -v fuser &> /dev/null; then
+            fuser -k 8080/tcp 2>/dev/null || true
+        fi
+        # lsof funktioniert auf macOS und Linux
+        kill $(lsof -ti:8080) 2>/dev/null || true
+        sleep 3
         
-        # Starte neu
+        # Lösche alten PM2 Prozess und starte frisch
         echo "   Starte ki-smart-home..."
-        pm2 start ki-smart-home
+        pm2 delete ki-smart-home 2>/dev/null || true
+        sleep 1
+        pm2 start ecosystem.config.js
         pm2 save
-        echo "✓ System mit PM2 neu gestartet!"
+        
+        # Warte auf Start und prüfe
+        sleep 5
+        if lsof -ti:8080 > /dev/null 2>&1; then
+            echo "✓ System mit PM2 neu gestartet!"
+        else
+            echo "⚠️  Port 8080 nicht aktiv, versuche erneut..."
+            pm2 restart ki-smart-home 2>/dev/null || pm2 start ecosystem.config.js
+            sleep 3
+        fi
     else
         # Stoppe alte Instanz falls vorhanden
         pkill -f "python.*main.py.*web" || true
-        sleep 2
+        kill $(lsof -ti:8080) 2>/dev/null || true
+        sleep 3
 
         # Starte mit PM2
         pm2 start ecosystem.config.js
@@ -220,9 +236,9 @@ else
 
     # Erkenne aktuellen Port
     echo "🔍 Erkenne aktuellen Port..."
-    CURRENT_PORT=$(lsof -ti :5000 -ti :8080 -ti :3000 2>/dev/null | head -1 | xargs -I {} lsof -Pan -p {} -i 2>/dev/null | grep LISTEN | awk '{print $9}' | cut -d':' -f2 | head -1)
+    CURRENT_PORT=$(lsof -ti :8080 2>/dev/null | head -1 | xargs -I {} lsof -Pan -p {} -i 2>/dev/null | grep LISTEN | awk '{print $9}' | cut -d':' -f2 | head -1)
     if [ -z "$CURRENT_PORT" ]; then
-        CURRENT_PORT=5000
+        CURRENT_PORT=8080
         echo "  ℹ️  Kein laufender Port gefunden, verwende Standard: $CURRENT_PORT"
     else
         echo "  ✓ Erkannter Port: $CURRENT_PORT"
@@ -230,13 +246,20 @@ else
 
     # Finde und stoppe laufende Instanz
     echo "🔄 Stoppe laufende Instanz..."
-    pkill -f "python.*main.py.*web" || true
-    sleep 2
+    pkill -f "python.*main.py.*web" 2>/dev/null || true
+    kill $(lsof -ti:$CURRENT_PORT) 2>/dev/null || true
+    sleep 3
 
     # Starte neu im Hintergrund auf dem gleichen Port
     echo "🚀 Starte System neu auf Port $CURRENT_PORT..."
+    
+    # Aktiviere venv falls vorhanden
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+    fi
+    
     nohup python main.py web --host 0.0.0.0 --port $CURRENT_PORT > logs/update.log 2>&1 &
-    sleep 3
+    sleep 5
 
     # Prüfe ob Server läuft
     if lsof -i :$CURRENT_PORT >/dev/null 2>&1; then

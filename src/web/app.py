@@ -6955,11 +6955,21 @@ class WebInterface:
                             time.sleep(2)
                             
                             # Beende alle Prozesse auf Port 8080 falls noch welche laufen
-                            subprocess.run(['fuser', '-k', '8080/tcp'], capture_output=True, stderr=subprocess.DEVNULL)
+                            subprocess.run(['kill', '-9'] + subprocess.run(
+                                ['lsof', '-ti:8080'], capture_output=True, text=True
+                            ).stdout.strip().split(), capture_output=True, stderr=subprocess.DEVNULL)
+                            time.sleep(2)
+                            
+                            # Lösche und starte neu
+                            subprocess.run(['pm2', 'delete', 'ki-smart-home'], capture_output=True)
                             time.sleep(1)
                             
-                            # Starte neu
-                            subprocess.Popen(['pm2', 'start', 'ki-smart-home'])
+                            # Starte neu mit ecosystem.config.js
+                            project_root = Path(__file__).parent.parent.parent
+                            subprocess.Popen(
+                                ['pm2', 'start', 'ecosystem.config.js'],
+                                cwd=str(project_root)
+                            )
                         except Exception as e:
                             logger.error(f"PM2 restart error: {e}")
                             # Fallback: normaler restart
