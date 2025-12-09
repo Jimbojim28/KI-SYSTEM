@@ -2160,50 +2160,91 @@ class Database:
     def _calculate_ventilation_effectiveness(self, duration: int, temp_change: float,
                                              co2_change: int, humidity_change: float,
                                              outdoor_temp: float) -> Optional[float]:
-        """Berechnet einen Effektivitäts-Score für die Lüftung (0-1)"""
+        """Berechnet einen Effektivitäts-Score für die Lüftung (0-1)
+        
+        Die Effektivität basiert primär auf:
+        1. CO2-Reduktion (wichtigster Faktor - Luftqualität)
+        2. Luftaustausch-Effizienz (CO2-Reduktion pro Minute)
+        3. Feuchtigkeit-Reduktion (wichtig gegen Schimmel)
+        4. Temperatur-Management (sekundär, abhängig von Jahreszeit)
+        """
         if duration is None or duration < 1:
             return None
         
         score = 0.0
-        factors = 0
+        weights = 0.0
         
-        # CO2-Reduktion ist positiv (CO2 sinkt = negatives change)
+        # === CO2-Reduktion (Gewicht: 40%) - wichtigster Faktor ===
         if co2_change is not None:
-            if co2_change < -300:
-                score += 1.0
+            # CO2 sinkt = negatives change = gut
+            if co2_change < -400:
+                score += 1.0 * 0.40
+            elif co2_change < -250:
+                score += 0.85 * 0.40
             elif co2_change < -150:
-                score += 0.7
+                score += 0.65 * 0.40
             elif co2_change < -50:
-                score += 0.4
+                score += 0.40 * 0.40
             else:
-                score += 0.1
-            factors += 1
+                score += 0.15 * 0.40
+            weights += 0.40
+            
+            # === Bonus: CO2-Reduktion pro Minute (Effizienz) ===
+            # Bei offenem Fenster sollte CO2 schneller sinken als bei gekipptem
+            co2_per_minute = abs(co2_change) / max(duration, 1)
+            if co2_per_minute > 30:  # Sehr schneller Luftaustausch
+                score += 0.10  # Bonus für Effizienz
+            elif co2_per_minute > 15:
+                score += 0.05
         
-        # Temperatur-Änderung bewerten (abhängig von Außentemp)
-        if temp_change is not None and outdoor_temp is not None:
-            # Im Winter: Wenig Temperaturverlust bei effektiver CO2-Reduktion ist gut
-            if outdoor_temp < 10:  # Kalte Jahreszeit
-                if temp_change > -1:  # Kaum Wärmeverlust
-                    score += 1.0
-                elif temp_change > -3:
-                    score += 0.6
-                else:
-                    score += 0.2
-            else:  # Warme Jahreszeit: Temperaturanpassung ist OK
-                score += 0.7
-            factors += 1
-        
-        # Luftfeuchtigkeit-Änderung
+        # === Luftfeuchtigkeit-Änderung (Gewicht: 30%) - wichtig gegen Schimmel ===
         if humidity_change is not None:
-            if humidity_change < -10:  # Deutliche Reduktion
-                score += 0.9
+            if humidity_change < -15:  # Starke Reduktion
+                score += 1.0 * 0.30
+            elif humidity_change < -10:
+                score += 0.85 * 0.30
             elif humidity_change < -5:
-                score += 0.6
+                score += 0.65 * 0.30
+            elif humidity_change < 0:
+                score += 0.45 * 0.30
             else:
-                score += 0.4
-            factors += 1
+                score += 0.25 * 0.30
+            weights += 0.30
         
-        return score / factors if factors > 0 else None
+        # === Temperatur-Management (Gewicht: 30%) ===
+        if temp_change is not None and outdoor_temp is not None:
+            if outdoor_temp < 10:  # Kalte Jahreszeit
+                # Wenig Temperaturverlust ist gut, ABER nur wenn auch Luftaustausch stattfand
+                # Bei sehr wenig CO2-Änderung war der Luftaustausch zu gering
+                co2_ok = co2_change is None or co2_change < -50
+                
+                if co2_ok:
+                    if temp_change > -1:  # Kaum Wärmeverlust
+                        score += 1.0 * 0.30
+                    elif temp_change > -2:
+                        score += 0.80 * 0.30
+                    elif temp_change > -4:
+                        score += 0.55 * 0.30
+                    else:
+                        score += 0.25 * 0.30
+                else:
+                    # CO2 kaum gesunken = schlechter Luftaustausch
+                    # Wenig Temperaturverlust ist dann NICHT gut
+                    score += 0.20 * 0.30
+            else:  # Warme Jahreszeit
+                if temp_change < 0:  # Abkühlung ist gut
+                    score += 0.80 * 0.30
+                else:
+                    score += 0.50 * 0.30
+            weights += 0.30
+        
+        # Normalisiere Score
+        if weights > 0:
+            final_score = score / weights
+            # Beschränke auf 0-1 (wegen möglicher Boni)
+            return min(1.0, max(0.0, final_score))
+        
+        return None
 
     def get_active_ventilations(self) -> List[Dict]:
         """Holt alle aktiven Lüftungen (offene Fenster)"""
