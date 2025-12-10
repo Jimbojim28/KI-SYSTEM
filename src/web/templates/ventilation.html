@@ -250,6 +250,30 @@
     
     <hr class="section-divider">
     
+    <!-- Debug-Logs für Sensor-Probleme -->
+    <div class="settings-section">
+        <h3>🔍 Debug-Logs (Sensor-Probleme)</h3>
+        <p class="info-text">Hier werden Fenster-Öffnen/Schließen Ereignisse protokolliert, um Sensor-Zuordnungsprobleme zu debuggen.</p>
+        
+        <div class="debug-controls" style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn-secondary" onclick="loadDebugLogs()">🔄 Logs laden</button>
+            <button class="btn-secondary" onclick="clearDebugLogs()">🗑️ Logs löschen</button>
+            <select id="debug-filter" onchange="loadDebugLogs()" style="padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;">
+                <option value="">Alle Events</option>
+                <option value="window_opened">🪟 Fenster geöffnet</option>
+                <option value="window_closed">✅ Fenster geschlossen</option>
+                <option value="no_sensor_data">⚠️ Keine Sensordaten</option>
+                <option value="error">❌ Fehler</option>
+            </select>
+        </div>
+        
+        <div id="debug-logs-container" class="debug-logs-container" style="max-height: 400px; overflow-y: auto; background: #f8f9fa; border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.85em;">
+            <p class="empty-state">Klicke auf "Logs laden" um Debug-Informationen anzuzeigen</p>
+        </div>
+    </div>
+    
+    <hr class="section-divider">
+    
     <div class="settings-section">
         <h3>🏠 Zentrale Raumverwaltung</h3>
         <p class="info-text">Räume ausblenden, Sensoren zuordnen und Geräte konfigurieren - alles zentral an einem Ort.</p>
@@ -977,6 +1001,85 @@ input:checked + .toggle-slider:before {
 @keyframes slideIn {
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
+}
+
+/* Debug Logs Styles */
+.debug-logs-container {
+    border: 1px solid #e0e0e0;
+}
+.debug-log-entry {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: white;
+    border-radius: 6px;
+    border-left: 4px solid #4CAF50;
+}
+.debug-log-entry.log-warning {
+    border-left-color: #ff9800;
+    background: #fff8e1;
+}
+.debug-log-entry .log-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.85em;
+}
+.debug-log-entry .log-time {
+    color: #666;
+}
+.debug-log-entry .log-event {
+    font-weight: 600;
+    color: #333;
+}
+.debug-log-entry .log-message {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+.debug-log-entry .log-details {
+    font-size: 0.85em;
+    color: #555;
+    background: #f5f5f5;
+    padding: 0.5rem;
+    border-radius: 4px;
+}
+.debug-log-entry .log-details div {
+    margin-bottom: 0.25rem;
+}
+.debug-log-entry .log-details .warning {
+    color: #e65100;
+}
+.debug-log-entry .log-details .error {
+    color: #c62828;
+    font-weight: 500;
+}
+.debug-log-entry.log-error {
+    border-left-color: #c62828;
+    background: #ffebee;
+}
+.debug-logs-container .empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+.debug-logs-container .loading {
+    text-align: center;
+    color: #666;
+}
+.debug-logs-container .error {
+    color: #c62828;
+    text-align: center;
+}
+.btn-secondary {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-secondary:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
 }
 
 /* Fenster Tab Styles */
@@ -2128,6 +2231,138 @@ async function testNotification(type) {
     } catch (error) {
         console.error('Error sending test notification:', error);
         showToast('❌ Fehler beim Senden', 'error');
+    }
+}
+
+// Debug-Logs für Sensor-Probleme
+async function loadDebugLogs() {
+    const container = document.getElementById('debug-logs-container');
+    const filter = document.getElementById('debug-filter').value;
+    
+    container.innerHTML = '<p class="loading">⏳ Lade Debug-Logs...</p>';
+    
+    try {
+        let url = '/api/ventilation/debug-logs';
+        if (filter) {
+            url += `?event_type=${filter}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.success && data.logs.length > 0) {
+            container.innerHTML = data.logs.map(log => {
+                const timestamp = new Date(log.timestamp).toLocaleString('de-DE');
+                const eventIcon = log.event_type === 'window_opened' ? '🪟' :
+                                  log.event_type === 'window_closed' ? '✅' :
+                                  log.event_type === 'no_sensor_data' ? '⚠️' :
+                                  log.event_type === 'error' ? '❌' : '📝';
+                
+                // Log-Level bestimmt die CSS-Klasse
+                let eventClass = 'log-info';
+                if (log.level === 'warning' || log.event_type === 'no_sensor_data') {
+                    eventClass = 'log-warning';
+                } else if (log.level === 'error' || log.event_type === 'error') {
+                    eventClass = 'log-error';
+                }
+                
+                // Details formatieren
+                let detailsHtml = '';
+                if (log.details) {
+                    const d = log.details;
+                    detailsHtml = '<div class="log-details">';
+                    
+                    // Fehler-Details
+                    if (d.exception) {
+                        detailsHtml += `<div class="error"><strong>Exception:</strong> ${d.exception}</div>`;
+                        if (d.type) detailsHtml += `<div><strong>Typ:</strong> ${d.type}</div>`;
+                    }
+                    
+                    if (d.room_name) {
+                        detailsHtml += `<div><strong>Raum:</strong> ${d.room_name}</div>`;
+                    }
+                    if (d.available_rooms && d.available_rooms.length > 0) {
+                        detailsHtml += `<div><strong>Verfügbare Räume mit Sensordaten:</strong> ${d.available_rooms.join(', ')}</div>`;
+                    } else if (d.available_rooms) {
+                        detailsHtml += `<div class="warning"><strong>⚠️ Keine Räume mit Sensordaten gefunden!</strong></div>`;
+                    }
+                    if (d.climate_start || d.climate_data) {
+                        const climate = d.climate_start || d.climate_data;
+                        const hasData = climate.temp || climate.humidity || climate.co2;
+                        if (hasData) {
+                            detailsHtml += `<div><strong>Klimadaten (Start):</strong> `;
+                            if (climate.temp) detailsHtml += `🌡️${climate.temp.toFixed(1)}°C `;
+                            if (climate.humidity) detailsHtml += `💧${climate.humidity.toFixed(0)}% `;
+                            if (climate.co2) detailsHtml += `💨${climate.co2.toFixed(0)}ppm`;
+                            detailsHtml += `</div>`;
+                        } else {
+                            detailsHtml += `<div class="warning"><strong>❌ Keine Klimadaten beim Fenster-Öffnen erfasst!</strong></div>`;
+                        }
+                    }
+                    if (d.climate_now) {
+                        const cn = d.climate_now;
+                        const hasNowData = cn.temp || cn.humidity || cn.co2;
+                        if (hasNowData) {
+                            detailsHtml += `<div><strong>Klimadaten (Jetzt):</strong> `;
+                            if (cn.temp) detailsHtml += `🌡️${cn.temp.toFixed(1)}°C `;
+                            if (cn.humidity) detailsHtml += `💧${cn.humidity.toFixed(0)}% `;
+                            if (cn.co2) detailsHtml += `💨${cn.co2.toFixed(0)}ppm`;
+                            detailsHtml += `</div>`;
+                        }
+                    }
+                    if (d.has_start_data !== undefined || d.has_now_data !== undefined) {
+                        detailsHtml += `<div><strong>Datenverfügbarkeit:</strong> Start=${d.has_start_data ? '✅' : '❌'}, Jetzt=${d.has_now_data ? '✅' : '❌'}</div>`;
+                    }
+                    if (d.duration_minutes !== undefined) {
+                        detailsHtml += `<div><strong>Lüftungsdauer:</strong> ${d.duration_minutes} Minuten</div>`;
+                    }
+                    if (d.outdoor_temp !== undefined && d.outdoor_temp !== null) {
+                        detailsHtml += `<div><strong>Außentemperatur:</strong> ${d.outdoor_temp.toFixed(1)}°C</div>`;
+                    }
+                    if (d.fallback_key_used) {
+                        detailsHtml += `<div><strong>Fallback-Raum verwendet:</strong> ${d.fallback_key_used}</div>`;
+                    }
+                    
+                    detailsHtml += '</div>';
+                }
+                
+                return `
+                    <div class="debug-log-entry ${eventClass}">
+                        <div class="log-header">
+                            <span class="log-time">${timestamp}</span>
+                            <span class="log-event">${eventIcon} ${log.event_type}</span>
+                        </div>
+                        <div class="log-message">${log.message}</div>
+                        ${detailsHtml}
+                    </div>
+                `;
+            }).join('');
+        } else {
+            container.innerHTML = '<p class="empty-state">📭 Keine Debug-Logs vorhanden. Öffne und schließe ein Fenster um Logs zu erzeugen.</p>';
+        }
+    } catch (error) {
+        console.error('Error loading debug logs:', error);
+        container.innerHTML = `<p class="error">❌ Fehler beim Laden: ${error.message}</p>`;
+    }
+}
+
+async function clearDebugLogs() {
+    if (!confirm('Alle Debug-Logs löschen?')) return;
+    
+    try {
+        const response = await fetch('/api/ventilation/debug-logs', { method: 'DELETE' });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('🗑️ Debug-Logs gelöscht', 'success');
+            document.getElementById('debug-logs-container').innerHTML = 
+                '<p class="empty-state">📭 Keine Debug-Logs vorhanden.</p>';
+        } else {
+            showToast('❌ Fehler: ' + data.error, 'error');
+        }
+    } catch (error) {
+        console.error('Error clearing debug logs:', error);
+        showToast('❌ Fehler beim Löschen', 'error');
     }
 }
 

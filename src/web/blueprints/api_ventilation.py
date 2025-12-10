@@ -1507,5 +1507,41 @@ def init_ventilation_blueprint(engine, db, config):
             logger.error(f"Error sending test notification: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    @ventilation_bp.route('/ventilation/debug-logs', methods=['GET'])
+    def get_ventilation_debug_logs():
+        """API: Hole Debug-Logs für Lüftungs-Benachrichtigungen (Sensor-Probleme debuggen)"""
+        try:
+            from src.background.ventilation_notifier import VentilationNotifier
+            
+            logs = VentilationNotifier.get_debug_logs()
+            
+            # Optional: Nur bestimmten Event-Type filtern
+            event_type = request.args.get('event_type')
+            if event_type:
+                logs = [l for l in logs if l.get('event_type') == event_type]
+            
+            # Neueste zuerst
+            logs = sorted(logs, key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            return jsonify({
+                'success': True,
+                'count': len(logs),
+                'logs': logs
+            })
+        except Exception as e:
+            logger.error(f"Error getting debug logs: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @ventilation_bp.route('/ventilation/debug-logs', methods=['DELETE'])
+    def clear_ventilation_debug_logs():
+        """API: Lösche alle Debug-Logs"""
+        try:
+            from src.background.ventilation_notifier import VentilationNotifier
+            VentilationNotifier.clear_debug_logs()
+            return jsonify({'success': True, 'message': 'Debug-Logs gelöscht'})
+        except Exception as e:
+            logger.error(f"Error clearing debug logs: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     return ventilation_bp
 

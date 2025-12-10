@@ -27,6 +27,10 @@ from src.utils.config_manager import get_config_section
 
 class VentilationNotifier:
     """Sendet Pushover-Benachrichtigungen für Lüftungs-Ereignisse"""
+    
+    # Klassen-Variable für Debug-Logs (global zugänglich)
+    _debug_logs: list = []
+    _max_debug_logs: int = 100
 
     def __init__(self, engine: Optional["DecisionEngine"] = None, check_interval: int = 60):
         """
@@ -51,6 +55,38 @@ class VentilationNotifier:
         self._away_since: Optional[datetime] = None
         
         logger.info(f"Ventilation Notifier initialized ({check_interval}s interval)")
+    
+    def _log_debug_event(self, event_type: str, message: str, details: dict = None, level: str = 'info'):
+        """Speichert Debug-Event für Web-Anzeige
+        
+        Args:
+            event_type: Art des Events (window_opened, window_closed, no_sensor_data, error)
+            message: Beschreibung
+            details: Zusätzliche Details als Dict
+            level: Log-Level (info, warning, error)
+        """
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'event_type': event_type,
+            'message': message,
+            'details': details or {},
+            'level': level
+        }
+        VentilationNotifier._debug_logs.append(log_entry)
+        
+        # Begrenze Anzahl der Logs
+        if len(VentilationNotifier._debug_logs) > VentilationNotifier._max_debug_logs:
+            VentilationNotifier._debug_logs = VentilationNotifier._debug_logs[-VentilationNotifier._max_debug_logs:]
+    
+    @classmethod
+    def get_debug_logs(cls) -> list:
+        """Gibt alle Debug-Logs zurück"""
+        return list(cls._debug_logs)
+    
+    @classmethod
+    def clear_debug_logs(cls):
+        """Löscht alle Debug-Logs"""
+        cls._debug_logs = []
 
     @property
     def _platform(self) -> Any:
@@ -201,16 +237,35 @@ class VentilationNotifier:
                     room_climate = room_data.get(room_name, {})
                     
                     # Fallback: Versuche Raumnamen-Varianten (case-insensitive)
+                    fallback_key_used = None
                     if not room_climate:
                         room_name_lower = room_name.lower()
                         for key in room_data.keys():
                             key_lower = key.lower()
                             if key_lower == room_name_lower or room_name_lower in key_lower or key_lower in room_name_lower:
                                 room_climate = room_data[key]
+                                fallback_key_used = key
                                 logger.debug(f"Found climate data for {room_name} via fallback key: {key}")
                                 break
                     
-                    logger.info(f"Window opened - {window.get('name')} in {room_name}: climate_start={room_climate}")
+                    # Debug-Event beim Fenster-Öffnen
+                    has_climate_data = bool(room_climate.get('temp') or room_climate.get('humidity') or room_climate.get('co2'))
+                    self._log_debug_event(
+                        'window_opened',
+                        f"Fenster '{window.get('name')}' in Raum '{room_name}' geöffnet",
+                        {
+                            'device_id': window['device_id'],
+                            'window_name': window.get('name'),
+                            'room_name': room_name,
+                            'room_climate_found': has_climate_data,
+                            'climate_data': room_climate,
+                            'fallback_key_used': fallback_key_used,
+                            'available_rooms': list(room_data.keys()),
+                            'outdoor_temp': outdoor_temp
+                        }
+                    )
+                    
+                    logger.info(f"Window opened - {window.get('name')} in {room_name}: climate_start={room_climate}, available_rooms={list(room_data.keys())}")
                     
                     # Speichere Fensterdaten inkl. Klima-Startwerte
                     self._open_windows[window['device_id']] = {
@@ -308,16 +363,39 @@ class VentilationNotifier:
                     room_climate_now = room_data.get(room_name, {})
                     
                     # Fallback: Versuche Raumnamen-Varianten (case-insensitive)
+                    fallback_used = None
                     if not room_climate_now:
                         room_name_lower = room_name.lower()
+                        logger.debug(f"Room '{room_name}' not found directly in room_data. Trying fallback matching...")
                         for key in room_data.keys():
                             key_lower = key.lower()
                             if key_lower == room_name_lower or room_name_lower in key_lower or key_lower in room_name_lower:
                                 room_climate_now = room_data[key]
-                                logger.debug(f"Found climate_now for {room_name} via key: {key}")
+                                fallback_used = key
+                                logger.debug(f"Found climate_now for {room_name} via fallback key: {key}")
                                 break
+                        
+                        if not room_climate_now:
+                            logger.warning(f"No climate data found for room '{room_name}'. Available rooms: {list(room_data.keys())}")
                     
-                    logger.info(f"Window closed - {window_name} in {room_name}: climate_start={climate_start}, climate_now={room_climate_now}")
+                    # Detailliertes Debug-Logging für Sensordaten-Probleme
+                    self._log_debug_event(
+                        'window_closed',
+                        f"Fenster '{window_name}' in Raum '{room_name}' geschlossen",
+                        {
+                            'device_id': device_id,
+                            'room_name': room_name,
+                            'climate_start': climate_start,
+                            'climate_now': room_climate_now,
+                            'available_rooms': list(room_data.keys()),
+                            'duration_minutes': duration_minutes,
+                            'has_start_data': bool(climate_start.get('temp') or climate_start.get('humidity') or climate_start.get('co2')),
+                            'has_now_data': bool(room_climate_now.get('temp') or room_climate_now.get('humidity') or room_climate_now.get('co2')),
+                            'fallback_key_used': fallback_used
+                        }
+                    )
+                    
+                    logger.info(f"Window closed - {window_name} in {room_name}: climate_start={climate_start}, climate_now={room_climate_now}, available_rooms={list(room_data.keys())}")
                     
                     # Berechne Effektivität
                     effectiveness = self._calculate_ventilation_effectiveness(
@@ -367,7 +445,21 @@ class VentilationNotifier:
                             message_parts.append(f"\n\nAktuell:\n" + '\n'.join(current_info))
                     
                     else:
-                        # Keine Sensordaten - zeige Außentemperatur wenn verfügbar
+                        # Keine Sensordaten - zeige Außentemperatur wenn verfügbar und logge Debug-Info
+                        self._log_debug_event(
+                            'no_sensor_data',
+                            f"Keine Sensordaten für Raum '{room_name}' gefunden",
+                            {
+                                'room_name': room_name,
+                                'climate_start': climate_start,
+                                'room_climate_now': room_climate_now,
+                                'available_rooms': list(room_data.keys()),
+                                'outdoor_temp': outdoor_temp
+                            },
+                            level='warning'
+                        )
+                        logger.warning(f"No sensor data for room '{room_name}' - available rooms: {list(room_data.keys())}, climate_start={climate_start}")
+                        
                         if outdoor_temp is not None:
                             message_parts.append(f"\n\n🌤️ Außentemperatur: {outdoor_temp:.1f}°C")
                         else:
@@ -496,6 +588,12 @@ class VentilationNotifier:
             
         except Exception as e:
             logger.error(f"Error checking ventilation conditions: {e}")
+            self._log_debug_event(
+                'error',
+                f"Fehler bei Lüftungsprüfung: {str(e)}",
+                {'exception': str(e), 'type': type(e).__name__},
+                level='error'
+            )
 
     def _check_presence(self) -> bool:
         """Prüft ob jemand zuhause ist"""
@@ -671,8 +769,9 @@ class VentilationNotifier:
                 try:
                     zone_list = platform.get_zones() or []
                     zones = {z.get('id'): z.get('name') for z in zone_list}
-                except:
-                    pass
+                    logger.debug(f"Available zones: {zones}")
+                except Exception as ze:
+                    logger.debug(f"Could not get zones: {ze}")
                 
                 for device in devices:
                     if not isinstance(device, dict):
@@ -771,8 +870,9 @@ class VentilationNotifier:
             try:
                 zone_list = platform.get_zones() or []
                 zones = {z.get('id'): z.get('name') for z in zone_list}
-            except:
-                pass
+                logger.debug(f"Window zones available: {zones}")
+            except Exception as ze:
+                logger.debug(f"Could not get zones for windows: {ze}")
             
             # Lade Kalibrierungsdaten aus rooms.json (wie bei /rooms)
             calibrations = {}
