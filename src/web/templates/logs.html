@@ -61,6 +61,9 @@
         <button class="btn btn-filter" data-filter="collector" onclick="setLogFilter('collector')">
             🔄 Collectors
         </button>
+        <button class="btn btn-filter" data-filter="ventilation" onclick="setLogFilter('ventilation')">
+            🪟 Lüftung
+        </button>
         <div style="flex-grow: 1;"></div>
         <button class="btn btn-secondary" onclick="toggleAutoRefresh()">
             <span id="auto-refresh-icon">⏸️</span> Auto-Refresh
@@ -198,6 +201,11 @@
     color: #F57C00;
 }
 
+.log-type.type-ventilation {
+    background: #E0F7FA;
+    color: #00838F;
+}
+
 .log-message {
     flex-grow: 1;
 }
@@ -221,7 +229,8 @@ function setLogFilter(filter) {
         filter === 'database' ? 'Datenbank' :
         filter === 'ml' ? 'ML Training' :
         filter === 'decision' ? 'Entscheidungen' :
-        filter === 'collector' ? 'Collectors' : filter;
+        filter === 'collector' ? 'Collectors' :
+        filter === 'ventilation' ? 'Lüftung' : filter;
 
     // Update button states
     document.querySelectorAll('.btn-filter').forEach(btn => {

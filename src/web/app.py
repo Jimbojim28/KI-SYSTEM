@@ -2513,6 +2513,47 @@ class WebInterface:
                                 })
                             except: pass
 
+                # 4. Lüftungs-Debug-Logs
+                if log_type in ['all', 'ventilation']:
+                    try:
+                        from src.background.ventilation_notifier import VentilationNotifier
+                        ventilation_logs = VentilationNotifier.get_debug_logs()
+                        
+                        for vlog in ventilation_logs:
+                            event_type = vlog.get('event_type', 'unknown')
+                            level = vlog.get('level', 'info')
+                            details = vlog.get('details', {})
+                            
+                            # Formatiere Nachricht basierend auf Event-Type
+                            message = vlog.get('message', '')
+                            if event_type == 'window_opened':
+                                room = details.get('room_name', 'Unbekannt')
+                                has_data = details.get('room_climate_found', False)
+                                message = f"🪟 {message}"
+                                if not has_data:
+                                    message += f" (⚠️ Keine Klimadaten für Raum)"
+                            elif event_type == 'window_closed':
+                                has_start = details.get('has_start_data', False)
+                                has_now = details.get('has_now_data', False)
+                                message = f"✅ {message}"
+                                if not has_start or not has_now:
+                                    message += f" (Daten: Start={has_start}, Jetzt={has_now})"
+                            elif event_type == 'no_sensor_data':
+                                available = details.get('available_rooms', [])
+                                message = f"⚠️ {message} - Verfügbar: {', '.join(available) if available else 'keine'}"
+                            elif event_type == 'error':
+                                message = f"❌ {message}"
+                            
+                            logs.append({
+                                'timestamp': vlog.get('timestamp', datetime.now().isoformat()),
+                                'type': 'ventilation',
+                                'category': event_type,
+                                'message': message,
+                                'level': level
+                            })
+                    except Exception as e:
+                        logger.debug(f"Could not fetch ventilation logs: {e}")
+
                 # Sortiere nach Timestamp (neueste zuerst)
                 logs.sort(key=lambda x: x['timestamp'], reverse=True)
 
