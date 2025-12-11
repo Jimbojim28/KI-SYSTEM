@@ -436,13 +436,14 @@ def init_ventilation_blueprint(engine, db, config):
         """Hole aktuelle Sensor-Zuordnungen"""
         try:
             data = _load_sensor_mapping()
-            mapping = data.get('rooms', {})
+            rooms = data.get('rooms', {})
             outdoor_sensors = data.get('outdoor_sensors', {'temperature': '', 'humidity': ''})
             zones = _get_zones()
             
             return jsonify({
                 'success': True,
-                'mapping': mapping,
+                'rooms': rooms,  # Frontend erwartet 'rooms'
+                'mapping': rooms,  # Kompatibilität mit älterem Code
                 'outdoor_sensors': outdoor_sensors,
                 'zones': zones
             })
