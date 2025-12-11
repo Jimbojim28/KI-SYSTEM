@@ -996,6 +996,76 @@ class WebInterface:
                     logger.error(f"Error saving forgotten light settings: {e}")
                     return jsonify({'error': str(e)}), 500
         
+        @self.app.route('/api/lighting/forgotten/debug')
+        def api_lighting_forgotten_debug():
+            """API: Debug-Informationen für vergessene Lampen"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+                
+                debug_info = {
+                    'running': detector.running,
+                    'test_mode': detector.test_mode,
+                    'platform_initialized': detector.platform is not None,
+                    'platform_type': type(detector.platform).__name__ if detector.platform else None,
+                    'settings': {
+                        'no_motion_threshold_minutes': detector.no_motion_threshold_minutes,
+                        'min_on_duration_minutes': detector.min_on_duration_minutes,
+                        'sleep_hour_start': detector.sleep_hour_start,
+                        'sleep_hour_end': detector.sleep_hour_end,
+                        'daylight_lux_threshold': detector.daylight_lux_threshold,
+                        'turn_off_when_away': detector.turn_off_when_away,
+                    },
+                    'tracking': {
+                        'lights_currently_on': len(detector.light_on_times),
+                        'light_on_times': {k: v.isoformat() for k, v in detector.light_on_times.items()},
+                        'rooms_with_motion': list(detector.last_motion_times.keys()),
+                        'presence_home': detector.current_presence,
+                        'away_since': detector.away_since.isoformat() if detector.away_since else None,
+                    },
+                    'hidden_rooms': detector.hidden_rooms,
+                    'device_types_configured': len(detector.device_types),
+                    'predictions_count': len(detector.predictions),
+                    'ml_model_loaded': detector.ml_model is not None,
+                    'ml_model_trained': detector.ml_model.is_trained if detector.ml_model else False,
+                }
+                
+                # Versuche Geräte zu laden und zu analysieren
+                if detector.platform:
+                    try:
+                        devices = detector.platform.get_all_devices()
+                        if isinstance(devices, dict):
+                            devices = list(devices.values())
+                        
+                        lights = []
+                        for device in devices:
+                            if detector._is_light_device(device):
+                                device_id = device.get('id')
+                                state = device.get('capabilitiesObj', {}).get('onoff', {}).get('value')
+                                zone = device.get('zone')
+                                zone_name = zone.get('name') if isinstance(zone, dict) else str(zone)[:20]
+                                
+                                lights.append({
+                                    'id': device_id,
+                                    'name': device.get('name'),
+                                    'zone': zone_name,
+                                    'state': 'ON' if state else 'OFF',
+                                    'tracked': device_id in detector.light_on_times
+                                })
+                        
+                        debug_info['lights'] = {
+                            'total_count': len(lights),
+                            'on_count': sum(1 for l in lights if l['state'] == 'ON'),
+                            'details': lights[:20]  # Maximal 20
+                        }
+                    except Exception as e:
+                        debug_info['lights_error'] = str(e)
+                
+                return jsonify(debug_info)
+            except Exception as e:
+                logger.error(f"Error getting forgotten light debug info: {e}")
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/api/lighting/forgotten/ml/status')
         def api_lighting_ml_status():
             """API: ML-Modell Status"""

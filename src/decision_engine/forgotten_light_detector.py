@@ -228,6 +228,17 @@ class ForgottenLightDetector:
             # Hole alle Geräte
             devices = self.platform.get_all_devices()
             
+            if not devices:
+                logger.warning("No devices returned from platform")
+                return
+            
+            # Debug: Zähle Geräte nach Typ
+            total_devices = len(devices) if isinstance(devices, list) else len(list(devices.values())) if isinstance(devices, dict) else 0
+            
+            # Konvertiere Dict zu Liste falls nötig
+            if isinstance(devices, dict):
+                devices = list(devices.values())
+            
             # Hole Zone-Mapping für Raumname-Auflösung
             zone_mapping = self._get_zone_mapping()
             
@@ -243,6 +254,10 @@ class ForgottenLightDetector:
             # Hole Außenhelligkeit
             outdoor_light = self._get_outdoor_light()
             
+            # Debug: Zähle Lampen
+            light_count = 0
+            lights_on_count = 0
+            
             # Bei Abwesenheit: Alle Lampen als vergessen markieren
             if not presence_home and self.turn_off_when_away:
                 away_minutes = 0
@@ -257,6 +272,7 @@ class ForgottenLightDetector:
                 if not self._is_light_device(device):
                     continue
                 
+                light_count += 1
                 device_id = device.get('id')
                 device_name = device.get('name', 'Unknown')
                 
@@ -317,6 +333,13 @@ class ForgottenLightDetector:
                     # Lampe ist aus - entferne aus Tracking
                     if device_id in self.light_on_times:
                         del self.light_on_times[device_id]
+            
+            # Debug-Logging alle 5 Minuten
+            if not hasattr(self, '_last_debug_log') or (now - self._last_debug_log).seconds > 300:
+                self._last_debug_log = now
+                logger.debug(f"Forgotten light check: {total_devices} devices, {light_count} lights, "
+                            f"{len(self.light_on_times)} currently tracked as ON, "
+                            f"presence_home={presence_home}, outdoor_light={outdoor_light}")
                         
         except Exception as e:
             logger.error(f"Error checking forgotten lights: {e}")
