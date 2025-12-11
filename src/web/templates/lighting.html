@@ -328,7 +328,7 @@
     <!-- Debug-Sektion -->
     <div class="settings-section" style="margin-top: 2rem; border-top: 2px solid #e5e7eb; padding-top: 2rem;">
         <h3>🔍 Debug-Informationen</h3>
-        <p class="setting-hint">Hilft bei der Diagnose warum keine Lampen erkannt werden</p>
+        <p class="setting-hint">Zeigt wie Geräte klassifiziert werden (basierend auf /rooms Konfiguration)</p>
         
         <button class="btn-secondary" onclick="loadDebugInfo()" style="margin-bottom: 1rem;">
             🔄 Debug-Info laden
@@ -351,8 +351,21 @@
             </div>
             
             <div class="debug-section">
-                <h4>💡 Erkannte Lampen</h4>
+                <h4>💡 Als Lampen erkannt (${'{'}lightsCount{'}'} Stück)</h4>
+                <p class="debug-hint">Diese Geräte werden auf vergessene Lampen überwacht:</p>
                 <div id="debug-lights"></div>
+            </div>
+            
+            <div class="debug-section">
+                <h4>🚫 Ignorierte Geräte</h4>
+                <p class="debug-hint">Diese Geräte werden NICHT überwacht (als "Gerät" markiert oder keine Lampen-Eigenschaften):</p>
+                <div id="debug-ignored"></div>
+            </div>
+            
+            <div class="debug-section">
+                <h4>📋 Konfiguration aus /rooms</h4>
+                <p class="debug-hint">Manuelle Gerätetyp-Zuweisungen:</p>
+                <div id="debug-config"></div>
             </div>
         </div>
     </div>
@@ -1145,6 +1158,26 @@
     background: #fef3c7;
 }
 
+.debug-table .hidden-room {
+    opacity: 0.6;
+    background: #f3f4f6;
+}
+
+.debug-hint {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin: 0 0 0.75rem 0;
+}
+
+.debug-list {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.debug-list li {
+    margin-bottom: 0.25rem;
+}
 .debug-list {
     margin: 0;
     padding-left: 1.5rem;
@@ -1968,16 +2001,20 @@ async function loadDebugInfo() {
         const response = await fetch('/api/lighting/forgotten/debug');
         const data = await response.json();
         
+        if (data.error) {
+            container.innerHTML = `<p class="error">❌ Fehler: ${data.error}</p>`;
+            return;
+        }
+        
         // Status
         document.getElementById('debug-status').innerHTML = `
             <table class="debug-table">
                 <tr><td>Detektor läuft:</td><td>${data.running ? '✅ Ja' : '❌ Nein'}</td></tr>
-                <tr><td>Test-Modus:</td><td>${data.test_mode ? '🧪 Ja' : '⚡ Nein (Live)'}</td></tr>
-                <tr><td>Platform initialisiert:</td><td>${data.platform_initialized ? '✅ Ja' : '❌ Nein'}</td></tr>
-                <tr><td>Platform-Typ:</td><td>${data.platform_type || 'Nicht verfügbar'}</td></tr>
-                <tr><td>ML-Modell geladen:</td><td>${data.ml_model_loaded ? '✅ Ja' : '❌ Nein'}</td></tr>
-                <tr><td>ML-Modell trainiert:</td><td>${data.ml_model_trained ? '✅ Ja' : '❌ Nein'}</td></tr>
-                <tr><td>Vorhersagen gespeichert:</td><td>${data.predictions_count}</td></tr>
+                <tr><td>Platform verbunden:</td><td>${data.platform_available ? '✅ Ja' : '❌ Nein'}</td></tr>
+                <tr><td>Versteckte Räume:</td><td>${data.hidden_rooms?.length || 0} (${data.hidden_rooms?.join(', ') || 'keine'})</td></tr>
+                <tr><td>Geräte gesamt:</td><td>${data.all_devices?.length || 0}</td></tr>
+                <tr><td>Als Lampen erkannt:</td><td><strong>${data.lights_found?.length || 0}</strong></td></tr>
+                <tr><td>Davon aktuell AN:</td><td><strong>${data.lights_on?.length || 0}</strong></td></tr>
             </table>
         `;
         
@@ -1985,63 +2022,82 @@ async function loadDebugInfo() {
         const s = data.settings || {};
         document.getElementById('debug-settings').innerHTML = `
             <table class="debug-table">
-                <tr><td>Min. ohne Bewegung:</td><td>${s.no_motion_threshold_minutes} Min.</td></tr>
-                <tr><td>Min. Einschaltdauer:</td><td>${s.min_on_duration_minutes} Min.</td></tr>
-                <tr><td>Schlafenszeit:</td><td>${s.sleep_hour_start}:00 - ${s.sleep_hour_end}:00</td></tr>
-                <tr><td>Tageslicht-Schwelle:</td><td>${s.daylight_lux_threshold} Lux</td></tr>
-                <tr><td>Bei Abwesenheit ausschalten:</td><td>${s.turn_off_when_away ? 'Ja' : 'Nein'}</td></tr>
+                <tr><td>Min. ohne Bewegung:</td><td>${s.no_motion_threshold || '-'} Min.</td></tr>
+                <tr><td>Min. Einschaltdauer:</td><td>${s.min_on_duration || '-'} Min.</td></tr>
+                <tr><td>Prüf-Intervall:</td><td>${s.check_interval || '-'} Sek.</td></tr>
             </table>
         `;
         
         // Tracking
-        const t = data.tracking || {};
+        const lightOnTimes = data.light_on_times || {};
+        const motionTimes = data.last_motion_times || {};
         document.getElementById('debug-tracking').innerHTML = `
             <table class="debug-table">
-                <tr><td>Lampen aktuell AN:</td><td><strong>${t.lights_currently_on}</strong></td></tr>
-                <tr><td>Anwesenheit:</td><td>${t.presence_home ? '🏠 Zu Hause' : '🚶 Abwesend'}</td></tr>
-                <tr><td>Abwesend seit:</td><td>${t.away_since || '-'}</td></tr>
-                <tr><td>Räume mit Bewegungsdaten:</td><td>${t.rooms_with_motion?.join(', ') || 'Keine'}</td></tr>
-                <tr><td>Versteckte Räume:</td><td>${data.hidden_rooms?.join(', ') || 'Keine'}</td></tr>
-                <tr><td>Device-Types konfiguriert:</td><td>${data.device_types_configured}</td></tr>
+                <tr><td>Lampen im Tracking:</td><td><strong>${Object.keys(lightOnTimes).length}</strong></td></tr>
+                <tr><td>Räume mit Bewegungsdaten:</td><td>${Object.keys(motionTimes).join(', ') || 'Keine'}</td></tr>
             </table>
-            ${t.lights_currently_on > 0 ? `
+            ${Object.keys(lightOnTimes).length > 0 ? `
                 <h5 style="margin-top: 1rem;">Getrackte Lampen (AN seit):</h5>
                 <ul class="debug-list">
-                    ${Object.entries(t.light_on_times || {}).map(([id, time]) => 
-                        `<li>${id.substring(0, 8)}... - seit ${new Date(time).toLocaleTimeString('de-DE')}</li>`
-                    ).join('')}
+                    ${Object.entries(lightOnTimes).map(([id, time]) => {
+                        const light = data.lights_found?.find(l => l.id === id);
+                        const name = light?.name || id.substring(0, 12) + '...';
+                        return `<li><strong>${name}</strong> - seit ${new Date(time).toLocaleTimeString('de-DE')}</li>`;
+                    }).join('')}
                 </ul>
             ` : ''}
         `;
         
-        // Lampen
-        const lights = data.lights || {};
-        if (lights.total_count !== undefined) {
-            document.getElementById('debug-lights').innerHTML = `
-                <p><strong>Gefunden:</strong> ${lights.total_count} Lampen, davon ${lights.on_count} AN</p>
-                ${lights.details && lights.details.length > 0 ? `
-                    <table class="debug-table lights-table">
-                        <tr><th>Name</th><th>Raum</th><th>Status</th><th>Getrackt</th></tr>
-                        ${lights.details.map(l => `
-                            <tr class="${l.state === 'ON' ? 'light-on' : ''}">
-                                <td>${l.name}</td>
-                                <td>${l.zone}</td>
-                                <td>${l.state === 'ON' ? '💡 AN' : '⚫ AUS'}</td>
-                                <td>${l.tracked ? '✅' : '-'}</td>
-                            </tr>
-                        `).join('')}
-                    </table>
-                ` : '<p>Keine Lampen-Details verfügbar</p>'}
-            `;
-        } else if (data.lights_error) {
-            document.getElementById('debug-lights').innerHTML = `
-                <p class="error">❌ Fehler: ${data.lights_error}</p>
-            `;
-        } else {
-            document.getElementById('debug-lights').innerHTML = `
-                <p class="warning">⚠️ Keine Lampen-Daten - Platform möglicherweise nicht verbunden</p>
-            `;
-        }
+        // Erkannte Lampen
+        const lights = data.lights_found || [];
+        document.getElementById('debug-lights').innerHTML = lights.length > 0 ? `
+            <table class="debug-table lights-table">
+                <tr><th>Name</th><th>Raum</th><th>Status</th><th>Grund</th></tr>
+                ${lights.map(l => `
+                    <tr class="${l.is_on ? 'light-on' : ''} ${l.in_hidden_room ? 'hidden-room' : ''}">
+                        <td>${l.name}${l.in_hidden_room ? ' <small>(versteckt)</small>' : ''}</td>
+                        <td>${l.room}</td>
+                        <td>${l.is_on ? '💡 AN' : '⚫ AUS'}</td>
+                        <td><small>${l.reason}</small></td>
+                    </tr>
+                `).join('')}
+            </table>
+        ` : '<p class="warning">⚠️ Keine Lampen erkannt! Prüfe die Konfiguration auf /rooms</p>';
+        
+        // Ignorierte Geräte
+        const ignored = data.ignored_devices || [];
+        const ignoredWithOnoff = ignored.filter(d => d.capabilities?.includes('onoff'));
+        document.getElementById('debug-ignored').innerHTML = ignoredWithOnoff.length > 0 ? `
+            <p><small>Zeigt nur Geräte mit Ein/Aus-Fähigkeit (${ignoredWithOnoff.length} von ${ignored.length})</small></p>
+            <table class="debug-table">
+                <tr><th>Name</th><th>Raum</th><th>Klasse</th><th>Grund</th></tr>
+                ${ignoredWithOnoff.slice(0, 30).map(d => `
+                    <tr>
+                        <td>${d.name}</td>
+                        <td>${d.room}</td>
+                        <td><small>${d.class || '-'}</small></td>
+                        <td><small>${d.reason}</small></td>
+                    </tr>
+                `).join('')}
+                ${ignoredWithOnoff.length > 30 ? `<tr><td colspan="4">... und ${ignoredWithOnoff.length - 30} weitere</td></tr>` : ''}
+            </table>
+        ` : '<p>Keine ignorierten Geräte mit Ein/Aus-Fähigkeit</p>';
+        
+        // Konfiguration aus /rooms
+        const deviceTypes = data.device_types || {};
+        const configEntries = Object.entries(deviceTypes);
+        document.getElementById('debug-config').innerHTML = configEntries.length > 0 ? `
+            <table class="debug-table">
+                <tr><th>Gerät</th><th>Typ</th></tr>
+                ${configEntries.map(([id, type]) => {
+                    const device = data.all_devices?.find(d => d.id === id);
+                    const name = device?.name || id.substring(0, 20) + '...';
+                    const typeIcon = type === 'light' ? '💡 Lampe' : type === 'device' ? '🔌 Gerät' : type === 'exclude' ? '🚫 Ausgeschlossen' : type;
+                    return `<tr><td>${name}</td><td>${typeIcon}</td></tr>`;
+                }).join('')}
+            </table>
+            <p style="margin-top: 0.5rem;"><a href="/rooms" class="btn-link">→ Zur Raumverwaltung um Gerätetypen zu ändern</a></p>
+        ` : '<p>Keine manuellen Konfigurationen. Geräte werden automatisch nach Homey-Klasse erkannt.</p><p><a href="/rooms" class="btn-link">→ Zur Raumverwaltung um Geräte als Lampe/Gerät zu markieren</a></p>';
         
     } catch (error) {
         console.error('Error loading debug info:', error);
