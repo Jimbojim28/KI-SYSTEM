@@ -3080,8 +3080,13 @@ function renderLearningSummary(tilted, open) {
     const tiltedHeatLoss = tiltedCo2 > 0 ? tiltedTemp / (tiltedCo2 / 100) : 999;
     const openHeatLoss = openCo2 > 0 ? openTemp / (openCo2 / 100) : 999;
     
-    if (openEfficiency > tiltedEfficiency * 1.5) {
+    // Vermeide Division durch 0 bei Effizienz-Vergleich
+    if (tiltedEfficiency > 0 && openEfficiency > tiltedEfficiency * 1.5) {
         recommendation = `🚀 <strong>Stoßlüften ist ${(openEfficiency / tiltedEfficiency).toFixed(1)}× effizienter</strong> - schnellere CO₂-Reduktion!`;
+    } else if (openEfficiency > 0 && tiltedEfficiency === 0) {
+        // Nur bei "offen" wurde CO2 reduziert
+        recommendation = `🚀 <strong>Stoßlüften zeigt bessere CO₂-Reduktion</strong> - Gekippt bisher zu wenig Daten.`;
+    } else if (tiltedHeatLoss < openHeatLoss * 0.7) {
     } else if (tiltedHeatLoss < openHeatLoss * 0.7) {
         recommendation = `🌡️ <strong>Gekippt spart ${Math.round((1 - tiltedHeatLoss / openHeatLoss) * 100)}% Wärme</strong> bei ähnlicher Luftqualität.`;
     } else if (tiltedEff > openEff) {
