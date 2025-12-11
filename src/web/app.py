@@ -3516,47 +3516,8 @@ class WebInterface:
                 logger.error(f"Error getting room history for {room_name}: {e}")
                 return jsonify({'error': str(e)}), 500
 
-        @self.app.route('/api/ventilation/sensor-mapping', methods=['GET', 'POST'])
-        def ventilation_sensor_mapping():
-            """
-            GET: Holt die gespeicherte Sensor-Zuordnung
-            POST: Speichert die Sensor-Zuordnung
-            """
-            config_file = Path('config/ventilation_sensors.yaml')
-            
-            if request.method == 'GET':
-                try:
-                    if config_file.exists():
-                        with open(config_file, 'r') as f:
-                            mapping = yaml.safe_load(f) or {}
-                    else:
-                        mapping = {}
-                    
-                    return jsonify({
-                        'success': True,
-                        'mapping': mapping
-                    })
-                except Exception as e:
-                    logger.error(f"Error loading sensor mapping: {e}")
-                    return jsonify({'error': str(e)}), 500
-            
-            elif request.method == 'POST':
-                try:
-                    data = request.json
-                    mapping = data.get('mapping', {})
-                    
-                    # Speichere Zuordnung
-                    config_file.parent.mkdir(parents=True, exist_ok=True)
-                    with open(config_file, 'w') as f:
-                        yaml.dump(mapping, f, default_flow_style=False)
-                    
-                    return jsonify({
-                        'success': True,
-                        'message': 'Sensor-Zuordnung gespeichert'
-                    })
-                except Exception as e:
-                    logger.error(f"Error saving sensor mapping: {e}")
-                    return jsonify({'error': str(e)}), 500
+        # HINWEIS: /api/ventilation/sensor-mapping ist in api_ventilation.py Blueprint definiert
+        # und speichert in data/ventilation_sensor_mapping.json
 
         @self.app.route('/api/sensors/available', methods=['GET'])
         def api_get_available_sensors():
