@@ -160,19 +160,31 @@ def init_ventilation_blueprint(engine, db, config):
             
             rooms = []
             
-            # Lade rooms.json für Raum-Infos
+            # Lade rooms.json für Raum-Infos und versteckte Räume
             rooms_file = Path('data/rooms.json')
             room_list = []
+            hidden_rooms = []
+            rooms_data = {}
             if rooms_file.exists():
                 try:
                     with open(rooms_file, 'r') as f:
-                        room_list = json.load(f)
+                        rooms_data = json.load(f)
+                        # rooms.json kann Liste oder Dict mit 'rooms' sein
+                        if isinstance(rooms_data, list):
+                            room_list = rooms_data
+                        else:
+                            room_list = rooms_data.get('rooms', [])
+                            hidden_rooms = rooms_data.get('hidden_rooms', [])
                 except Exception as e:
                     logger.error(f"Error loading rooms.json: {e}")
             
             for room in room_list:
                 room_id = room.get('id') or room.get('name', '').lower().replace(' ', '_')
                 room_name = room.get('name', room_id)
+                
+                # Überspringe versteckte Räume (z.B. "Heim" = Außenbereich)
+                if room_id in hidden_rooms or room_name in hidden_rooms:
+                    continue
                 
                 sensors = room_mapping.get(room_id, {})
                 

@@ -721,14 +721,16 @@ class VentilationNotifier:
         mapping = self._load_sensor_mapping()
         room_mapping = mapping.get('rooms', {})
         
-        # Lade Raum-Namen aus rooms.json
+        # Lade Raum-Namen und versteckte Räume aus rooms.json
         rooms_file = Path('data/rooms.json')
         room_names = {}
+        hidden_rooms = []
         if rooms_file.exists():
             try:
                 with open(rooms_file, 'r') as f:
                     content = json.load(f)
                     room_list = content.get('rooms', []) if isinstance(content, dict) else content
+                    hidden_rooms = content.get('hidden_rooms', []) if isinstance(content, dict) else []
                     for r in room_list:
                         rid = r.get('id') or r.get('name', '').lower().replace(' ', '_')
                         room_names[rid] = r.get('name', rid)
@@ -738,6 +740,10 @@ class VentilationNotifier:
         # Daten aus Mapping holen
         for room_id, sensors in room_mapping.items():
             room_name = room_names.get(room_id, room_id)
+            
+            # Überspringe versteckte Räume (z.B. "Heim" = Außenbereich)
+            if room_id in hidden_rooms or room_name in hidden_rooms:
+                continue
             
             temp = self._get_sensor_value_by_id(sensors.get('temperature'))
             humidity = self._get_sensor_value_by_id(sensors.get('humidity'))
