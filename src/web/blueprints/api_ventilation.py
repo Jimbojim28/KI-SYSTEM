@@ -456,7 +456,8 @@ def init_ventilation_blueprint(engine, db, config):
         """Speichere Sensor-Zuordnung für alle Räume"""
         try:
             data = request.get_json()
-            mapping = data.get('mapping', {})
+            # Akzeptiere sowohl 'rooms' als auch 'mapping' für Kompatibilität
+            mapping = data.get('rooms', data.get('mapping', {}))
             outdoor_sensors = data.get('outdoor_sensors', {'temperature': '', 'humidity': ''})
             
             save_data = {
