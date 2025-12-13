@@ -144,20 +144,25 @@ class BackgroundDataCollector:
                         collected_count += 1
 
                 # Bewegung (Binary Sensor - nur bei Änderung)
+                # Unterstützt alarm_motion UND alarm_presence (Anwesenheitssensoren)
+                motion_value = None
                 if 'alarm_motion' in capabilities:
                     motion_value = capabilities['alarm_motion'].get('value')
-                    if motion_value is not None:
-                        motion_float = 1.0 if motion_value else 0.0
-                        if self._has_changed(device_id, 'motion', motion_float, threshold=0.1):
-                            self.db.insert_sensor_data(
-                                timestamp=timestamp,
-                                sensor_id=device_id,
-                                sensor_type='motion',
-                                value=motion_float,
-                                unit='binary',
-                                metadata={'zone': attributes.get('zone'), 'name': attributes.get('friendly_name')}
-                            )
-                            collected_count += 1
+                elif 'alarm_presence' in capabilities:
+                    motion_value = capabilities['alarm_presence'].get('value')
+                
+                if motion_value is not None:
+                    motion_float = 1.0 if motion_value else 0.0
+                    if self._has_changed(device_id, 'motion', motion_float, threshold=0.1):
+                        self.db.insert_sensor_data(
+                            timestamp=timestamp,
+                            sensor_id=device_id,
+                            sensor_type='motion',
+                            value=motion_float,
+                            unit='binary',
+                            metadata={'zone': attributes.get('zone'), 'name': attributes.get('friendly_name')}
+                        )
+                        collected_count += 1
 
                 # Lichter (für ML-Training - nur bei Änderung)
                 if 'onoff' in capabilities:

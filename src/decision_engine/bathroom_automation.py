@@ -277,8 +277,11 @@ class BathroomAutomation:
             state = platform.get_state(sensor_id)
             if state:
                 caps = state.get('attributes', {}).get('capabilities', {})
+                # Unterstütze sowohl alarm_motion als auch alarm_presence
                 if 'alarm_motion' in caps:
                     return caps['alarm_motion'].get('value', False)
+                elif 'alarm_presence' in caps:
+                    return caps['alarm_presence'].get('value', False)
         except Exception as e:
             logger.debug(f"Error reading motion sensor: {e}")
 

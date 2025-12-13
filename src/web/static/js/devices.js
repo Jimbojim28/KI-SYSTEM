@@ -335,7 +335,7 @@ function getDeviceIcon(device) {
         if (caps.includes('measure_humidity')) return '💧';
         if (caps.includes('measure_co2')) return '💨';
         if (caps.includes('measure_luminance')) return '☀️';
-        if (caps.includes('alarm_motion')) return '🚶';
+        if (caps.includes('alarm_motion') || caps.includes('alarm_presence')) return '🚶';
         if (caps.includes('alarm_contact')) return '🚪';
         return '📊';
     }

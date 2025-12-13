@@ -644,9 +644,11 @@ class WebInterface:
                         if 'measure_battery' in caps:
                             attributes['battery'] = caps['measure_battery'].get('value')
                         
-                        # Alarm-Sensoren
+                        # Alarm-Sensoren (motion UND presence)
                         if 'alarm_motion' in caps:
                             attributes['motion'] = caps['alarm_motion'].get('value')
+                        elif 'alarm_presence' in caps:
+                            attributes['motion'] = caps['alarm_presence'].get('value')
                         if 'alarm_contact' in caps:
                             attributes['contact_open'] = caps['alarm_contact'].get('value')
                         if 'alarm_smoke' in caps:
@@ -3646,12 +3648,18 @@ class WebInterface:
                             attrs = state_data.get('attributes', {})
                             caps = attrs.get('capabilities', {})
 
-                            # Prüfe auf Motion-Capability
+                            # Prüfe auf Motion- oder Presence-Capability
+                            motion_cap = None
                             if 'alarm_motion' in caps:
+                                motion_cap = caps['alarm_motion']
+                            elif 'alarm_presence' in caps:
+                                motion_cap = caps['alarm_presence']
+                            
+                            if motion_cap:
                                 motion_entities.append({
                                     'id': entity_id,
-                                    'motion': caps['alarm_motion'].get('value', False),
-                                    'last_updated': caps['alarm_motion'].get('lastUpdated')
+                                    'motion': motion_cap.get('value', False),
+                                    'last_updated': motion_cap.get('lastUpdated')
                                 })
                     except Exception as e:
                         logger.debug(f"Error getting motion sensors: {e}")
@@ -5332,9 +5340,10 @@ class WebInterface:
                     sensor_id = config['motion_sensor_id']
                     state = self.engine.platform.get_state(sensor_id)
                     if state:
-                        # alarm_motion: true = motion detected
+                        # alarm_motion oder alarm_presence: true = motion/presence detected
                         caps = state.get('capabilitiesObj', {})
-                        alarm_motion = caps.get('alarm_motion', {}).get('value', False)
+                        alarm_motion = caps.get('alarm_motion', {}).get('value', False) or \
+                                       caps.get('alarm_presence', {}).get('value', False)
                         devices_status['motion_sensor'] = {
                             'id': sensor_id,
                             'name': state.get('name', sensor_id),

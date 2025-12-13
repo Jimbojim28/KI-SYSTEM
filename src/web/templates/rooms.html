@@ -1381,11 +1381,13 @@ async function loadAllData() {
             const caps = d.capabilities || [];
             const name = (d.name || '').toLowerCase();
             const deviceClass = (d.class || '').toLowerCase();
-            // Erkennung: alarm_motion Capability, oder "bewegung"/"presence"/"motion" im Namen
+            // Erkennung: alarm_motion ODER alarm_presence Capability, oder "bewegung"/"presence"/"motion"/"anwesenheit" im Namen
             return caps.includes('alarm_motion') || 
+                   caps.includes('alarm_presence') ||
                    name.includes('bewegung') || 
                    name.includes('presence') || 
                    name.includes('motion') ||
+                   name.includes('anwesenheit') ||
                    deviceClass.includes('sensor');
         });
         
