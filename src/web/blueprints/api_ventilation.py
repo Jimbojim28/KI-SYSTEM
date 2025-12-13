@@ -41,6 +41,52 @@ def init_ventilation_blueprint(engine, db, config):
             logger.error(f"Error saving sensor mapping: {e}")
             return False
     
+    def _sync_bathroom_config(mapping: Dict[str, Any]):
+        """Synchronisiere Badezimmer-Config basierend auf Raum-Mapping"""
+        try:
+            bathroom_config_file = Path('data/luftentfeuchten_config.json')
+            
+            # Finde Badezimmer (Name enthält 'bad' oder 'shower' oder hat dehumidifier)
+            bathroom_room = None
+            for room_id, room_data in mapping.items():
+                name = room_data.get('name', '').lower()
+                # Priorisiere Räume mit explizit zugewiesenem Luftentfeuchter
+                if room_data.get('dehumidifier'):
+                    bathroom_room = room_data
+                    break
+                # Fallback auf Namenserkennung
+                if 'bad' in name or 'shower' in name:
+                    bathroom_room = room_data
+            
+            if not bathroom_room:
+                return
+
+            # Lade existierende Config um Settings zu erhalten
+            current_config = {}
+            if bathroom_config_file.exists():
+                try:
+                    with open(bathroom_config_file, 'r') as f:
+                        current_config = json.load(f)
+                except:
+                    pass
+            
+            # Update Device IDs
+            current_config['humidity_sensor_id'] = bathroom_room.get('humidity')
+            current_config['temperature_sensor_id'] = bathroom_room.get('temperature')
+            current_config['dehumidifier_id'] = bathroom_room.get('dehumidifier')
+            current_config['heater_id'] = bathroom_room.get('heater')
+            current_config['door_sensor_id'] = bathroom_room.get('door_sensor')
+            current_config['motion_sensor_id'] = bathroom_room.get('motion_sensor')
+            current_config['window_sensor_id'] = bathroom_room.get('window_sensor')
+            
+            # Speichern
+            with open(bathroom_config_file, 'w') as f:
+                json.dump(current_config, f, indent=2)
+                logger.info(f"Synced bathroom config from room: {bathroom_room.get('name')}")
+                
+        except Exception as e:
+            logger.error(f"Error syncing bathroom config: {e}")
+
     def _get_zones() -> Dict[str, str]:
         """Hole Zonen/Räume aus Homey"""
         zones = {}
@@ -353,6 +399,30 @@ def init_ventilation_blueprint(engine, db, config):
                                     'type': 'co2',
                                     'current_value': co2_value
                                 })
+                            
+                            # Contact Sensors (Window/Door)
+                            # Auch bekannte Sensoren erzwingen, falls Capability nicht erkannt wird
+                            is_known_contact = device_id in ['f35f92a1-fc3a-456e-8d0d-67ddb6118a55', 'cbb061dc-bb29-4ceb-8acd-b234e21b5004']
+                            
+                            # DEBUG: Log all capabilities for bad sensors
+                            if is_known_contact:
+                                logger.warning(f"DEBUG Bad-Sensor {device_name} ({device_id}): caps={cap_names}, capObj_keys={list(capabilitiesObj.keys())}")
+                            
+                            if 'alarm_contact' in cap_names or is_known_contact:
+                                contact_value = capabilitiesObj.get('alarm_contact', {}).get('value')
+                                
+                                # Debugging für Bad-Sensoren
+                                logger.info(f"Adding contact sensor: {device_name} ({device_id}), Zone: {zone_name}, Value: {contact_value}")
+                                
+                                sensors.append({
+                                    'device_id': device_id,
+                                    'name': device_name,
+                                    'platform': 'homey',
+                                    'room': zone_name,
+                                    'type': 'contact',
+                                    'current_value': contact_value
+                                })
+
                         print(f"DEBUG: Total CO2 sensors found: {co2_found}")
                         logger.info(f"Total CO2 sensors found: {co2_found}")
                 except Exception as e:
@@ -367,11 +437,13 @@ def init_ventilation_blueprint(engine, db, config):
                     
                     if ha_devices:
                         for entity_id, entity in ha_devices.items():
+                            attributes = entity.get('attributes', {})
+                            friendly_name = attributes.get('friendly_name', entity_id)
+                            state = entity.get('state')
+                            
+                            # Sensors (Temp, Hum, CO2)
                             if entity_id.startswith('sensor.'):
-                                attributes = entity.get('attributes', {})
                                 unit = attributes.get('unit_of_measurement', '')
-                                friendly_name = attributes.get('friendly_name', entity_id)
-                                state = entity.get('state')
                                 
                                 try:
                                     current_value = float(state) if state not in ['unavailable', 'unknown', None] else None
@@ -395,6 +467,25 @@ def init_ventilation_blueprint(engine, db, config):
                                         'type': sensor_type,
                                         'current_value': current_value
                                     })
+                            
+                            # Binary Sensors (Contact)
+                            elif entity_id.startswith('binary_sensor.'):
+                                device_class = attributes.get('device_class', '')
+                                # Check for window/door classes or name match
+                                if device_class in ['window', 'door', 'garage_door', 'opening'] or \
+                                   'fenster' in entity_id.lower() or 'window' in entity_id.lower() or \
+                                   'tür' in entity_id.lower() or 'door' in entity_id.lower():
+                                    
+                                    is_open = state == 'on'
+                                    sensors.append({
+                                        'device_id': entity_id,
+                                        'name': friendly_name,
+                                        'platform': 'homeassistant',
+                                        'room': 'Unbekannt',
+                                        'type': 'contact',
+                                        'current_value': is_open
+                                    })
+
                 except Exception as e:
                     logger.error(f"Error getting HA sensors: {e}")
             
@@ -479,6 +570,9 @@ def init_ventilation_blueprint(engine, db, config):
             }
             
             if _save_sensor_mapping(save_data):
+                # Sync to bathroom config
+                _sync_bathroom_config(mapping)
+                
                 return jsonify({'success': True, 'message': 'Sensor-Zuordnung gespeichert'})
             else:
                 return jsonify({'error': 'Fehler beim Speichern'}), 500
@@ -797,230 +891,36 @@ def init_ventilation_blueprint(engine, db, config):
 
     @ventilation_bp.route('/ventilation/window-status', methods=['GET'])
     def get_window_status():
-        """API: Aktueller LIVE-Status aller Fenster direkt von Homey"""
+        """API: Aktueller LIVE-Status aller Fenster (Homey + HA)"""
         try:
             import re
             windows = []
             
-            # === LIVE-STATUS direkt von Homey abrufen ===
-            if engine and engine.platform:
-                try:
-                    # Hole alle Geräte frisch von Homey
-                    all_devices = []
-                    if hasattr(engine.platform, '_device_cache'):
-                        engine.platform._refresh_device_cache()
-                        cache = engine.platform._device_cache
-                        if isinstance(cache, dict):
-                            all_devices = list(cache.values())
-                        elif isinstance(cache, list):
-                            all_devices = cache
-                    else:
-                        states = engine.platform.get_states()
-                        if isinstance(states, list):
-                            all_devices = states
-                    
-                    # Hole Zonen-Mapping
-                    zones = {}
-                    try:
-                        zone_list = engine.platform.get_zones() or []
-                        zones = {z.get('id'): z.get('name') for z in zone_list}
-                    except:
-                        pass
-                    
-                    # Filtere nach Fenstern (keine Türen)
-                    for device in all_devices:
-                        if not isinstance(device, dict):
-                            continue
-                        
-                        device_name = device.get('name', '').lower()
-                        capabilities = device.get('capabilitiesObj', {})
-                        
-                        # Nur Fenster, keine Türen
-                        is_door = ('door' in device_name or 'tür' in device_name or 
-                                  'tur' in device_name or 'türe' in device_name)
-                        is_window = ('window' in device_name or 'fenster' in device_name)
-                        
-                        if not is_door and is_window and 'alarm_contact' in capabilities:
-                            device_id = device.get('id')
-                            device_display_name = device.get('name', 'Unbekannt')
-                            
-                            # LIVE-Status direkt von Homey
-                            contact_open = bool(capabilities['alarm_contact'].get('value', False))
-                            
-                            # Hole Tilt-Winkel (falls vorhanden)
-                            tilt_value = None
-                            if 'tilt' in capabilities:
-                                tilt_value = capabilities['tilt'].get('value')
-                            
-                            # Raum aus Zone
-                            room_name = None
-                            zone_id = device.get('zone')
-                            if zone_id and zone_id in zones:
-                                room_name = zones[zone_id]
-                            
-                            # Fallback: Raum aus Gerätenamen extrahieren
-                            if not room_name:
-                                name_lower = device_display_name.lower()
-                                if 'fenster' in name_lower:
-                                    room_name = device_display_name.replace(' Fenster', '').replace(' fenster', '').strip()
-                                else:
-                                    room_name = device_display_name
-                                
-                                # Entferne Nummerierung (z.B. "Wohnzimmer 2" -> "Wohnzimmer")
-                                if room_name:
-                                    room_name = re.sub(r'\s+\d+$', '', room_name).strip()
-                            
-                            # Lade Fenster-Kalibrierung für diesen Raum
-                            calibration = {'closed_angle': 0, 'tilted_min': 5, 'tilted_max': 45}
-                            try:
-                                rooms_file = Path('data/rooms.json')
-                                if rooms_file.exists():
-                                    with open(rooms_file, 'r') as f:
-                                        rooms_data = json.load(f)
-                                    calibrations = rooms_data.get('window_calibration', {})
-                                    if zone_id and zone_id in calibrations:
-                                        calibration = calibrations[zone_id]
-                            except:
-                                pass
-                            
-                            # Bestimme Fensterzustand (closed/tilted/open)
-                            window_state = 'closed'
-                            is_open = False
-                            
-                            if not contact_open:
-                                # Kontakt geschlossen = Fenster zu
-                                window_state = 'closed'
-                                is_open = False
-                            elif tilt_value is not None:
-                                # Kontakt offen + Tilt vorhanden
-                                closed_angle = calibration.get('closed_angle', 0)
-                                tilted_min = calibration.get('tilted_min', 5)
-                                tilted_max = calibration.get('tilted_max', 45)
-                                
-                                # Berechne Differenz zum geschlossenen Winkel (wie bei /rooms)
-                                diff = abs(tilt_value - closed_angle)
-                                
-                                if diff >= tilted_min and diff <= tilted_max:
-                                    window_state = 'tilted'
-                                    is_open = True
-                                else:
-                                    window_state = 'open'
-                                    is_open = True
-                            else:
-                                # Kontakt offen, kein Tilt-Sensor
-                                window_state = 'open'
-                                is_open = True
-                            
-                            # Wenn Fenster offen ist, hole open_since aus DB
-                            open_since = None
-                            if is_open and db:
-                                try:
-                                    conn = db._get_connection()
-                                    cursor = conn.cursor()
-                                    
-                                    # Finde den letzten Zustandswechsel
-                                    cursor.execute('''
-                                        SELECT timestamp FROM window_observations
-                                        WHERE device_id = ? AND is_open = 0
-                                        ORDER BY timestamp DESC
-                                        LIMIT 1
-                                    ''', (device_id,))
-                                    last_closed = cursor.fetchone()
-                                    
-                                    if last_closed:
-                                        cursor.execute('''
-                                            SELECT MIN(timestamp) FROM window_observations
-                                            WHERE device_id = ? AND is_open = 1 AND timestamp > ?
-                                        ''', (device_id, last_closed[0]))
-                                        first_open = cursor.fetchone()
-                                        if first_open and first_open[0]:
-                                            open_since = first_open[0]
-                                    else:
-                                        cursor.execute('''
-                                            SELECT MIN(timestamp) FROM window_observations
-                                            WHERE device_id = ? AND is_open = 1
-                                        ''', (device_id,))
-                                        first_open = cursor.fetchone()
-                                        if first_open and first_open[0]:
-                                            open_since = first_open[0]
-                                except Exception as e:
-                                    logger.debug(f"Could not get open_since for {device_id}: {e}")
-                            
-                            # State Labels
-                            state_labels = {
-                                'closed': '🟢 Geschlossen',
-                                'tilted': '🟡 Gekippt',
-                                'open': '🔴 Offen'
-                            }
-                            
-                            windows.append({
-                                'device_id': device_id,
-                                'name': device_display_name,
-                                'room': room_name or 'Unbekannt',
-                                'is_open': is_open,
-                                'window_state': window_state,
-                                'state_label': state_labels.get(window_state, window_state),
-                                'tilt': tilt_value,
-                                'open_since': open_since,
-                                'source': 'live'  # Markiere als Live-Daten
-                            })
-                    
-                    logger.debug(f"Got live window status for {len(windows)} windows")
-                    
-                except Exception as e:
-                    logger.warning(f"Could not get live window status from Homey: {e}")
+            from .window_utils import get_all_windows
             
-            # === FALLBACK: Aus Datenbank wenn keine Live-Daten ===
-            if not windows and db:
-                logger.info("Falling back to database for window status")
-                conn = db._get_connection()
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    SELECT wo.device_id, wo.device_name, wo.room_name, wo.is_open, wo.timestamp
-                    FROM window_observations wo
-                    INNER JOIN (
-                        SELECT device_id, MAX(timestamp) as max_ts
-                        FROM window_observations
-                        GROUP BY device_id
-                    ) latest ON wo.device_id = latest.device_id AND wo.timestamp = latest.max_ts
-                    ORDER BY wo.room_name, wo.device_name
-                ''')
-                
-                for row in cursor.fetchall():
-                    device_id = row[0]
-                    device_name = row[1] or row[0]
-                    db_room_name = row[2]
-                    is_open = bool(row[3])
-                    
-                    room_name = None
-                    if device_name:
-                        name_lower = device_name.lower()
-                        if 'fenster' in name_lower:
-                            room_name = device_name.replace(' Fenster', '').replace(' fenster', '').strip()
-                        else:
-                            room_name = device_name
-                        
-                        if room_name:
-                            room_name = re.sub(r'\s+\d+$', '', room_name).strip()
-                    
-                    if db_room_name and db_room_name.strip() and db_room_name not in ('Unbekannt', 'None', 'null'):
-                        room_name = db_room_name
-                    
-                    windows.append({
-                        'device_id': device_id,
-                        'name': device_name,
-                        'room': room_name or 'Unbekannt',
-                        'is_open': is_open,
-                        'open_since': None,
-                        'source': 'database'  # Markiere als DB-Daten
-                    })
+            all_windows = get_all_windows(engine, db)
+            
+            # Map to expected format
+            windows = []
+            for w in all_windows:
+                windows.append({
+                    'device_id': w['device_id'],
+                    'name': w['device_name'],
+                    'room': w['room_name'],
+                    'is_open': w['is_open'],
+                    'window_state': w['state'],
+                    'state_label': w['state_label'],
+                    'tilt': w['tilt'],
+                    'open_since': w['open_since'],
+                    'source': w['source']
+                })
             
             return jsonify({
                 'success': True,
-                'windows': windows,
-                'count': len(windows)
+                'windows': windows
             })
+
+
             
         except Exception as e:
             logger.error(f"Error getting window status: {e}")

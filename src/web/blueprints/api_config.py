@@ -42,7 +42,8 @@ def init_config_blueprint(engine, db, config):
                 },
                 'platforms': cfg.get('platforms', {}),
                 'database': cfg.get('database', {}),
-                'features': cfg.get('features', {})
+                'features': cfg.get('features', {}),
+                'data_collection': cfg.get('data_collection', {})
             }
             
             return jsonify({'success': True, 'config': safe_config})
@@ -145,6 +146,52 @@ def init_config_blueprint(engine, db, config):
                 })
         except Exception as e:
             logger.error(f"Error testing connection: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @config_bp.route('/config/data-collection', methods=['POST'])
+    @validate_json_body()
+    def save_data_collection_config():
+        """Speichere Datensammlungs-Konfiguration"""
+        try:
+            data = request.get_json()
+            config_path = Path('config/config.yaml')
+            
+            # Lade bestehende Config
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    existing_config = yaml.safe_load(f) or {}
+            else:
+                existing_config = {}
+            
+            # Stelle sicher, dass data_collection existiert
+            if 'data_collection' not in existing_config:
+                existing_config['data_collection'] = {}
+            
+            # Update collect_types
+            if 'collect_types' in data:
+                if 'collect_types' not in existing_config['data_collection']:
+                    existing_config['data_collection']['collect_types'] = {}
+                existing_config['data_collection']['collect_types'].update(data['collect_types'])
+            
+            # Update platform_sources
+            if 'platform_sources' in data:
+                if 'platform_sources' not in existing_config['data_collection']:
+                    existing_config['data_collection']['platform_sources'] = {}
+                
+                for key, value in data['platform_sources'].items():
+                    if key not in existing_config['data_collection']['platform_sources']:
+                        existing_config['data_collection']['platform_sources'][key] = {}
+                    existing_config['data_collection']['platform_sources'][key].update(value)
+            
+            # Speichern
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, 'w') as f:
+                yaml.dump(existing_config, f, default_flow_style=False, allow_unicode=True)
+            
+            logger.info("Data collection configuration saved successfully")
+            return jsonify({'success': True, 'message': 'Configuration saved'})
+        except Exception as e:
+            logger.error(f"Error saving data collection config: {e}")
             return jsonify({'error': str(e)}), 500
 
     @config_bp.route('/system/info', methods=['GET'])

@@ -59,6 +59,20 @@
         </div>
 
         <div class="settings-section">
+            <h3>🔗 Home Assistant Fenster-Mapping</h3>
+            <p>Verbinde Home Assistant Sensoren (z.B. Shelly BLU, BTHome) mit Räumen.</p>
+            
+            <div class="ha-mappings-list" id="ha-mappings-list">
+                <!-- Mappings werden hier geladen -->
+                <div class="loading-state">Lade Mappings...</div>
+            </div>
+            
+            <button class="btn btn-secondary" onclick="openHaMappingModal()">
+                ➕ Neues Mapping hinzufügen
+            </button>
+        </div>
+
+        <div class="settings-section">
             <h3>🪟 Fenster-Kalibrierung</h3>
             <p>Automatische Kalibrierung der Fenstersensoren. <strong>Wichtig:</strong> Schließe alle Fenster komplett bevor du kalibrierst!</p>
             <div class="button-group">
@@ -166,6 +180,20 @@
                 </select>
                 <small id="edit-humidity-preview" class="sensor-preview"></small>
             </div>
+
+            <div class="form-group">
+                <label>💧 Luftentfeuchter (Smart Plug):</label>
+                <select id="edit-dehumidifier">
+                    <option value="">-- Kein Luftentfeuchter --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>🔥 Heizung / Thermostat:</label>
+                <select id="edit-heater">
+                    <option value="">-- Keine Heizung --</option>
+                </select>
+            </div>
             
             <div class="form-group">
                 <label>CO₂-Sensor:</label>
@@ -176,11 +204,34 @@
             </div>
             
             <div class="form-group">
+                <label>🚪 Tür-Sensor (Optional):</label>
+                <select id="edit-door-sensor">
+                    <option value="">-- Kein Tür-Sensor --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>🪟 Fenster-Sensoren (Mehrfachauswahl):</label>
+                <div id="edit-window-sensors-list" class="checkbox-list" style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 8px; background: #fafafa;">
+                    <small style="color: #888;">Lade Sensoren...</small>
+                </div>
+                <small style="color: #666; font-size: 0.85em;">Wähle alle Fenster-Sensoren für diesen Raum</small>
+            </div>
+            
+            <div class="form-group">
                 <label>🚶 Bewegungssensor:</label>
                 <select id="edit-motion-sensor">
                     <option value="">-- Kein Bewegungssensor --</option>
                 </select>
                 <small id="edit-motion-preview" class="sensor-preview"></small>
+            </div>
+
+            <div class="sensor-management-section" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee;">
+                <h5 style="margin-bottom: 0.5rem;">📋 Verfügbare Sensoren verwalten</h5>
+                <p class="modal-hint">Hier kannst du Sensoren ignorieren (z.B. bei Duplikaten von Homey/HA):</p>
+                <div id="room-sensors-list" class="room-devices-list" style="max-height: 200px; overflow-y: auto;">
+                    <!-- Wird dynamisch befüllt -->
+                </div>
             </div>
 
             <h4>🪟 Fenster-Kalibrierung</h4>
@@ -209,12 +260,6 @@
                         <input type="number" id="edit-tilted-min" step="0.5" min="1" max="90" value="5"
                                style="width: 80px; padding: 10px; font-size: 1.1rem;">
                         <small class="form-hint">Typisch: 5° (leicht gekippt)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>🔴 Offen ab (°):</label>
-                        <input type="number" id="edit-tilted-max" step="0.5" min="10" max="180" value="45"
-                               style="width: 80px; padding: 10px; font-size: 1.1rem;">
-                        <small class="form-hint">Typisch: 45° (weit geöffnet)</small>
                     </div>
                 </div>
                 
@@ -1255,7 +1300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadAllData() {
     try {
         const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes, motionRes, windowRes] = await Promise.all([
-            fetch('/api/ventilation/sensors'),
+            fetch('/api/ventilation/sensors?include_ignored=true'),
             fetch('/api/ventilation/sensor-mapping'),
             fetch('/api/rooms/hidden'),
             fetch('/api/devices'),
@@ -1464,7 +1509,7 @@ function renderOverview() {
         ` : '';
         
         // Fenster-Status für diesen Raum ermitteln
-        const roomWindows = allWindowSensors.filter(w => zoneIdToName[w.zone_id] === room);
+        const roomWindows = allWindowSensors.filter(w => zoneIdToName[w.zone_id] === room || w.room_name === room);
         const hasWindows = roomWindows.length > 0;
         
         // Fenster-Status HTML
@@ -1751,13 +1796,13 @@ function openRoomModal(room) {
     const humiditySelect = document.getElementById('edit-humidity-sensor');
     const co2Select = document.getElementById('edit-co2-sensor');
     
-    // Sensoren nach Raum gruppieren
-    const tempSensorsThisRoom = allSensors.filter(s => s.type === 'temperature' && s.room === room);
-    const tempSensorsOther = allSensors.filter(s => s.type === 'temperature' && s.room !== room);
-    const humiditySensorsThisRoom = allSensors.filter(s => s.type === 'humidity' && s.room === room);
-    const humiditySensorsOther = allSensors.filter(s => s.type === 'humidity' && s.room !== room);
-    const co2SensorsThisRoom = allSensors.filter(s => s.type === 'co2' && s.room === room);
-    const co2SensorsOther = allSensors.filter(s => s.type === 'co2' && s.room !== room);
+    // Sensoren nach Raum gruppieren (Ignorierte ausschließen)
+    const tempSensorsThisRoom = allSensors.filter(s => s.type === 'temperature' && s.room === room && !s.ignored);
+    const tempSensorsOther = allSensors.filter(s => s.type === 'temperature' && s.room !== room && !s.ignored);
+    const humiditySensorsThisRoom = allSensors.filter(s => s.type === 'humidity' && s.room === room && !s.ignored);
+    const humiditySensorsOther = allSensors.filter(s => s.type === 'humidity' && s.room !== room && !s.ignored);
+    const co2SensorsThisRoom = allSensors.filter(s => s.type === 'co2' && s.room === room && !s.ignored);
+    const co2SensorsOther = allSensors.filter(s => s.type === 'co2' && s.room !== room && !s.ignored);
     
     // Hilfsfunktion für gruppierte Optionen
     const buildGroupedOptions = (sensorsThisRoom, sensorsOther, type, configValue, defaultLabel) => {
@@ -1798,6 +1843,178 @@ function openRoomModal(room) {
     humiditySelect.innerHTML = buildGroupedOptions(humiditySensorsThisRoom, humiditySensorsOther, 'humidity', config.humidity, '-- Automatisch --');
     co2Select.innerHTML = buildGroupedOptions(co2SensorsThisRoom, co2SensorsOther, 'co2', config.co2, '-- Kein CO₂ --');
     
+    // === Neue Geräte-Dropdowns füllen ===
+    const dehumidifierSelect = document.getElementById('edit-dehumidifier');
+    const heaterSelect = document.getElementById('edit-heater');
+    const doorSelect = document.getElementById('edit-door-sensor');
+
+    // Helper für Geräte-Optionen
+    const buildDeviceOptions = (devices, currentId, defaultLabel, icon) => {
+        let html = `<option value="">${defaultLabel}</option>`;
+        
+        // Gruppieren nach Raum
+        const devicesThisRoom = devices.filter(d => d.roomName === room);
+        const devicesOther = devices.filter(d => d.roomName !== room);
+        
+        if (devicesThisRoom.length > 0) {
+            html += `<optgroup label="📍 ${room}">`;
+            devicesThisRoom.forEach(d => {
+                const selected = currentId === d.id ? 'selected' : '';
+                html += `<option value="${d.id}" ${selected}>${icon} ${d.name}</option>`;
+            });
+            html += '</optgroup>';
+        }
+        
+        if (devicesOther.length > 0) {
+            html += `<optgroup label="🏠 Andere Räume">`;
+            devicesOther.forEach(d => {
+                const selected = currentId === d.id ? 'selected' : '';
+                html += `<option value="${d.id}" ${selected}>${icon} ${d.name} - ${d.roomName}</option>`;
+            });
+            html += '</optgroup>';
+        }
+        return html;
+    };
+
+    // Filter für Luftentfeuchter (Switches/Plugs)
+    const dehumidifiers = allDevices.filter(d => 
+        d.domain === 'switch' || d.capabilities?.includes('onoff') || d.class === 'socket'
+    );
+    dehumidifierSelect.innerHTML = buildDeviceOptions(dehumidifiers, config.dehumidifier, '-- Kein Luftentfeuchter --', '💧');
+
+    // Filter für Heizung (Climate/Thermostat)
+    const heaters = allDevices.filter(d => 
+        d.domain === 'climate' || d.capabilities?.includes('target_temperature') || d.class === 'thermostat'
+    );
+    heaterSelect.innerHTML = buildDeviceOptions(heaters, config.heater, '-- Keine Heizung --', '🔥');
+
+    // Filter für Tür-Sensoren (Contact) - nutze allDevices statt allSensors!
+    // allDevices enthält die alarm_contact Capability, allSensors nicht
+    const doorSensors = allDevices.filter(d => {
+        const caps = d.capabilities || [];
+        const name = (d.name || '').toLowerCase();
+        // Erkenne Tür-Sensoren: alarm_contact Capability ODER "tür"/"door" im Namen
+        return caps.includes('alarm_contact') || name.includes('tür') || name.includes('door');
+    });
+    
+    // Map to standard format
+    const mappedDoorSensors = doorSensors.map(d => ({
+        id: d.id,
+        name: d.name,
+        roomName: d.zoneName || d.roomName || 'Unbekannt'
+    }));
+
+    // Filtere nur Sensoren aus dem aktuellen Raum (wie vom User gewünscht)
+    // Behalte aber den aktuell ausgewählten Sensor, auch wenn er woanders ist
+    // Erlaube auch Sensoren aus "Unbekannt" (z.B. HA), wenn der Name den Raumnamen enthält
+    // Und erlaube unscharfen Match beim Raumnamen (z.B. "Bad" in "Badezimmer")
+    const filteredDoorSensors = mappedDoorSensors.filter(d => {
+        if (d.id === config.door_sensor) return true;
+        
+        const rName = d.roomName.toLowerCase();
+        const currentRoom = room.toLowerCase();
+        const sName = d.name.toLowerCase();
+        
+        // 1. Raum-Match (Exakt oder Teilstring)
+        if (rName === currentRoom) return true;
+        if (rName !== 'unbekannt' && (currentRoom.includes(rName) || rName.includes(currentRoom))) return true;
+        
+        // 2. Name-Match: Sensor-Name enthält Raum-Name
+        if (sName.includes(currentRoom)) return true;
+        
+        // 3. Spezialfälle für häufige Abkürzungen
+        if (currentRoom === 'badezimmer' && sName.includes('bad')) return true;
+        if (currentRoom === 'schlafzimmer' && sName.includes('schlaf')) return true;
+        if (currentRoom === 'wohnzimmer' && sName.includes('wohn')) return true;
+        if (currentRoom === 'kinderzimmer' && sName.includes('kind')) return true;
+        
+        // 4. Unbekannter Raum, aber Name passt
+        if (rName === 'unbekannt' && sName.includes(currentRoom)) return true;
+        
+        // 5. Bekannte Sensoren erzwingen
+        if (currentRoom === 'badezimmer' && d.id === 'f35f92a1-fc3a-456e-8d0d-67ddb6118a55') return true;
+        
+        return false;
+    }).map(d => {
+        // Wenn der Name passt, ordne ihn visuell diesem Raum zu (damit er oben in der Liste erscheint)
+        const sName = d.name.toLowerCase();
+        const currentRoom = room.toLowerCase();
+        if (sName.includes(currentRoom) || (currentRoom === 'badezimmer' && sName.includes('bad'))) {
+            return { ...d, roomName: room };
+        }
+        return d;
+    });
+
+    doorSelect.innerHTML = buildDeviceOptions(filteredDoorSensors, config.door_sensor, '-- Kein Tür-Sensor --', '🚪');
+
+    // Filter für Fenster-Sensoren (Contact) - nutze allDevices statt allSensors!
+    // allDevices enthält die alarm_contact Capability
+    const windowSensors = allDevices.filter(d => {
+        const caps = d.capabilities || [];
+        const name = (d.name || '').toLowerCase();
+        // Erkenne Fenster-Sensoren: alarm_contact Capability ODER "fenster"/"window" im Namen
+        return caps.includes('alarm_contact') || name.includes('fenster') || name.includes('window');
+    });
+    
+    const mappedWindowSensors = windowSensors.map(d => ({
+        id: d.id,
+        name: d.name,
+        roomName: d.zoneName || d.roomName || 'Unbekannt'
+    }));
+    const windowSensorsList = document.getElementById('edit-window-sensors-list');
+    
+    // Filtere nur Sensoren aus dem aktuellen Raum (wie bei Türen)
+    const filteredWindowSensors = mappedWindowSensors.filter(d => {
+        // Prüfe ob dieser Sensor bereits ausgewählt ist (auch als Array)
+        const selectedSensors = Array.isArray(config.window_sensors) ? config.window_sensors : (config.window_sensor ? [config.window_sensor] : []);
+        if (selectedSensors.includes(d.id)) return true;
+        
+        const rName = (d.roomName || '').toLowerCase();
+        const currentRoom = (room || '').toLowerCase();
+        const sName = (d.name || '').toLowerCase();
+        
+        // 1. Raum-Match (Exakt oder Teilstring)
+        if (rName === currentRoom) return true;
+        if (rName !== 'unbekannt' && (currentRoom.includes(rName) || rName.includes(currentRoom))) return true;
+        
+        // 2. Name-Match: Sensor-Name enthält Raum-Name
+        if (sName.includes(currentRoom)) return true;
+        
+        // 3. Spezialfälle für häufige Abkürzungen
+        if (currentRoom === 'badezimmer' && sName.includes('bad')) return true;
+        if (currentRoom === 'schlafzimmer' && sName.includes('schlaf')) return true;
+        if (currentRoom === 'wohnzimmer' && sName.includes('wohn')) return true;
+        if (currentRoom === 'kinderzimmer' && sName.includes('kind')) return true;
+        
+        // 4. Unbekannter Raum, aber Name passt
+        if (rName === 'unbekannt' && sName.includes(currentRoom)) return true;
+        
+        return false;
+    });
+    
+    // Bereits ausgewählte Sensoren (unterstütze altes Format mit window_sensor und neues mit window_sensors)
+    const selectedWindowSensors = Array.isArray(config.window_sensors) 
+        ? config.window_sensors 
+        : (config.window_sensor ? [config.window_sensor] : []);
+    
+    // Checkbox-Liste rendern
+    if (filteredWindowSensors.length === 0) {
+        windowSensorsList.innerHTML = '<small style="color: #888;">Keine Fenster-Sensoren für diesen Raum gefunden</small>';
+    } else {
+        windowSensorsList.innerHTML = filteredWindowSensors.map(d => {
+            const isChecked = selectedWindowSensors.includes(d.id) ? 'checked' : '';
+            const isThisRoom = (d.roomName || '').toLowerCase() === room.toLowerCase();
+            return `
+                <label style="display: flex; align-items: center; gap: 8px; padding: 6px 4px; cursor: pointer; border-bottom: 1px solid #eee;">
+                    <input type="checkbox" class="window-sensor-checkbox" value="${d.id}" ${isChecked}>
+                    <span>🪟 ${d.name}</span>
+                    ${!isThisRoom ? `<small style="color: #888;">(${d.roomName})</small>` : ''}
+                </label>
+            `;
+        }).join('');
+    }
+
+
     // Bewegungssensor-Dropdown füllen
     const motionSelect = document.getElementById('edit-motion-sensor');
     const motionSensorsThisRoom = allMotionSensors.filter(s => s.roomName === room);
@@ -1831,6 +2048,40 @@ function openRoomModal(room) {
         motionSelect.value = motionSensorsThisRoom[0].id;
     }
     
+    // === Sensor-Liste für Ignore-Funktion ===
+    const sensorsListContainer = document.getElementById('room-sensors-list');
+    const sensorsInThisRoom = allSensors.filter(s => s.room === room);
+    
+    if (sensorsInThisRoom.length === 0) {
+        sensorsListContainer.innerHTML = '<div class="no-data" style="padding:10px; color:#888;">Keine Sensoren in diesem Raum gefunden.</div>';
+    } else {
+        sensorsListContainer.innerHTML = sensorsInThisRoom.map(s => {
+            const isIgnored = s.ignored === true;
+            const icon = s.type === 'temperature' ? '🌡️' : (s.type === 'humidity' ? '💧' : '☁️');
+            const val = s.current_value !== null ? s.current_value : '-';
+            const unit = s.type === 'temperature' ? '°C' : (s.type === 'humidity' ? '%' : ' ppm');
+            
+            return `
+                <div class="device-item ${isIgnored ? 'ignored' : ''}" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; ${isIgnored ? 'opacity: 0.6; background: #f9f9f9;' : ''}">
+                    <div style="margin-right: 10px;">
+                        <input type="checkbox" 
+                               title="${isIgnored ? 'Sensor aktivieren' : 'Sensor ignorieren'}"
+                               ${!isIgnored ? 'checked' : ''} 
+                               onchange="toggleSensorIgnore('${s.device_id}', this)">
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 500;">${icon} ${s.name}</div>
+                        <div style="font-size: 0.85em; color: #666;">
+                            ${s.platform === 'homeassistant' ? '🏠 Home Assistant' : '⚡ Homey'} 
+                            • Wert: ${val}${unit}
+                            ${isIgnored ? ' • <i>(Ignoriert)</i>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
     // Fenster-Kalibrierung laden
     loadWindowCalibration(room);
     
@@ -2124,7 +2375,7 @@ async function loadWindowCalibration(roomName) {
         // Setze Werte in die Felder
         document.getElementById('edit-closed-angle').value = calibration.closed_angle;
         document.getElementById('edit-tilted-min').value = calibration.tilted_min;
-        document.getElementById('edit-tilted-max').value = calibration.tilted_max;
+        // tilted_max ist fix auf 45°
         
         // Lade aktuellen Fensterstatus
         const statusRes = await fetch('/api/rooms/window-status');
@@ -2133,7 +2384,7 @@ async function loadWindowCalibration(roomName) {
         if (statusData.success) {
             // Filtere Fenster für diesen Raum
             const roomWindows = statusData.windows.filter(w => 
-                zoneIdToName[w.zone_id] === roomName
+                zoneIdToName[w.zone_id] === roomName || w.room_name === roomName
             );
             
             currentWindowData = roomWindows;
@@ -2143,9 +2394,21 @@ async function loadWindowCalibration(roomName) {
                 previewContainer.innerHTML = '';
             } else {
                 statusContainer.innerHTML = roomWindows.map(w => `
-                    <div class="window-sensor-status state-${w.state}">
+                    <div class="window-sensor-status state-${w.state}" style="${w.ignored ? 'opacity: 0.6; background: #f5f5f5;' : ''}">
+                        <div style="margin-right: 10px;">
+                            <input type="checkbox" 
+                                   title="Diesen Sensor verwenden" 
+                                   ${!w.ignored ? 'checked' : ''} 
+                                   onchange="toggleWindowIgnore('${w.device_id}', this)">
+                        </div>
                         <span class="window-icon">🪟</span>
-                        <span class="window-name">${w.name}</span>
+                        <div style="display:flex; flex-direction:column; flex:1">
+                            <span class="window-name">${w.name}</span>
+                            <span class="window-source" style="font-size:0.7em; color:#888;">
+                                ${w.source === 'ha' ? '🏠 Home Assistant' : '⚡ Homey Pro'}
+                                ${w.ignored ? ' (Ignoriert)' : ''}
+                            </span>
+                        </div>
                         <span class="tilt-value">${w.tilt !== null ? w.tilt.toFixed(1) + '°' : '-'}</span>
                         <span class="state-badge">${w.state_label}</span>
                     </div>
@@ -2168,7 +2431,68 @@ async function loadWindowCalibration(roomName) {
     // Event-Listener für Live-Vorschau
     document.getElementById('edit-closed-angle').addEventListener('input', updateWindowStatePreview);
     document.getElementById('edit-tilted-min').addEventListener('input', updateWindowStatePreview);
-    document.getElementById('edit-tilted-max').addEventListener('input', updateWindowStatePreview);
+}
+
+// Fenster ignorieren/aktivieren
+async function toggleWindowIgnore(deviceId, checkbox) {
+    const ignore = !checkbox.checked;
+    try {
+        const response = await fetch('/api/rooms/window-ignore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, ignore: ignore })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showNotification(ignore ? 'Fenster wird ignoriert' : 'Fenster aktiviert', 'success');
+            // Reload data to update UI
+            const roomName = document.getElementById('edit-room-original-name').value;
+            loadWindowCalibration(roomName);
+        } else {
+            showNotification('Fehler beim Speichern', 'error');
+            checkbox.checked = !checkbox.checked; // Revert
+        }
+    } catch (error) {
+        console.error('Error toggling window ignore:', error);
+        showNotification('Fehler beim Speichern', 'error');
+        checkbox.checked = !checkbox.checked; // Revert
+    }
+}
+
+// Sensor ignorieren/aktivieren
+async function toggleSensorIgnore(deviceId, checkbox) {
+    const ignore = !checkbox.checked;
+    try {
+        const response = await fetch('/api/rooms/sensor-ignore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, ignore: ignore })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showNotification(ignore ? 'Sensor wird ignoriert' : 'Sensor aktiviert', 'success');
+            
+            // Update local data
+            const sensor = allSensors.find(s => s.device_id === deviceId);
+            if (sensor) {
+                sensor.ignored = ignore;
+            }
+            
+            // Refresh modal content
+            const roomName = document.getElementById('edit-room-original-name').value;
+            openRoomModal(roomName);
+            
+        } else {
+            showNotification('Fehler beim Speichern: ' + (data.error || 'Unbekannt'), 'error');
+            checkbox.checked = !checkbox.checked; // Revert
+        }
+    } catch (error) {
+        console.error('Error toggling sensor ignore:', error);
+        showNotification('Fehler beim Speichern', 'error');
+        checkbox.checked = !checkbox.checked; // Revert
+    }
 }
 
 // Aktuellen Winkel als Geschlossen-Winkel übernehmen
@@ -2191,7 +2515,7 @@ function calibrateCurrentAngle() {
 function updateWindowStatePreview() {
     const closedAngle = parseFloat(document.getElementById('edit-closed-angle').value) || 0;
     const tiltedMin = parseFloat(document.getElementById('edit-tilted-min').value) || 5;
-    const tiltedMax = parseFloat(document.getElementById('edit-tilted-max').value) || 45;
+    const tiltedMax = 45; // Fix auf 45°
     
     const previewContainer = document.getElementById('window-state-preview');
     
@@ -2200,16 +2524,23 @@ function updateWindowStatePreview() {
         const statusContainer = document.getElementById('window-current-status');
         statusContainer.innerHTML = currentWindowData.map(w => {
             let state = 'closed';
-            if (w.tilt !== null) {
+            
+            // Logik muss exakt der Backend-Logik entsprechen:
+            // 1. Kontakt zu -> Immer geschlossen
+            // 2. Kontakt offen + Winkel im Bereich -> Gekippt
+            // 3. Kontakt offen + Winkel außerhalb (oder kein Winkel) -> Offen
+            
+            if (!w.contact_open) {
+                state = 'closed';
+            } else if (w.tilt !== null) {
                 const diff = Math.abs(w.tilt - closedAngle);
-                if (diff <= 2) {
-                    state = 'closed';
-                } else if (diff >= tiltedMin && diff <= tiltedMax) {
+                if (diff >= tiltedMin && diff <= tiltedMax) {
                     state = 'tilted';
-                } else if (diff > tiltedMax) {
+                } else {
                     state = 'open';
                 }
-            } else if (w.contact_open) {
+            } else {
+                // Kontakt offen, kein Tilt-Sensor
                 state = 'open';
             }
             
@@ -2259,16 +2590,31 @@ async function saveRoomEdit(event) {
     const co2Sensor = document.getElementById('edit-co2-sensor').value;
     const motionSensor = document.getElementById('edit-motion-sensor').value;
     
+    // Neue Felder
+    const dehumidifier = document.getElementById('edit-dehumidifier').value;
+    const heater = document.getElementById('edit-heater').value;
+    const doorSensor = document.getElementById('edit-door-sensor').value;
+    
+    // Fenster-Sensoren als Array (Mehrfachauswahl)
+    const windowSensorCheckboxes = document.querySelectorAll('.window-sensor-checkbox:checked');
+    const windowSensors = Array.from(windowSensorCheckboxes).map(cb => cb.value);
+    
     // Fenster-Kalibrierung
     const closedAngle = parseFloat(document.getElementById('edit-closed-angle').value) || 0;
     const tiltedMin = parseFloat(document.getElementById('edit-tilted-min').value) || 5;
-    const tiltedMax = parseFloat(document.getElementById('edit-tilted-max').value) || 45;
+    const tiltedMax = 45; // Fix auf 45°
     
     sensorMapping[roomId] = {
         name: roomName,
         temperature: tempSensor,
         humidity: humiditySensor,
-        co2: co2Sensor
+        co2: co2Sensor,
+        dehumidifier: dehumidifier,
+        heater: heater,
+        door_sensor: doorSensor,
+        window_sensors: windowSensors,  // Array statt einzelner Wert
+        window_sensor: windowSensors[0] || '',  // Kompatibilität: erster Sensor als Fallback
+        motion_sensor: motionSensor
     };
     
     // Bewegungssensor-Zuordnung speichern
@@ -2336,7 +2682,7 @@ async function syncZones() {
     status.style.display = 'block';
     
     try {
-        const response = await fetch('/api/rooms/sync', { method: 'POST' });
+        const response = await fetch('/api/rooms/sync-homey-zones', { method: 'POST' });
         const data = await response.json();
         
         if (data.success) {
@@ -2362,7 +2708,7 @@ async function syncDevices() {
     status.style.display = 'block';
     
     try {
-        const response = await fetch('/api/rooms/sync-devices', { method: 'POST' });
+        const response = await fetch('/api/rooms/sync-device-assignments', { method: 'POST' });
         const data = await response.json();
         
         if (data.success) {
@@ -2467,7 +2813,7 @@ async function resetAllSettings() {
 }
 
 // Benachrichtigung anzeigen
-function showNotification(message, type) {
+function showNotification(message, type, duration = 3000) {
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed;
@@ -2480,14 +2826,16 @@ function showNotification(message, type) {
         z-index: 9999;
         animation: slideIn 0.3s ease;
         background: ${type === 'success' ? '#4CAF50' : '#f44336'};
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-width: 400px;
     `;
-    notification.textContent = message;
+    notification.innerHTML = message;
     document.body.appendChild(notification);
     
     setTimeout(() => {
         notification.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => notification.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 // CSS Animation
@@ -2510,13 +2858,1195 @@ window.onclick = function(event) {
     if (event.target === modal) {
         closeModal();
     }
+    const haModal = document.getElementById('ha-mapping-modal');
+    if (event.target === haModal) {
+        closeHaMappingModal();
+    }
 }
 
 // ESC-Taste zum Schließen
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         closeModal();
+        closeHaMappingModal();
     }
 });
+
+// === HA Mapping Logic ===
+let haEntities = [];
+let haMappings = {};
+
+async function loadHaMappings() {
+    const container = document.getElementById('ha-mappings-list');
+    if (!container) return;
+    
+    try {
+        const response = await fetch('/api/ha/mappings');
+        const data = await response.json();
+        haMappings = data.mappings || {};
+        
+        if (Object.keys(haMappings).length === 0) {
+            container.innerHTML = '<div class="empty-state">Keine Mappings vorhanden</div>';
+            return;
+        }
+        
+        // Prüfe auf Duplikate (gleiche Entity ID)
+        const contactCounts = {};
+        Object.values(haMappings).forEach(m => {
+            const c = m.entities?.contact;
+            if (c) contactCounts[c] = (contactCounts[c] || 0) + 1;
+        });
+
+        let html = '<table class="mapping-table"><thead><tr><th>Name</th><th>Raum</th><th>Sensoren</th><th>Aktionen</th></tr></thead><tbody>';
+        
+        // Sortiere nach Raum, dann nach Name
+        const sortedMappings = Object.entries(haMappings).sort(([, a], [, b]) => {
+            const roomCompare = a.room.localeCompare(b.room);
+            if (roomCompare !== 0) return roomCompare;
+            return a.name.localeCompare(b.name);
+        });
+        
+        for (const [id, mapping] of sortedMappings) {
+            const entities = mapping.entities || {};
+            const sensorCount = Object.keys(entities).length;
+            const contactId = entities.contact || '';
+            const shortId = contactId.split('.').pop();
+            const isDuplicate = contactCounts[contactId] > 1;
+            
+            // Status Icon
+            let statusHtml = '<span class="status-badge unknown">?</span>';
+            if (mapping.current_state) {
+                if (mapping.current_state === 'on') {
+                    statusHtml = '<span class="status-badge open" title="Offen">🔴 Offen</span>';
+                } else if (mapping.current_state === 'off') {
+                    statusHtml = '<span class="status-badge closed" title="Geschlossen">🟢 Zu</span>';
+                } else {
+                    statusHtml = `<span class="status-badge unknown">${mapping.current_state}</span>`;
+                }
+            }
+            
+            html += `
+                <tr style="${isDuplicate ? 'background-color: #fff3e0;' : ''}">
+                    <td>
+                        <div style="font-weight:500">${mapping.name}</div>
+                        <div style="font-size:0.8em;color:#888;font-family:monospace" title="${contactId}">${shortId}</div>
+                        ${isDuplicate ? '<div style="color:#e65100;font-size:0.8em;font-weight:bold">⚠️ Doppelte Zuordnung!</div>' : ''}
+                    </td>
+                    <td><strong>${mapping.room}</strong></td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            ${statusHtml}
+                            <span style="font-size:0.9em;color:#666">${sensorCount} Sensoren</span>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="btn-icon" onclick="openHaMappingModal('${id}')" title="Bearbeiten">✏️</button>
+                        <button class="btn-icon" onclick="deleteHaMapping('${id}')" title="Löschen">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        }
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error loading HA mappings:', error);
+        container.innerHTML = '<div class="error-state">Fehler beim Laden</div>';
+    }
+}
+
+async function loadHaEntities() {
+    if (haEntities.length > 0) return; // Schon geladen
+    
+    try {
+        const response = await fetch('/api/ha/available');
+        const data = await response.json();
+        if (data.success) {
+            haEntities = data.entities;
+        }
+    } catch (error) {
+        console.error('Error loading HA entities:', error);
+        showNotification('Fehler beim Laden der HA Entitäten', 'error');
+    }
+}
+
+async function openHaMappingModal(editId = null) {
+    const modal = document.getElementById('ha-mapping-modal');
+    modal.style.display = 'block';
+    
+    // Lade Entitäten wenn nötig
+    await loadHaEntities();
+    
+    // Fülle Dropdowns
+    populateEntitySelects();
+    populateRoomSelect();
+    populateBtHomeSelect(); // BTHome Sensoren laden
+    
+    // Reset Form
+    document.getElementById('ha-mapping-form').reset();
+    document.getElementById('ha-mapping-id').value = '';
+    
+    // Fenster-Select zurücksetzen
+    const windowSelect = document.getElementById('ha-window-select');
+    if (windowSelect) {
+        windowSelect.innerHTML = '<option value="">-- Erst Raum wählen --</option>';
+    }
+    
+    // Wenn Edit-Modus
+    if (editId && haMappings[editId]) {
+        const m = haMappings[editId];
+        document.getElementById('ha-mapping-id').value = editId;
+        document.getElementById('ha-mapping-name').value = m.name;
+        document.getElementById('ha-mapping-room').value = m.room;
+        
+        // Fenster für diesen Raum laden
+        populateWindowSelect(m.room);
+        
+        const entities = m.entities || {};
+        if (entities.contact) {
+            document.getElementById('ha-mapping-contact').value = entities.contact;
+            // BTHome Select setzen
+            const btSelect = document.getElementById('ha-bthome-select');
+            if (btSelect) btSelect.value = entities.contact;
+        }
+        if (entities.battery) document.getElementById('ha-mapping-battery').value = entities.battery;
+        if (entities.illuminance) document.getElementById('ha-mapping-illuminance').value = entities.illuminance;
+        if (entities.rotation) document.getElementById('ha-mapping-rotation').value = entities.rotation;
+        
+        document.querySelector('#ha-mapping-modal h3').textContent = 'Sensor bearbeiten';
+    } else {
+        document.querySelector('#ha-mapping-modal h3').textContent = 'Sensor hinzufügen';
+    }
+}
+
+function closeHaMappingModal() {
+    document.getElementById('ha-mapping-modal').style.display = 'none';
+    document.getElementById('ha-mapping-form').reset();
+}
+
+// BTHome/HA Sensoren für Schritt 3 laden
+function populateBtHomeSelect() {
+    const select = document.getElementById('ha-bthome-select');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">-- BTHome/HA Sensor wählen --</option>';
+    
+    // Bereits verwendete Sensoren ermitteln
+    const usedSensors = new Set();
+    Object.values(haMappings || {}).forEach(m => {
+        if (m.entities && m.entities.contact) {
+            usedSensors.add(m.entities.contact);
+        }
+    });
+    
+    // NUR BTHome/Shelly BLU Sensoren (binary_sensor mit shelly_blu oder bthome im Namen)
+    const btHomeSensors = haEntities.filter(e => {
+        if (e.domain !== 'binary_sensor') return false;
+        const id = e.entity_id.toLowerCase();
+        const name = e.name.toLowerCase();
+        
+        // Nur echte BTHome/Shelly BLU Sensoren
+        const isBtHome = id.includes('shelly_blu') || id.includes('bthome') || 
+                         name.includes('bthome') || name.includes('shelly blu');
+        
+        // Und es muss ein Fenster/Tür-Sensor sein
+        const isWindowDoor = id.includes('window') || id.includes('door') || id.includes('contact');
+        
+        return isBtHome && isWindowDoor;
+    });
+    
+    // Sortieren
+    btHomeSensors.sort((a, b) => a.name.localeCompare(b.name));
+    
+    btHomeSensors.forEach(sensor => {
+        const option = document.createElement('option');
+        option.value = sensor.entity_id;
+        
+        // Status
+        let status = '';
+        if (sensor.state === 'on' || sensor.state === 'open') {
+            status = '🟢 Offen';
+        } else {
+            status = '🔴 Zu';
+        }
+        
+        // Bereits verwendet?
+        if (usedSensors.has(sensor.entity_id)) {
+            option.textContent = `⛔ ${sensor.name} (bereits zugeordnet)`;
+            option.disabled = true;
+        } else {
+            option.textContent = `${sensor.name} (${status})`;
+        }
+        
+        select.appendChild(option);
+    });
+    
+    // Info aktualisieren
+    const info = document.getElementById('ha-bthome-info');
+    const available = btHomeSensors.filter(s => !usedSensors.has(s.entity_id)).length;
+    if (info) {
+        info.textContent = `${available} von ${btHomeSensors.length} BTHome Sensoren verfügbar`;
+    }
+}
+
+// Wenn BTHome Sensor gewählt wird
+function onBtHomeSelected() {
+    const select = document.getElementById('ha-bthome-select');
+    const entityId = select.value;
+    
+    if (!entityId) return;
+    
+    // Kontakt-Sensor setzen
+    document.getElementById('ha-mapping-contact').value = entityId;
+    
+    // Finde zugehörige Sensoren (battery, illuminance, rotation)
+    const baseId = entityId.replace('binary_sensor.', '').replace('_window', '').replace('_door', '').replace('_contact', '');
+    
+    haEntities.forEach(entity => {
+        if (entity.domain !== 'sensor') return;
+        
+        const eId = entity.entity_id.toLowerCase();
+        
+        if (eId.includes(baseId)) {
+            if (eId.includes('battery')) {
+                document.getElementById('ha-mapping-battery').value = entity.entity_id;
+            }
+            if (eId.includes('illuminance') || eId.includes('lux')) {
+                document.getElementById('ha-mapping-illuminance').value = entity.entity_id;
+            }
+            if (eId.includes('rotation') || eId.includes('angle')) {
+                document.getElementById('ha-mapping-rotation').value = entity.entity_id;
+            }
+        }
+    });
+    
+    // Finde den Sensor-Namen
+    const sensor = haEntities.find(e => e.entity_id === entityId);
+    if (sensor) {
+        showNotification(`✅ Sensor "${sensor.name}" ausgewählt - Batterie, Helligkeit und Rotation wurden automatisch zugeordnet`, 'success');
+    }
+}
+
+// Alle verfügbaren Fenster-Sensoren aus Home Assistant
+function getAllWindowDevices() {
+    const devices = {};;
+    
+    haEntities.forEach(entity => {
+        // Nur binary_sensor als Anker nutzen (Fenster-Kontakte)
+        if (entity.domain !== 'binary_sensor') return;
+        
+        // Prüfe ob es ein Fenster/Tür-Sensor ist
+        const entityId = entity.entity_id.toLowerCase();
+        const name = entity.name.toLowerCase();
+        if (!entityId.includes('window') && !entityId.includes('door') && !entityId.includes('contact') &&
+            !name.includes('fenster') && !name.includes('tür') && !name.includes('window') && !name.includes('door')) {
+            return;
+        }
+        
+        // Name bereinigen (Suffixe entfernen)
+        let deviceName = entity.name;
+        const suffixes = [' Window', ' Door', ' Contact', ' Opening', ' Sensor', ' Tür', ' Fenster', ' Kontakt'];
+        for (const s of suffixes) {
+            if (deviceName.endsWith(s)) {
+                deviceName = deviceName.substring(0, deviceName.length - s.length);
+                break;
+            }
+        }
+        
+        // Speichere Gerät mit entity_id als Key
+        if (!devices[entity.entity_id]) {
+            devices[entity.entity_id] = {
+                entity_id: entity.entity_id,
+                deviceName: deviceName,
+                displayName: entity.name,
+                state: entity.state
+            };
+        }
+    });
+    
+    return Object.values(devices).sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+// Fenster-Auswahl - Zeigt die Homey-Fenster für den gewählten Raum
+function populateWindowSelect(roomFilter = null) {
+    const select = document.getElementById('ha-window-select');
+    if (!select) return;
+    
+    const info = document.getElementById('ha-window-info');
+    
+    // Wenn kein Raum gewählt, Hinweis anzeigen
+    if (!roomFilter) {
+        select.innerHTML = '<option value="">-- Erst Raum wählen --</option>';
+        if (info) info.textContent = 'Wählen Sie zuerst einen Raum';
+        return;
+    }
+    
+    select.innerHTML = '<option value="">-- Fenster für ' + roomFilter + ' wählen --</option>';
+    
+    // Hole Fenster aus allWindowSensors (Homey-Fenster) für diesen Raum
+    const roomWindows = allWindowSensors.filter(w => {
+        const windowRoom = zoneIdToName[w.zone_id] || w.room_name;
+        return windowRoom === roomFilter;
+    });
+    
+    if (roomWindows.length === 0) {
+        if (info) info.innerHTML = `⚠️ Keine Fenster für "${roomFilter}" in Homey gefunden.`;
+        return;
+    }
+    
+    // Fenster anzeigen
+    roomWindows.forEach(win => {
+        const option = document.createElement('option');
+        option.value = win.device_id;
+        option.dataset.windowName = win.name;
+        
+        // Status anzeigen
+        let statusIcon = '';
+        if (win.state === 'open') {
+            statusIcon = '🟢 Offen';
+        } else if (win.state === 'tilted') {
+            statusIcon = '🟡 Gekippt';
+        } else {
+            statusIcon = '🔴 Zu';
+        }
+        
+        option.textContent = `${win.name} (${statusIcon})`;
+        select.appendChild(option);
+    });
+    
+    // Info anzeigen
+    if (info) {
+        if (roomWindows.length === 1) {
+            info.textContent = `✅ 1 Fenster für "${roomFilter}" gefunden`;
+            // Auto-select wenn nur 1 Fenster
+            select.selectedIndex = 1;
+            onWindowSelected();
+        } else {
+            info.textContent = `${roomWindows.length} Fenster für "${roomFilter}" gefunden - bitte wählen`;
+        }
+    }
+}
+
+// Automatische Sensor-Suche über MAC-Adresse (die funktionierende Methode!)
+async function autoFindSensorByMAC() {
+    const roomSelect = document.getElementById('ha-mapping-room');
+    const room = roomSelect.value;
+    
+    if (!room) {
+        showNotification('Bitte erst einen Raum wählen', 'error');
+        return;
+    }
+    
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Suche...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/ha/find-sensor-for-room', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room: room })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Sensor gefunden! Fülle Formular aus
+            if (data.entities && data.entities.length > 0) {
+                // Nutze HA Friendly Name wenn verfügbar, sonst Homey Name
+                const nameToUse = data.ha_friendly_name || data.device_name;
+                autoFillMapping(data.entities, nameToUse);
+                
+                // BTHome Select vorauswählen
+                const btHomeSelect = document.getElementById('ha-bthome-select');
+                const contactEntity = data.entities.find(e => e.entity_id.includes('binary_sensor'));
+                
+                if (btHomeSelect && contactEntity) {
+                    btHomeSelect.value = contactEntity.entity_id;
+                    
+                    // Prüfen ob Auswahl erfolgreich war
+                    if (btHomeSelect.value !== contactEntity.entity_id) {
+                        console.warn("Sensor nicht in Liste gefunden:", contactEntity.entity_id);
+                        // Versuche Option hinzuzufügen falls sie fehlt (z.B. weil Filter zu strikt)
+                        const option = document.createElement('option');
+                        option.value = contactEntity.entity_id;
+                        option.textContent = `${contactEntity.friendly_name || contactEntity.name} (${contactEntity.entity_id}) (Neu)`;
+                        btHomeSelect.appendChild(option);
+                        btHomeSelect.value = contactEntity.entity_id;
+                    }
+                    
+                    const btHomeInfo = document.getElementById('ha-bthome-info');
+                    if (btHomeInfo) {
+                        btHomeInfo.innerHTML = `✅ <strong>${contactEntity.friendly_name || data.device_name}</strong> zugeordnet<br><small>ID: ${contactEntity.entity_id}</small>`;
+                    }
+                    
+                    // Update Name field to be more descriptive if user wants
+                    document.getElementById('ha-mapping-name').value = nameToUse;
+                }
+                
+                showNotification(`✅ BTHome Sensor gefunden: ${nameToUse}`, 'success');
+            }
+            
+            // Wenn mehrere Kandidaten
+            if (data.alternatives && data.alternatives.length > 0) {
+                window.foundCandidates = [
+                    { device_name: data.device_name, entities: data.entities },
+                    ...data.alternatives
+                ];
+                showNotification(`${data.alternatives.length + 1} Sensoren gefunden - bitte wählen`, 'info');
+                showCandidateSelection();
+            }
+        } else {
+            let errorMsg = data.error || 'Kein BTHome Sensor gefunden';
+            
+            if (data.available_devices && data.available_devices.length > 0) {
+                errorMsg += '<br><br><strong>Gefundene BTHome Geräte (aber kein Match):</strong><br>';
+                errorMsg += '<ul style="text-align:left; margin-top:5px; max-height:300px; overflow-y:auto; padding-left: 20px; font-size: 0.9em;">';
+                data.available_devices.forEach(dev => {
+                    errorMsg += `<li>${dev.name} <br><small style="opacity:0.8">${dev.id}</small></li>`;
+                });
+                errorMsg += '</ul>';
+                
+                // Show for longer if we have a list
+                showNotification(errorMsg, 'error', 15000);
+                // Hack to keep it visible longer? showNotification doesn't take duration in this implementation
+                // But the user can read it.
+            } else {
+                showNotification(errorMsg, 'error');
+            }
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Fehler bei der Suche', 'error');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Wenn Raum gewählt wird, Fenster filtern
+async function onRoomSelected() {
+    const roomSelect = document.getElementById('ha-mapping-room');
+    const roomName = roomSelect.value;
+    
+    if (!roomName) return;
+    
+    // Fenster-Liste filtern
+    populateWindowSelect(roomName);
+    
+    // Name vorausfüllen
+    const nameInput = document.getElementById('ha-mapping-name');
+    if (!nameInput.value) {
+        nameInput.value = roomName + ' Fenster';
+    }
+    
+    // BTHome Sensoren Liste laden
+    populateBtHomeSelect();
+}
+
+// Wenn Fenster gewählt wird - Name setzen, aber NICHT automatisch BTHome Sensor wählen
+function onWindowSelected() {
+    const windowSelect = document.getElementById('ha-window-select');
+    const selectedDeviceId = windowSelect.value;
+    const selectedOption = windowSelect.options[windowSelect.selectedIndex];
+    
+    if (!selectedDeviceId) return;
+    
+    // Hole den Fenster-Namen aus dem data-Attribut oder dem Option-Text
+    const windowName = selectedOption.dataset.windowName || selectedOption.textContent.split('(')[0].trim();
+    
+    // Name setzen
+    const nameInput = document.getElementById('ha-mapping-name');
+    nameInput.value = windowName;
+    
+    // Info für Schritt 3 aktualisieren - User soll manuell wählen
+    const btHomeInfo = document.getElementById('ha-bthome-info');
+    if (btHomeInfo) {
+        btHomeInfo.innerHTML = `⬇️ Bitte BTHome Sensor für "<strong>${windowName}</strong>" wählen`;
+    }
+    
+    showNotification(`Fenster "${windowName}" ausgewählt - bitte BTHome Sensor in Schritt 3 wählen`, 'info');
+}
+
+function populateQuickDeviceSelect(filterText = null) {
+    const select = document.getElementById('ha-quick-device-select');
+    if (!select) return;
+    
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- Gerät aus Liste wählen --</option>';
+    
+    // Gruppiere Entitäten zu Geräten
+    const devices = {};
+    
+    haEntities.forEach(entity => {
+        // Nur binary_sensor als Anker nutzen
+        if (entity.domain !== 'binary_sensor') return;
+        
+        // Name bereinigen (Suffixe entfernen)
+        let name = entity.name;
+        const suffixes = [' Window', ' Door', ' Contact', ' Opening', ' Sensor', ' Tür', ' Fenster', ' Kontakt'];
+        for (const s of suffixes) {
+            if (name.endsWith(s)) {
+                name = name.substring(0, name.length - s.length);
+                break;
+            }
+        }
+        
+        // Speichere Gerät
+        if (!devices[name]) {
+            devices[name] = {
+                name: name,
+                contact: entity.entity_id,
+                entities: []
+            };
+        }
+        devices[name].entities.push(entity);
+    });
+    
+    // Sortiere Geräte
+    const sortedDevices = Object.values(devices).sort((a, b) => a.name.localeCompare(b.name));
+    
+    sortedDevices.forEach(dev => {
+        // Filter logic
+        if (filterText) {
+            const search = filterText.toLowerCase();
+            // Einfacher Check: Name enthält Filter-Text
+            if (!dev.name.toLowerCase().includes(search)) {
+                return;
+            }
+        }
+
+        const option = document.createElement('option');
+        option.value = dev.name; // Wir nutzen den Namen als Key
+        option.textContent = dev.name;
+        select.appendChild(option);
+    });
+
+    // Restore selection if possible
+    if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
+        select.value = currentVal;
+    }
+}
+
+function filterDevicesByRoom() {
+    const roomSelect = document.getElementById('ha-mapping-room');
+    const roomName = roomSelect.value;
+    populateQuickDeviceSelect(roomName);
+}
+
+function selectQuickDevice(deviceName) {
+    if (!deviceName) return;
+    
+    // Finde alle Entitäten die zu diesem Namen passen könnten
+    const relevantEntities = haEntities.filter(e => e.name.startsWith(deviceName));
+    
+    if (relevantEntities.length > 0) {
+        autoFillMapping(relevantEntities, deviceName);
+        showNotification(`Gerät "${deviceName}" ausgewählt`, 'success');
+    }
+}
+
+function populateEntitySelects() {
+    const selects = {
+        'contact': document.getElementById('ha-mapping-contact'),
+        'battery': document.getElementById('ha-mapping-battery'),
+        'illuminance': document.getElementById('ha-mapping-illuminance'),
+        'rotation': document.getElementById('ha-mapping-rotation')
+    };
+    
+    // Reset options
+    for (const select of Object.values(selects)) {
+        select.innerHTML = '<option value="">-- Sensor wählen --</option>';
+    }
+    
+    // Sortiere Entitäten alphabetisch
+    const sortedEntities = [...haEntities].sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Filter entities
+    sortedEntities.forEach(entity => {
+        const option = document.createElement('option');
+        option.value = entity.entity_id;
+        
+        // Status und Einheit ermitteln
+        const state = entity.current_state || entity.state;
+        const unit = entity.attributes && entity.attributes.unit_of_measurement ? entity.attributes.unit_of_measurement : '';
+        const stateStr = state !== undefined && state !== null ? `: ${state}${unit}` : '';
+        
+        option.textContent = `${entity.name} (${entity.entity_id})${stateStr}`;
+        
+        // Contact: binary_sensor
+        if (entity.domain === 'binary_sensor') {
+            selects.contact.appendChild(option.cloneNode(true));
+        }
+        
+        // Others: sensor
+        if (entity.domain === 'sensor') {
+            selects.battery.appendChild(option.cloneNode(true));
+            selects.illuminance.appendChild(option.cloneNode(true));
+            selects.rotation.appendChild(option.cloneNode(true));
+        }
+    });
+}
+
+function populateRoomSelect() {
+    const select = document.getElementById('ha-mapping-room');
+    select.innerHTML = '<option value="">-- Raum wählen --</option>';
+    
+    // Nutze globale allRooms Variable
+    if (typeof allRooms !== 'undefined') {
+        allRooms.forEach(roomName => {
+            const option = document.createElement('option');
+            option.value = roomName;
+            option.textContent = roomName;
+            select.appendChild(option);
+        });
+    }
+}
+
+async function saveHaMapping(event) {
+    event.preventDefault();
+    
+    const id = document.getElementById('ha-mapping-id').value;
+    const name = document.getElementById('ha-mapping-name').value;
+    const room = document.getElementById('ha-mapping-room').value;
+    
+    const entities = {};
+    const contact = document.getElementById('ha-mapping-contact').value;
+    if (contact) entities.contact = contact;
+    
+    const battery = document.getElementById('ha-mapping-battery').value;
+    if (battery) entities.battery = battery;
+    
+    const illuminance = document.getElementById('ha-mapping-illuminance').value;
+    if (illuminance) entities.illuminance = illuminance;
+    
+    const rotation = document.getElementById('ha-mapping-rotation').value;
+    if (rotation) entities.rotation = rotation;
+    
+    if (!contact) {
+        showNotification('Kontakt-Sensor ist erforderlich', 'error');
+        return;
+    }
+    
+    try {
+        const payload = {
+            name,
+            room,
+            type: 'window',
+            source: 'ha',
+            entities
+        };
+        
+        if (id) payload.id = id;
+        
+        const response = await fetch('/api/ha/mappings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showNotification('Mapping gespeichert', 'success');
+            closeHaMappingModal();
+            loadHaMappings();
+        } else {
+            showNotification('Fehler: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showNotification('Fehler beim Speichern', 'error');
+    }
+}
+
+async function deleteHaMapping(id) {
+    if (!confirm('Mapping wirklich löschen?')) return;
+    
+    try {
+        const response = await fetch(`/api/ha/mappings/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showNotification('Mapping gelöscht', 'success');
+            loadHaMappings();
+        }
+    } catch (error) {
+        showNotification('Fehler beim Löschen', 'error');
+    }
+}
+
+// Initial laden wenn Tab aktiv
+document.addEventListener('DOMContentLoaded', () => {
+    // Hook into existing tab switch logic if possible, or just load lazily
+    // For now, load on init
+    loadHaMappings();
+});
+
+async function autoDetectRoom() {
+    const name = document.getElementById('ha-mapping-name').value;
+    if (!name) {
+        showNotification('Bitte erst ein Gerät auswählen', 'error');
+        return;
+    }
+    
+    const btn = document.getElementById('btn-auto-detect');
+    const originalText = btn.textContent;
+    btn.textContent = 'Suche...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/ha/match-room', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.room) {
+            const select = document.getElementById('ha-mapping-room');
+            select.value = data.room;
+            showNotification(`Raum gefunden: ${data.room}`, 'success');
+        } else {
+            showNotification(data.error || 'Kein Raum gefunden', 'error');
+        }
+    } catch (error) {
+        showNotification('Fehler bei der Suche', 'error');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function searchMappingIntegration() {
+    const query = document.getElementById('ha-mapping-search').value.trim();
+    const resultsDiv = document.getElementById('ha-search-results');
+    
+    if (!query) return;
+    
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = '<div class="loading">Suche...</div>';
+    
+    try {
+        const response = await fetch('/api/ha/search-integration', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ integration: query })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.entities.length > 0) {
+            // Gruppiere nach Device Name (versuche gemeinsamen Präfix zu finden)
+            const devices = {};
+            
+            data.entities.forEach(entity => {
+                // Versuche Gerätenamen zu extrahieren
+                // z.B. "Wohnzimmer Fenster Battery" -> "Wohnzimmer Fenster"
+                let deviceName = entity.friendly_name;
+                
+                // Erweiterte Liste von Suffixen für bessere Gruppierung
+                const suffixes = [
+                    ' Battery', ' Illuminance', ' Rotation', ' Window', ' Door', ' Contact', 
+                    ' Temperature', ' Humidity', ' Button', ' Pressure', ' Power', ' Energy', 
+                    ' Voltage', ' Current', ' Opening', ' Motion', ' Occupancy', ' Vibration', 
+                    ' Tilt', ' State', ' Status', ' Lux', ' Level', ' Switch', ' Light',
+                    ' Identification', ' Identify', ' Problem', ' Tamper'
+                ];
+                
+                // Sortiere nach Länge absteigend, um längste Matches zuerst zu finden
+                suffixes.sort((a, b) => b.length - a.length);
+                
+                for (const suffix of suffixes) {
+                    if (deviceName.toLowerCase().endsWith(suffix.toLowerCase())) {
+                        deviceName = deviceName.substring(0, deviceName.length - suffix.length);
+                        break;
+                    }
+                }
+                
+                if (!devices[deviceName]) {
+                    devices[deviceName] = [];
+                }
+                devices[deviceName].push(entity);
+            });
+            
+            let html = '<div class="search-results-list">';
+            
+            for (const [deviceName, entities] of Object.entries(devices)) {
+                html += `
+                    <div class="search-result-item" style="padding: 8px; border-bottom: 1px solid #eee; cursor: pointer; hover: background: #f5f5f5;"
+                         onclick='autoFillMapping(${JSON.stringify(entities).replace(/'/g, "&#39;")}, "${deviceName.replace(/"/g, "&quot;")}")'>
+                        <div style="font-weight: bold;">${deviceName}</div>
+                        <div style="font-size: 0.8em; color: #666;">${entities.length} Entitäten gefunden</div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = '<div class="error-message">Keine Ergebnisse gefunden</div>';
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = '<div class="error-message">Fehler bei der Suche</div>';
+    }
+}
+
+function autoFillMapping(entities, deviceName) {
+    // Setze Name
+    document.getElementById('ha-mapping-name').value = deviceName;
+    
+    // Reset Selects
+    const selects = {
+        'contact': document.getElementById('ha-mapping-contact'),
+        'battery': document.getElementById('ha-mapping-battery'),
+        'illuminance': document.getElementById('ha-mapping-illuminance'),
+        'rotation': document.getElementById('ha-mapping-rotation')
+    };
+    
+    // Leere Dropdowns und fülle sie NUR mit den gefundenen Entitäten
+    for (const select of Object.values(selects)) {
+        select.innerHTML = '<option value="">-- Sensor wählen --</option>';
+    }
+    
+    // Fülle Dropdowns mit den Entitäten dieses Geräts
+    entities.forEach(entity => {
+        const option = document.createElement('option');
+        option.value = entity.entity_id;
+        
+        // Status und Einheit ermitteln
+        const state = entity.state;
+        const unit = entity.attributes && entity.attributes.unit_of_measurement ? entity.attributes.unit_of_measurement : '';
+        const stateStr = state !== undefined && state !== null ? `: ${state}${unit}` : '';
+        
+        // Verwende friendly_name (von API) oder name als Fallback
+        const displayName = entity.friendly_name || entity.name || entity.entity_id;
+        option.textContent = `${displayName} (${entity.entity_id})${stateStr}`;
+        
+        // Contact: binary_sensor
+        if (entity.domain === 'binary_sensor') {
+            selects.contact.appendChild(option.cloneNode(true));
+        }
+        
+        // Others: sensor
+        if (entity.domain === 'sensor') {
+            selects.battery.appendChild(option.cloneNode(true));
+            selects.illuminance.appendChild(option.cloneNode(true));
+            selects.rotation.appendChild(option.cloneNode(true));
+        }
+    });
+    
+    // Versuche Entitäten automatisch auszuwählen (Best Match)
+    entities.forEach(entity => {
+        const id = entity.entity_id;
+        const name = (entity.friendly_name || '').toLowerCase();
+        const domain = entity.domain;
+        const deviceClass = entity.attributes?.device_class || entity.device_class || '';
+        
+        // Contact
+        if (domain === 'binary_sensor' && (deviceClass === 'window' || deviceClass === 'door' || deviceClass === 'opening' || name.includes('window') || name.includes('contact'))) {
+            selects.contact.value = id;
+        }
+        
+        // Battery
+        if (deviceClass === 'battery' || name.includes('battery')) {
+            selects.battery.value = id;
+        }
+        
+        // Illuminance
+        if (deviceClass === 'illuminance' || name.includes('illuminance') || name.includes('lux')) {
+            selects.illuminance.value = id;
+        }
+        
+        // Rotation
+        if (name.includes('rotation') || name.includes('tilt') || name.includes('angle')) {
+            selects.rotation.value = id;
+        }
+    });
+    
+    // Verstecke Suchergebnisse
+    document.getElementById('ha-search-results').style.display = 'none';
+    showNotification('Formular mit Geräte-Entitäten ausgefüllt!', 'success');
+    
+    // Versuche Raum automatisch zu erkennen
+    autoDetectRoom();
+}
+
+function showCandidateSelection() {
+    if (!window.foundCandidates || window.foundCandidates.length < 2) return;
+    
+    let html = `
+        <div id="candidate-modal" class="modal" style="display:block; z-index: 10000;">
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h3>Sensor auswählen</h3>
+                    <span class="close" onclick="document.getElementById('candidate-modal').remove()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="list-group">
+    `;
+    
+    window.foundCandidates.forEach((cand, index) => {
+        html += `
+            <div class="search-result-item" onclick="selectCandidate(${index})" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
+                <strong>${cand.device_name}</strong>
+                ${cand.score ? `<br><small>Score: ${cand.score}</small>` : ''}
+            </div>
+        `;
+    });
+    
+    html += `
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function selectCandidate(index) {
+    const cand = window.foundCandidates[index];
+    if (cand) {
+        autoFillMapping(cand.entities, cand.device_name);
+        const modal = document.getElementById('candidate-modal');
+        if (modal) modal.remove();
+        showNotification(`Ausgewählt: ${cand.device_name}`, 'success');
+    }
+}
+
+async function searchSensorInModal() {
+    const searchInput = document.getElementById('ha-sensor-search');
+    const searchTerm = searchInput.value.trim();
+    const roomSelect = document.getElementById('ha-mapping-room');
+    const room = roomSelect.value;
+    
+    if (!searchTerm) {
+        showNotification('Bitte Suchbegriff eingeben', 'error');
+        return;
+    }
+    
+    // Use findSensorForRoom logic but with explicit search term
+    const btn = document.querySelector('.sensor-search-helper button');
+    const originalText = btn.textContent;
+    btn.textContent = 'Suche...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/ha/find-sensor-for-room', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                room: room || 'Unknown', // Room is optional for search if term is provided
+                search_term: searchTerm
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Handle multiple candidates
+            if (data.alternatives && data.alternatives.length > 0) {
+                window.foundCandidates = [
+                    { device_name: data.device_name, entities: data.entities },
+                    ...data.alternatives
+                ];
+                showCandidateSelection();
+            } else {
+                autoFillMapping(data.entities, data.device_name);
+                showNotification(`Sensor gefunden: ${data.device_name}`, 'success');
+            }
+        } else {
+            showNotification(data.error || 'Kein Sensor gefunden', 'error');
+        }
+    } catch (error) {
+        showNotification('Fehler bei der Suche', 'error');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function findSensorForRoom() {
+    const roomSelect = document.getElementById('ha-mapping-room');
+    const room = roomSelect.value;
+    const nameInput = document.getElementById('ha-mapping-name');
+    const searchTerm = nameInput.value.trim();
+    
+    if (!room) {
+        showNotification('Bitte erst einen Raum auswählen', 'error');
+        return;
+    }
+    
+    const btn = document.getElementById('btn-find-sensor');
+    const originalText = btn.textContent;
+    btn.textContent = 'Suche...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/ha/find-sensor-for-room', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                room: room,
+                search_term: searchTerm
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.alternatives && data.alternatives.length > 0) {
+                // Multiple candidates found - Show selection dialog
+                let html = `
+                    <div style="margin-bottom: 15px;">
+                        <p>Es wurden mehrere mögliche Sensoren für diesen Raum gefunden. Bitte wählen Sie den richtigen aus:</p>
+                        <div class="list-group">
+                            <!-- Best Match -->
+                            <a href="#" class="list-group-item list-group-item-action active" onclick="selectCandidate(0)">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h5 class="mb-1">${data.device_name}</h5>
+                                    <small>Score: ${data.entities[0] ? 'Best' : ''}</small>
+                                </div>
+                                <p class="mb-1">Automatisch ausgewählt (Bester Treffer)</p>
+                            </a>
+                `;
+                
+                data.alternatives.forEach((alt, index) => {
+                    html += `
+                        <a href="#" class="list-group-item list-group-item-action" onclick="selectCandidate(${index + 1})">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">${alt.device_name}</h5>
+                                <small>Score: ${alt.score}</small>
+                            </div>
+                        </a>
+                    `;
+                });
+                
+                html += `</div></div>`;
+                
+                // Store candidates globally to access them in selectCandidate
+                window.foundCandidates = [
+                    { device_name: data.device_name, entities: data.entities },
+                    ...data.alternatives
+                ];
+                
+                // Show custom modal or replace content of current modal temporarily
+                // For simplicity, we use the notification area or a new overlay
+                // But better: Just fill the form with the best one, and show a "Switch Device" dropdown if multiple
+                
+                showNotification(`Sensor gefunden: ${data.device_name}. <br><button class='btn btn-sm btn-light mt-2' onclick='showCandidateSelection()'>Anderen Sensor wählen</button>`, 'success', 10000);
+                
+            } else {
+                showNotification(`Sensor gefunden: ${data.device_name}`, 'success');
+            }
+            autoFillMapping(data.entities, data.device_name);
+        } else {
+            showNotification(data.error || 'Kein Sensor gefunden', 'error');
+        }
+    } catch (error) {
+        showNotification('Fehler bei der Suche', 'error');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
 </script>
+
+<!-- HA Mapping Modal -->
+<div id="ha-mapping-modal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3>Home Assistant Sensor Mapping</h3>
+            <span class="close" onclick="closeHaMappingModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            
+            <!-- Schritt 1: Raum wählen -->
+            <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #2196F3;">
+                <h4 style="margin-top: 0; color: #1565C0;">🏠 Schritt 1: Raum wählen</h4>
+                <select id="ha-mapping-room" required style="width: 100%; padding: 10px; font-size: 16px;" onchange="onRoomSelected()">
+                    <option value="">-- Raum wählen --</option>
+                </select>
+            </div>
+            
+            <!-- Schritt 2: Fenster wählen -->
+            <div style="background: #e8f5e9; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #4CAF50;">
+                <h4 style="margin-top: 0; color: #2E7D32;">🪟 Schritt 2: Fenster im Raum wählen</h4>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="ha-window-select" style="flex: 1; padding: 10px; font-size: 16px;" onchange="onWindowSelected()">
+                        <option value="">-- Erst Raum wählen --</option>
+                    </select>
+                    <button type="button" class="btn btn-primary" onclick="autoFindSensorByMAC()" title="BTHome Sensor automatisch über MAC-Adresse finden" style="padding: 10px 15px;">🔍 Auto</button>
+                </div>
+                <small id="ha-window-info" style="display: block; margin-top: 8px; color: #666;">Wählen Sie zuerst einen Raum</small>
+            </div>
+            
+            <!-- Schritt 3: BTHome Sensor wählen -->
+            <div style="background: #fff3e0; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #FF9800;">
+                <h4 style="margin-top: 0; color: #E65100;">📡 Schritt 3: Home Assistant Sensor wählen</h4>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="ha-bthome-select" style="flex: 1; padding: 10px; font-size: 16px;" onchange="onBtHomeSelected()">
+                        <option value="">-- BTHome/HA Sensor wählen --</option>
+                    </select>
+                    <button type="button" class="btn btn-secondary" onclick="populateBtHomeSelect()" title="Liste aktualisieren" style="padding: 10px 15px;">🔄</button>
+                </div>
+                <small id="ha-bthome-info" style="display: block; margin-top: 8px; color: #666;">Verfügbare Sensoren aus Home Assistant</small>
+            </div>
+
+            <form id="ha-mapping-form" onsubmit="saveHaMapping(event)">
+                <input type="hidden" id="ha-mapping-id">
+                
+                <div class="form-group">
+                    <label>Name für diese Zuordnung:</label>
+                    <input type="text" id="ha-mapping-name" placeholder="z.B. Wohnzimmer Fenster Links" required style="width: 100%; padding: 8px;">
+                </div>
+                
+                <details style="margin: 15px 0; padding: 10px; background: #f5f5f5; border-radius: 8px;">
+                    <summary style="cursor: pointer; font-weight: bold;">⚙️ Erweiterte Sensor-Einstellungen (optional)</summary>
+                    <div style="margin-top: 15px;">
+                        <div class="form-group">
+                            <label>Kontakt-Sensor:</label>
+                            <select id="ha-mapping-contact" required class="entity-select" style="width: 100%">
+                                <option value="">-- Sensor wählen --</option>
+                            </select>
+                            <small>Binary Sensor für Fenster offen/zu</small>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Batterie:</label>
+                                <select id="ha-mapping-battery" class="entity-select" style="width: 100%">
+                                    <option value="">-- Optional --</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" style="flex: 1;">
+                                <label>Helligkeit:</label>
+                                <select id="ha-mapping-illuminance" class="entity-select" style="width: 100%">
+                                    <option value="">-- Optional --</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Rotation/Winkel:</label>
+                            <select id="ha-mapping-rotation" class="entity-select" style="width: 100%">
+                                <option value="">-- Optional --</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
+                
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeHaMappingModal()">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">💾 Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

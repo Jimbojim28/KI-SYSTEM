@@ -1312,27 +1312,47 @@ async function loadAllWindowStatuses() {
             `;
         }
 
-        // Zeige alle Fenster in einem Grid
-        const windowsHTML = windowData.map(window => {
-            const isOpen = window.is_open;
-            const icon = isOpen ? '🔴' : '🟢';
-            const statusText = isOpen ? '⚠️ Geöffnet' : '✓ Geschlossen';
-            const bgColor = isOpen ? '#fef3c7' : '#f0fdf4';
-            const borderColor = isOpen ? '#f59e0b' : '#10b981';
-            const textColor = isOpen ? '#92400e' : '#065f46';
+        // Gruppiere Fenster nach Raum
+        const windowsByRoom = {};
+        windowData.forEach(w => {
+            const room = w.room_name || 'Unbekannt';
+            if (!windowsByRoom[room]) windowsByRoom[room] = [];
+            windowsByRoom[room].push(w);
+        });
+
+        // Generiere HTML für Räume
+        const roomsHTML = Object.keys(windowsByRoom).sort().map(room => {
+            const windows = windowsByRoom[room];
+            const openWindowsInRoom = windows.filter(w => w.is_open);
+            const isRoomOpen = openWindowsInRoom.length > 0;
+            
+            const icon = isRoomOpen ? '🔴' : '🟢';
+            const statusText = isRoomOpen ? '⚠️ Geöffnet' : '✓ Geschlossen';
+            const bgColor = isRoomOpen ? '#fef3c7' : '#f0fdf4';
+            const borderColor = isRoomOpen ? '#f59e0b' : '#10b981';
+            const textColor = isRoomOpen ? '#92400e' : '#065f46';
+            
+            // Details für Tooltip/Expand
+            const details = windows.map(w => 
+                `<div style="display:flex; justify-content:space-between; font-size:0.8em; margin-top:4px; color:#555;">
+                    <span>${w.device_name}</span>
+                    <span>${w.is_open ? '🔴' : '🟢'}</span>
+                 </div>`
+            ).join('');
 
             return `
                 <div style="padding: 15px; background: ${bgColor}; border-radius: 8px; border: 1px solid ${borderColor};">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                         <span style="font-size: 1.5em;">${icon}</span>
                         <div style="flex: 1;">
-                            <div style="font-weight: 600; color: #1f2937;">${window.device_name}</div>
-                            <div style="font-size: 0.85em; color: ${textColor}; font-weight: 600;">${statusText}</div>
+                            <div style="font-weight: 600; color: #1f2937;">${room}</div>
+                            <div style="font-size: 0.85em; color: ${textColor}; font-weight: 600;">
+                                ${statusText} <span style="font-weight:normal; color:#666;">(${windows.length} Sensoren)</span>
+                            </div>
                         </div>
                     </div>
-                    <div style="font-size: 0.75em; color: #6b7280; display: flex; align-items: center; gap: 5px;">
-                        <span>🏠</span>
-                        <span>${window.room_name || 'Ohne Raum'}</span>
+                    <div style="border-top: 1px solid rgba(0,0,0,0.05); margin-top: 8px; padding-top: 8px;">
+                        ${details}
                     </div>
                 </div>
             `;
@@ -1341,7 +1361,7 @@ async function loadAllWindowStatuses() {
         container.innerHTML = `
             ${headerHTML}
             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
-                ${windowsHTML}
+                ${roomsHTML}
             </div>
         `;
 

@@ -2,18 +2,21 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.9-blue.svg)](https://github.com/dein-username/KI-SYSTEM/releases)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/dein-username/KI-SYSTEM/releases)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Ein intelligentes Machine Learning-basiertes System zur automatischen Steuerung von Beleuchtung, Heizung und anderen Smart-Home-Geräten. Das System lernt aus deinem Verhalten und optimiert automatisch Energieverbrauch und Komfort.
 
-**Version:** 0.9 | **Unterstützte Plattformen:** 🏠 Home Assistant · 🔷 Homey Pro
+**Version:** 1.0.0 | **Unterstützte Plattformen:** 🏠 Home Assistant · 🔷 Homey Pro
 
 [Features](#features) · [Installation](#installation) · [Web-Dashboard](#web-dashboard) · [Dokumentation](#dokumentation) · [Contributing](CONTRIBUTING.md)
 
-## 🆕 Was ist neu in Version 0.9?
+## 🆕 Was ist neu in Version 1.0.0?
 
+- **🔧 Zentralisierte Sensor-Verwaltung**: Einfache Verwaltung von Sensoren aus Homey und Home Assistant an einem Ort.
+- **👁️ Ignore-Funktion**: Sensoren und Fenster können nun explizit ignoriert werden, um Duplikate oder fehlerhafte Geräte auszublenden.
+- **🏠 Verbesserte Raumverwaltung**: Neue UI-Optionen zur Feinjustierung der Raum-Konfiguration.
 - **⚙️ Live-Konfiguration**: Einstellungen direkt im Web-Interface ändern (ohne YAML-Editing)
 - **📊 Live Training Progress**: Echtzeit-Fortschrittsanzeige beim ML-Modell-Training mit Progress-Bar
 - **🧹 Datenmanagement**: Trainingsdaten löschen und Modelle neu trainieren über Web-UI

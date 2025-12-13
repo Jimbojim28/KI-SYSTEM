@@ -1,12 +1,7 @@
 // Bathroom Automation JavaScript
 
-let allDevices = [];
 let allRooms = [];
-let zoneNameMap = {};
 let selectedRoomId = '';
-let devicesCache = null;
-let devicesCacheTime = 0;
-const CACHE_DURATION = 60000; // 60 Sekunden Cache
 
 // Countdown Timer
 let countdownInterval = null;
@@ -63,56 +58,23 @@ function restoreLastMainTab() {
 
 // ===== END MAIN TAB NAVIGATION =====
 
-// Lade alle Geräte und Räume (mit Caching)
-async function loadDevices() {
+// Lade alle Räume
+async function loadRooms() {
     try {
-        const now = Date.now();
-
-        // Verwende Cache wenn vorhanden und nicht älter als CACHE_DURATION
-        if (devicesCache && (now - devicesCacheTime) < CACHE_DURATION) {
-            allDevices = devicesCache;
-            populateDeviceSelectors();
-            return;
-        }
-
-        // Lade Geräte und Räume parallel
-        const [devicesData, roomsData] = await Promise.all([
-            fetchJSON('/api/devices'),
-            fetchJSON('/api/rooms')
-        ]);
-
-        allDevices = devicesData.devices;
+        const roomsData = await fetchJSON('/api/rooms');
         allRooms = roomsData.rooms || [];
-
-        // Erstelle Zone-ID zu Name Mapping
-        zoneNameMap = {};
-        allRooms.forEach(room => {
-            zoneNameMap[room.id] = room.name;
-        });
-
-        // Füge Raumnamen zu Geräten hinzu
-        allDevices.forEach(device => {
-            const zoneId = device.attributes?.zone || device.zone;
-            device.zoneName = zoneId ? zoneNameMap[zoneId] : 'Ohne Raum';
-            device.zoneId = zoneId;
-        });
-
-        devicesCache = allDevices;
-        devicesCacheTime = now;
-
-        populateRoomFilter();
-        populateDeviceSelectors();
+        populateRoomSelect();
     } catch (error) {
-        console.error('Error loading devices:', error);
+        console.error('Error loading rooms:', error);
     }
 }
 
-// Fülle Raum-Filter
-function populateRoomFilter() {
-    const select = document.getElementById('room-filter');
+// Fülle Raum-Auswahl
+function populateRoomSelect() {
+    const select = document.getElementById('room-select');
     if (!select) return;
 
-    // Keep the first "-- Alle Räume --" option
+    // Keep the first "-- Raum auswählen --" option
     const firstOption = select.options[0];
     select.innerHTML = '';
     select.appendChild(firstOption);
@@ -120,94 +82,10 @@ function populateRoomFilter() {
     // Sortiere Räume alphabetisch
     const sortedRooms = [...allRooms].sort((a, b) => a.name.localeCompare(b.name));
 
-    let badRoomId = null;
-
     sortedRooms.forEach(room => {
         const option = document.createElement('option');
         option.value = room.id;
         option.textContent = `${room.icon || '🏠'} ${room.name}`;
-        select.appendChild(option);
-
-        // Merke Bad-Raum ID (suche nach "bad" im Namen, case-insensitive)
-        if (room.name.toLowerCase().includes('bad')) {
-            badRoomId = room.id;
-        }
-    });
-
-    // Setze "Bad" als Standard-Auswahl wenn gefunden
-    if (badRoomId) {
-        select.value = badRoomId;
-        selectedRoomId = badRoomId;
-        // Aktualisiere Geräte-Auswahl mit Bad-Filter
-        populateDeviceSelectors();
-    }
-}
-
-// Fülle Device-Auswahl
-function populateDeviceSelectors() {
-    // Helper function to check if device has a capability
-    const hasCap = (device, capName) => {
-        const caps = device.attributes?.capabilities || {};
-        return caps.hasOwnProperty(capName);
-    };
-
-    // Helper function to filter by room
-    const filterByRoom = (devices) => {
-        if (!selectedRoomId) return devices;
-        return devices.filter(d => d.zoneId === selectedRoomId);
-    };
-
-    // Luftfeuchtigkeit-Sensoren (nur Sensoren mit humidity capability)
-    const humiditySensors = filterByRoom(allDevices.filter(d => hasCap(d, 'measure_humidity')));
-    populateSelect('humidity-sensor', humiditySensors);
-
-    // Temperatur-Sensoren
-    const tempSensors = filterByRoom(allDevices.filter(d => hasCap(d, 'measure_temperature')));
-    populateSelect('temperature-sensor', tempSensors);
-
-    // Luftentfeuchter (Nur einfache On/Off Geräte - keine Thermostate!)
-    const dehumidifiers = filterByRoom(allDevices.filter(d => {
-        // Muss onoff haben
-        if (!hasCap(d, 'onoff')) return false;
-        // Darf KEIN Thermostat sein (kein target_temperature)
-        if (hasCap(d, 'target_temperature')) return false;
-        // Sollte switch oder socket sein
-        return d.domain === 'switch' || d.domain === 'socket';
-    }));
-    populateSelect('dehumidifier', dehumidifiers);
-
-    // Heizungen/Thermostate (mit target_temperature capability)
-    const heaters = filterByRoom(allDevices.filter(d => hasCap(d, 'target_temperature')));
-    populateSelect('heater', heaters);
-
-    // Bewegungssensoren
-    const motionSensors = filterByRoom(allDevices.filter(d => hasCap(d, 'alarm_motion')));
-    populateSelect('motion-sensor', motionSensors);
-
-    // Tür-Sensoren
-    const doorSensors = filterByRoom(allDevices.filter(d => hasCap(d, 'alarm_contact')));
-    populateSelect('door-sensor', doorSensors);
-
-    // Fenster-Sensoren
-    const windowSensors = filterByRoom(allDevices.filter(d => hasCap(d, 'alarm_contact')));
-    populateSelect('window-sensor', windowSensors);
-}
-
-function populateSelect(selectId, devices) {
-    const select = document.getElementById(selectId);
-    if (!select) return;
-
-    // Keep the first "-- ... --" option
-    const firstOption = select.options[0];
-    select.innerHTML = '';
-    select.appendChild(firstOption);
-
-    devices.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.id;
-        // Zone kann in attributes.zone sein
-        const zoneName = device.attributes?.zone_name || device.zone || 'Kein Raum';
-        option.textContent = `${device.name} (${zoneName})`;
         select.appendChild(option);
     });
 }
@@ -220,14 +98,12 @@ async function loadConfig() {
         if (data.config) {
             const config = data.config;
 
-            // Geräte
-            setSelectValue('humidity-sensor', config.humidity_sensor_id);
-            setSelectValue('temperature-sensor', config.temperature_sensor_id);
-            setSelectValue('dehumidifier', config.dehumidifier_id);
-            setSelectValue('heater', config.heater_id);
-            setSelectValue('motion-sensor', config.motion_sensor_id);
-            setSelectValue('door-sensor', config.door_sensor_id);
-            setSelectValue('window-sensor', config.window_sensor_id);
+            // Raum
+            if (config.room_id) {
+                const select = document.getElementById('room-select');
+                if (select) select.value = config.room_id;
+                selectedRoomId = config.room_id;
+            }
 
             // Schwellwerte
             setSlider('humidity-high', config.humidity_threshold_high || 70);
@@ -259,13 +135,6 @@ async function loadConfig() {
     }
 }
 
-function setSelectValue(selectId, value) {
-    const select = document.getElementById(selectId);
-    if (select && value) {
-        select.value = value;
-    }
-}
-
 function setSlider(sliderId, value) {
     const slider = document.getElementById(sliderId);
     if (slider) {
@@ -277,15 +146,11 @@ function setSlider(sliderId, value) {
 // Speichere Konfiguration
 async function saveConfig() {
     try {
+        const roomId = document.getElementById('room-select').value;
+        
         const config = {
             enabled: document.getElementById('bathroom-enabled').checked,
-            humidity_sensor_id: document.getElementById('humidity-sensor').value,
-            temperature_sensor_id: document.getElementById('temperature-sensor').value,
-            dehumidifier_id: document.getElementById('dehumidifier').value,
-            heater_id: document.getElementById('heater').value || null,
-            motion_sensor_id: document.getElementById('motion-sensor').value || null,
-            door_sensor_id: document.getElementById('door-sensor').value || null,
-            window_sensor_id: document.getElementById('window-sensor').value || null,
+            room_id: roomId,
             humidity_threshold_high: parseFloat(document.getElementById('humidity-high').value),
             humidity_threshold_low: parseFloat(document.getElementById('humidity-low').value),
             dehumidifier_delay: parseInt(document.getElementById('dehumidifier-delay').value),
@@ -300,8 +165,8 @@ async function saveConfig() {
         };
 
         // Validierung
-        if (!config.humidity_sensor_id || !config.temperature_sensor_id || !config.dehumidifier_id) {
-            alert('Bitte wählen Sie mindestens Luftfeuchtigkeit-Sensor, Temperatur-Sensor und Luftentfeuchter aus!');
+        if (!config.room_id) {
+            alert('Bitte wählen Sie einen Raum aus!');
             return;
         }
 
@@ -309,9 +174,12 @@ async function saveConfig() {
 
         if (result.success) {
             showToast('✅ Konfiguration gespeichert!', 'success');
+            selectedRoomId = roomId;
             loadStatus();
             // Energie-Stats neu laden
             loadEnergyStats();
+            // Live-Status neu laden (um neue Geräte anzuzeigen)
+            loadLiveSensorStatus();
         }
     } catch (error) {
         console.error('Error saving config:', error);
@@ -1523,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Lade Devices, Config und gelernte Parameter parallel
     await Promise.all([
-        loadDevices(),
+        loadRooms(),
         loadConfig(),
         loadLearnedParams(),
         loadEnergyStats(),

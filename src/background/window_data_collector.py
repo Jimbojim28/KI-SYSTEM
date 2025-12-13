@@ -44,8 +44,63 @@ class WindowDataCollector:
         self._rooms_with_co2_cache: Optional[set] = None
         self._cache_timestamp: Optional[datetime] = None
 
+        # HA Window Mapping
+        self._ha_mapping_file = Path('config/ha_window_mapping.json')
+        self._ha_mapping_cache = None
+        self._ha_mapping_timestamp = None
+
         logger.info(f"Window Data Collector initialized ({interval_seconds}s interval)")
     
+    def _get_ha_mapping(self) -> Dict:
+        """Lädt das HA Window Mapping"""
+        if (self._ha_mapping_cache is not None and 
+            self._ha_mapping_timestamp is not None and
+            (datetime.now() - self._ha_mapping_timestamp).seconds < 60):
+            return self._ha_mapping_cache
+            
+        mapping = {}
+        try:
+            if self._ha_mapping_file.exists():
+                with open(self._ha_mapping_file, 'r') as f:
+                    data = json.load(f)
+                    mapping = data.get('mappings', {})
+        except Exception as e:
+            logger.error(f"Error loading HA window mapping: {e}")
+            
+        self._ha_mapping_cache = mapping
+        self._ha_mapping_timestamp = datetime.now()
+        return mapping
+
+    def _get_ha_collector(self):
+        """Holt den HA Collector (aus Engine oder erstellt neu)"""
+        if not self.engine:
+            return None
+            
+        # 1. Prüfe ob in Engine vorhanden (Multi-Platform)
+        if hasattr(self.engine, 'platforms') and self.engine.platforms:
+            if 'homeassistant' in self.engine.platforms:
+                return self.engine.platforms['homeassistant']
+            if 'ha' in self.engine.platforms:
+                return self.engine.platforms['ha']
+        
+        # 2. Prüfe ob Primary Platform HA ist
+        if hasattr(self.engine, 'platform') and self.engine.platform:
+            if self.engine.platform.get_platform_name() == 'homeassistant':
+                return self.engine.platform
+
+        # 3. Versuche temporär zu erstellen (wenn Config vorhanden)
+        try:
+            from src.data_collector.ha_collector import HomeAssistantCollector
+            ha_url = self.engine.config.get('homeassistant.url')
+            ha_token = self.engine.config.get('homeassistant.token')
+            
+            if ha_url and ha_token:
+                return HomeAssistantCollector(ha_url, ha_token)
+        except Exception as e:
+            logger.debug(f"Could not create temporary HA collector: {e}")
+            
+        return None
+
     def _get_rooms_with_co2_sensors(self) -> set:
         """Gibt ein Set von Raumnamen zurück, die CO2-Sensoren haben (aus Sensor-Mapping)"""
         # Cache für 5 Minuten
@@ -326,27 +381,110 @@ class WindowDataCollector:
 
     def _collect_data(self):
         """Sammelt aktuellen Status von allen Fenstern/Türen"""
-        if not self.engine or not self.engine.platform:
-            logger.debug("No engine/platform available for window data collection")
+        if not self.engine:
+            logger.debug("No engine available for window data collection")
             return
 
         try:
+            # Hole Konfiguration für Platform Sources
+            sources = self.engine.config.get('data_collection.platform_sources.window_states', {})
+            use_homey = sources.get('homey', True)
+            use_ha = sources.get('homeassistant', True)
+
             # Hole alle Geräte direkt aus dem Cache
             all_devices = []
             
-            if hasattr(self.engine.platform, '_device_cache'):
-                # Homey verwendet _device_cache
-                self.engine.platform._refresh_device_cache()
-                cache = self.engine.platform._device_cache
-                if isinstance(cache, dict):
-                    all_devices = list(cache.values())
-                elif isinstance(cache, list):
-                    all_devices = cache
-            else:
-                # Fallback: Versuche get_states()
-                states = self.engine.platform.get_states()
-                if isinstance(states, list):
-                    all_devices = states
+            # 1. Primary Platform Devices (Homey)
+            if use_homey and self.engine.platform:
+                if hasattr(self.engine.platform, '_device_cache'):
+                    # Homey verwendet _device_cache
+                    self.engine.platform._refresh_device_cache()
+                    cache = self.engine.platform._device_cache
+                    if isinstance(cache, dict):
+                        all_devices = list(cache.values())
+                    elif isinstance(cache, list):
+                        all_devices = cache
+                else:
+                    # Fallback: Versuche get_states()
+                    states = self.engine.platform.get_states()
+                    if isinstance(states, list):
+                        all_devices = states
+            
+            # 2. HA Mapped Devices (BTHome etc.)
+            ha_mapping = self._get_ha_mapping()
+            if use_ha and ha_mapping:
+                ha_collector = self._get_ha_collector()
+                if ha_collector:
+                    for mapping_id, config in ha_mapping.items():
+                        try:
+                            fake_device = None
+                            
+                            # Case A: Complex Mapping (Grouped entities)
+                            if 'entities' in config and isinstance(config['entities'], dict):
+                                entities = config['entities']
+                                contact_entity = entities.get('contact')
+                                
+                                if contact_entity:
+                                    state = ha_collector.get_state(contact_entity)
+                                    if state:
+                                        is_open = state['state'] in ['on', 'open', 'true']
+                                        
+                                        capabilities = {'alarm_contact': {'value': is_open}}
+                                        
+                                        # Battery
+                                        if 'battery' in entities:
+                                            batt_state = ha_collector.get_state(entities['battery'])
+                                            if batt_state and batt_state['state'].replace('.','',1).isdigit():
+                                                capabilities['measure_battery'] = {'value': float(batt_state['state'])}
+                                                
+                                        # Illuminance
+                                        if 'illuminance' in entities:
+                                            lux_state = ha_collector.get_state(entities['illuminance'])
+                                            if lux_state and lux_state['state'].replace('.','',1).isdigit():
+                                                capabilities['measure_luminance'] = {'value': float(lux_state['state'])}
+                                                
+                                        # Rotation/Tilt
+                                        if 'rotation' in entities:
+                                            rot_state = ha_collector.get_state(entities['rotation'])
+                                            if rot_state and rot_state['state'].replace('.','',1).isdigit():
+                                                capabilities['tilt'] = {'value': float(rot_state['state'])}
+
+                                        fake_device = {
+                                            'id': mapping_id,
+                                            'name': config.get('name', 'HA Window'),
+                                            'class': 'sensor',
+                                            'capabilitiesObj': capabilities,
+                                            'zone': None,
+                                            '_force_room': config.get('room')
+                                        }
+
+                            # Case B: Simple Mapping (Key is entity_id)
+                            else:
+                                entity_id = mapping_id
+                                state = ha_collector.get_state(entity_id)
+                                if state:
+                                    is_open = state['state'] in ['on', 'open', 'true']
+                                    
+                                    fake_device = {
+                                        'id': entity_id,
+                                        'name': config.get('name', state.get('attributes', {}).get('friendly_name', entity_id)),
+                                        'class': 'sensor',
+                                        'capabilitiesObj': {
+                                            'alarm_contact': {'value': is_open}
+                                        },
+                                        'zone': None,
+                                        '_force_room': config.get('room')
+                                    }
+                            
+                            if fake_device:
+                                # Füge 'window' zum Namen hinzu damit der Filter es als Fenster erkennt
+                                if 'window' not in fake_device['name'].lower() and 'fenster' not in fake_device['name'].lower():
+                                    fake_device['name'] += ' Fenster'
+                                    
+                                all_devices.append(fake_device)
+                                
+                        except Exception as e:
+                            logger.error(f"Error collecting HA device {mapping_id}: {e}")
             
             if not all_devices:
                 logger.debug("No devices found for window data collection")
@@ -458,7 +596,12 @@ class WindowDataCollector:
 
         # Raum-Name aus Zone
         room_name = None
-        if zone_id and hasattr(self.engine, 'platform'):
+        
+        # Check for forced room (from HA mapping)
+        if device.get('_force_room'):
+            room_name = device.get('_force_room')
+
+        if not room_name and zone_id and hasattr(self.engine, 'platform'):
             try:
                 zones = self.engine.platform.get_zones()
                 for zone in zones:

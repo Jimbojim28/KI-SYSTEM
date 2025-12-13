@@ -143,12 +143,33 @@ class ConfigLoader:
             config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
 
         self.config_path = Path(config_path)
+        self.example_defaults = self._load_example_defaults()
         self.config = self._load_config()
         self._merge_env_variables()
 
         # Validate configuration if requested and Pydantic is available
         if validate and PYDANTIC_AVAILABLE:
             self._validate_config()
+
+    def _load_example_defaults(self) -> Dict[str, str]:
+        """Lädt Default-Werte aus .env.example"""
+        try:
+            # config_path is usually .../config/config.yaml
+            # .env.example is in root, so ../../.env.example
+            example_path = self.config_path.parent.parent / ".env.example"
+            defaults = {}
+            if example_path.exists():
+                with open(example_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'): continue
+                        if '=' in line:
+                            key, val = line.split('=', 1)
+                            defaults[key.strip()] = val.strip()
+            return defaults
+        except Exception as e:
+            logger.warning(f"Could not load .env.example: {e}")
+            return {}
 
     def _load_config(self) -> Dict[str, Any]:
         """Lädt die YAML-Konfiguration und merged mit Defaults"""
@@ -164,55 +185,98 @@ class ConfigLoader:
         logger.debug("Config loaded and merged with defaults")
         return merged
 
+    def _get_valid_env(self, key: str, current_value: Any = None) -> Optional[str]:
+        """
+        Holt Umgebungsvariable, ignoriert aber Placeholder-Werte und Defaults,
+        wenn bereits eine Konfiguration existiert.
+        """
+        val = os.getenv(key)
+        if not val:
+            return None
+            
+        # Check for placeholders
+        val_lower = val.lower()
+        if 'your_' in val_lower or 'example' in val_lower or 'placeholder' in val_lower:
+            return None
+            
+        # Check against .env.example defaults
+        default_val = self.example_defaults.get(key)
+        if default_val and val == default_val:
+            # It matches the example default.
+            # If we have a current value from config (and it's not empty/None), prefer that!
+            if current_value:
+                return None
+            
+        return val
+
     def _merge_env_variables(self):
         """Überschreibt Config-Werte mit Umgebungsvariablen"""
         # Platform Type
-        if os.getenv('PLATFORM_TYPE'):
+        current_type = self.config.get('platform', {}).get('type')
+        platform_type = self._get_valid_env('PLATFORM_TYPE', current_type)
+        if platform_type:
             if 'platform' not in self.config:
                 self.config['platform'] = {}
-            self.config['platform']['type'] = os.getenv('PLATFORM_TYPE')
+            self.config['platform']['type'] = platform_type
 
         # Home Assistant
-        if os.getenv('HA_URL'):
+        current_ha_url = self.config.get('home_assistant', {}).get('url')
+        ha_url = self._get_valid_env('HA_URL', current_ha_url)
+        if ha_url:
             if 'home_assistant' not in self.config:
                 self.config['home_assistant'] = {}
-            self.config['home_assistant']['url'] = os.getenv('HA_URL')
-        if os.getenv('HA_TOKEN'):
+            self.config['home_assistant']['url'] = ha_url
+            
+        current_ha_token = self.config.get('home_assistant', {}).get('token')
+        ha_token = self._get_valid_env('HA_TOKEN', current_ha_token)
+        if ha_token:
             if 'home_assistant' not in self.config:
                 self.config['home_assistant'] = {}
-            self.config['home_assistant']['token'] = os.getenv('HA_TOKEN')
+            self.config['home_assistant']['token'] = ha_token
 
         # Homey
-        if os.getenv('HOMEY_URL'):
+        current_homey_url = self.config.get('homey', {}).get('url')
+        homey_url = self._get_valid_env('HOMEY_URL', current_homey_url)
+        if homey_url:
             if 'homey' not in self.config:
                 self.config['homey'] = {}
-            self.config['homey']['url'] = os.getenv('HOMEY_URL')
-        if os.getenv('HOMEY_TOKEN'):
+            self.config['homey']['url'] = homey_url
+            
+        current_homey_token = self.config.get('homey', {}).get('token')
+        homey_token = self._get_valid_env('HOMEY_TOKEN', current_homey_token)
+        if homey_token:
             if 'homey' not in self.config:
                 self.config['homey'] = {}
-            self.config['homey']['token'] = os.getenv('HOMEY_TOKEN')
+            self.config['homey']['token'] = homey_token
 
         # Weather API
-        if os.getenv('WEATHER_API_KEY'):
+        current_weather_key = self.config.get('external_data', {}).get('weather', {}).get('api_key')
+        weather_key = self._get_valid_env('WEATHER_API_KEY', current_weather_key)
+        if weather_key:
             if 'external_data' not in self.config:
                 self.config['external_data'] = {}
             if 'weather' not in self.config['external_data']:
                 self.config['external_data']['weather'] = {}
-            self.config['external_data']['weather']['api_key'] = os.getenv('WEATHER_API_KEY')
+            self.config['external_data']['weather']['api_key'] = weather_key
 
         # Energy API
-        if os.getenv('ENERGY_API_KEY'):
+        current_energy_key = self.config.get('external_data', {}).get('energy_prices', {}).get('api_key')
+        energy_key = self._get_valid_env('ENERGY_API_KEY', current_energy_key)
+        if energy_key:
             if 'external_data' not in self.config:
                 self.config['external_data'] = {}
             if 'energy_prices' not in self.config['external_data']:
                 self.config['external_data']['energy_prices'] = {}
-            self.config['external_data']['energy_prices']['api_key'] = os.getenv('ENERGY_API_KEY')
-        if os.getenv('ENERGY_PROVIDER'):
+            self.config['external_data']['energy_prices']['api_key'] = energy_key
+            
+        current_energy_provider = self.config.get('external_data', {}).get('energy_prices', {}).get('provider')
+        energy_provider = self._get_valid_env('ENERGY_PROVIDER', current_energy_provider)
+        if energy_provider:
             if 'external_data' not in self.config:
                 self.config['external_data'] = {}
             if 'energy_prices' not in self.config['external_data']:
                 self.config['external_data']['energy_prices'] = {}
-            self.config['external_data']['energy_prices']['provider'] = os.getenv('ENERGY_PROVIDER')
+            self.config['external_data']['energy_prices']['provider'] = energy_provider
 
     def _validate_config(self):
         """

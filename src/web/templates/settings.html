@@ -289,9 +289,22 @@
                             <label for="collect-windows" style="font-weight: 600; cursor: pointer; display: block; margin-bottom: 4px;">
                                 🪟 Fenster Status
                             </label>
-                            <div style="font-size: 13px; color: #6b7280;">
+                            <div style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">
                                 Sammelt Fenster Auf/Zu Status für Heizungsoptimierung
                             </div>
+                            
+                            <!-- Platform Sources -->
+                            <div class="platform-sources" style="display: flex; gap: 15px; margin-bottom: 8px; font-size: 13px;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" id="windows-source-homey" checked>
+                                    <span>Homey</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" id="windows-source-ha" checked>
+                                    <span>Home Assistant</span>
+                                </label>
+                            </div>
+
                             <button class="btn btn-sm btn-secondary device-mapping-btn" data-type="windows" style="margin-top: 8px; display: none;">
                                 🔀 Geräte-Zuordnung bearbeiten
                             </button>
@@ -401,6 +414,56 @@
             <p class="card-description">
                 Füge Home Assistant Entitäten hinzu, um deren Status zu überwachen und sie über das KI-System zu steuern.
             </p>
+
+            <!-- Integration Search -->
+            <div class="ha-integration-search" style="background: #eff6ff; padding: 20px; border-radius: 8px; border-left: 4px solid #3b82f6; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 15px 0; color: #1e40af;">🔍 Integration suchen (z.B. BTHome, Shelly, Zigbee)</h4>
+                
+                <div style="display: grid; grid-template-columns: 1fr 150px auto; gap: 15px; align-items: end;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="ha-integration-name" style="display: block; margin-bottom: 5px; font-weight: 600;">Integration Name:</label>
+                        <input type="text" id="ha-integration-name" class="form-control" 
+                               placeholder="z.B. bthome, shelly, zigbee2mqtt, esphome" 
+                               style="width: 100%; padding: 10px; border: 2px solid #bfdbfe; border-radius: 6px;">
+                        <small class="help-text" style="margin-top: 4px; display: block; color: #6b7280;">
+                            Sucht nach allen Geräten dieser Integration in Home Assistant
+                        </small>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="ha-integration-domain" style="display: block; margin-bottom: 5px; font-weight: 600;">Domain (optional):</label>
+                        <select id="ha-integration-domain" class="form-control" 
+                                style="width: 100%; padding: 10px; border: 2px solid #bfdbfe; border-radius: 6px;">
+                            <option value="">Alle</option>
+                            <option value="binary_sensor">binary_sensor</option>
+                            <option value="sensor">sensor</option>
+                            <option value="switch">switch</option>
+                            <option value="light">light</option>
+                            <option value="climate">climate</option>
+                            <option value="cover">cover</option>
+                            <option value="device_tracker">device_tracker</option>
+                        </select>
+                    </div>
+                    
+                    <button id="search-ha-integration" class="btn btn-primary" style="height: 44px; white-space: nowrap;">
+                        🔍 Suchen
+                    </button>
+                </div>
+                
+                <div id="ha-integration-results" style="margin-top: 15px; display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span id="ha-integration-count" style="font-weight: 600;"></span>
+                        <div>
+                            <button id="select-all-integration" class="btn btn-sm btn-secondary">✅ Alle auswählen</button>
+                            <button id="add-selected-integration" class="btn btn-sm btn-success" style="margin-left: 5px;">➕ Ausgewählte hinzufügen</button>
+                        </div>
+                    </div>
+                    <div id="ha-integration-list" style="max-height: 400px; overflow-y: auto; background: white; border-radius: 8px; padding: 10px;">
+                    </div>
+                </div>
+                
+                <div id="ha-integration-message" class="action-result" style="margin-top: 10px;"></div>
+            </div>
 
             <!-- Add New Entity Form -->
             <div class="ha-add-entity-form" style="background: #f0fdf4; padding: 20px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 20px;">

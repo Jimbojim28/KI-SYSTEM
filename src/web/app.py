@@ -331,7 +331,7 @@ class WebInterface:
             init_ventilation_blueprint(self.engine, self.db, self.config)
             init_notifications_blueprint(self.engine, self.db, self.config)
             init_absence_blueprint(self.engine, self.db, self.config)
-            init_ha_entities_blueprint(self.app)
+            init_ha_entities_blueprint(self.engine)
             
             # Registriere Blueprints bei der Flask App
             self.app.register_blueprint(config_bp)
@@ -3261,120 +3261,15 @@ class WebInterface:
             try:
                 sensors = []
                 
-                # Homey Sensoren
-                if self.engine and self.engine.platform:
-                    states = self.engine.platform.get_states()
-                    devices = self.engine.platform.get_all_devices()
-                    zones = self.engine.platform.get_zones()
-                    
-                    # Zone-ID zu Name Mapping
-                    zone_names = {}
-                    for zone_id, zone_data in zones.items():
-                        zone_names[zone_id] = zone_data.get('name', zone_id)
-                    
-                    # Device-ID zu Zone Mapping
-                    device_zones = {}
-                    for device in devices:
-                        device_id = device.get('id')
-                        zone_id = device.get('zone')
-                        if device_id and zone_id:
-                            device_zones[device_id] = zone_id
-
-                    for device_id, state in states.items():
-                        if not state:
-                            continue
-                        
-                        attrs = state.get('attributes', {})
-                        caps = attrs.get('capabilities', {})
-                        friendly_name = attrs.get('friendly_name', device_id)
-                        
-                        # Hole Zone-ID und Namen
-                        zone_id = device_zones.get(device_id) or attrs.get('zone')
-                        if not zone_id:
-                            continue
-                        
-                        room_name = zone_names.get(zone_id, zone_id)
-                        
-                        # Temperatursensor
-                        if 'measure_temperature' in caps:
-                            sensors.append({
-                                'device_id': device_id,
-                                'name': friendly_name,
-                                'room': room_name,
-                                'type': 'temperature',
-                                'platform': 'homey',
-                                'current_value': caps['measure_temperature'].get('value')
-                            })
-                        
-                        # Feuchtigkeitssensor
-                        if 'measure_humidity' in caps:
-                            sensors.append({
-                                'device_id': device_id,
-                                'name': friendly_name,
-                                'room': room_name,
-                                'type': 'humidity',
-                                'platform': 'homey',
-                                'current_value': caps['measure_humidity'].get('value')
-                            })
-                        
-                        # CO2-Sensor
-                        if 'measure_co2' in caps:
-                            sensors.append({
-                                'device_id': device_id,
-                                'name': friendly_name,
-                                'room': room_name,
-                                'type': 'co2',
-                                'platform': 'homey',
-                                'current_value': caps['measure_co2'].get('value')
-                            })
+                from src.web.blueprints.sensor_utils import get_all_sensors
                 
-                # Home Assistant Sensoren (wenn verfügbar)
-                if self.engine and hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
-                    try:
-                        ha_platform = self.engine.platforms['homeassistant']
-                        ha_states = ha_platform.get_states()
-                        
-                        for entity_id, state in ha_states.items():
-                            if not state:
-                                continue
-                            
-                            attrs = state.get('attributes', {})
-                            device_class = attrs.get('device_class', '')
-                            unit = attrs.get('unit_of_measurement', '')
-                            friendly_name = attrs.get('friendly_name', entity_id)
-                            area = attrs.get('area', 'Unbekannt')
-                            
-                            # Temperatursensor
-                            if device_class == 'temperature' or unit in ['°C', '°F', 'C', 'F']:
-                                try:
-                                    value = float(state.get('state', 0))
-                                    sensors.append({
-                                        'device_id': entity_id,
-                                        'name': friendly_name,
-                                        'room': area,
-                                        'type': 'temperature',
-                                        'platform': 'homeassistant',
-                                        'current_value': value
-                                    })
-                                except:
-                                    pass
-                            
-                            # Feuchtigkeitssensor
-                            elif device_class == 'humidity' or unit == '%':
-                                try:
-                                    value = float(state.get('state', 0))
-                                    sensors.append({
-                                        'device_id': entity_id,
-                                        'name': friendly_name,
-                                        'room': area,
-                                        'type': 'humidity',
-                                        'platform': 'homeassistant',
-                                        'current_value': value
-                                    })
-                                except:
-                                    pass
-                    except Exception as e:
-                        logger.warning(f"Could not load Home Assistant sensors: {e}")
+                # Wir wollen hier standardmäßig KEINE ignorierten Sensoren sehen,
+                # außer wir fragen explizit danach (z.B. für Konfiguration)
+                include_ignored = request.args.get('include_ignored', 'false').lower() == 'true'
+                
+                sensors = get_all_sensors(self.engine, include_ignored=include_ignored)
+                
+
 
                 # Außensensor-Daten ermitteln
                 outdoor = None
@@ -4578,102 +4473,111 @@ class WebInterface:
         @self.app.route('/api/rooms/window-status', methods=['GET'])
         def api_window_status():
             """API: Aktueller Fensterstatus mit Winkel und Zustand (Zu/Gekippt/Offen)"""
-            import json
-            rooms_file = Path('data/rooms.json')
-            
             try:
-                # Lade Kalibrierungsdaten
-                if rooms_file.exists():
-                    with open(rooms_file, 'r') as f:
-                        rooms_data = json.load(f)
-                else:
-                    rooms_data = {'window_calibration': {}}
+                from src.web.blueprints.window_utils import get_all_windows
                 
-                calibrations = rooms_data.get('window_calibration', {})
+                # Hier wollen wir auch ignorierte Fenster sehen, um sie konfigurieren zu können
+                all_windows = get_all_windows(self.engine, self.db, include_ignored=True)
                 
-                # Hole alle Fenster-Geräte (nutze get_states statt get_devices)
-                devices = []
-                if hasattr(self.engine, 'platform'):
-                    # Für Homey: nutze _device_cache oder get_states
-                    if hasattr(self.engine.platform, '_device_cache'):
-                        self.engine.platform._refresh_device_cache()
-                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                            self.engine.platform._device_cache, dict) else []
-                    elif hasattr(self.engine.platform, 'get_states'):
-                        states = self.engine.platform.get_states() or {}
-                        devices = list(states.values()) if isinstance(states, dict) else states
-                
+                # Map to expected format for this endpoint
                 window_status = []
-                
-                for device in devices:
-                    name = device.get('name', '').lower()
-                    if 'fenster' in name or 'window' in name:
-                        caps = device.get('capabilitiesObj', {})
-                        zone_id = device.get('zone', '')
-                        
-                        # Hole Tilt-Wert
-                        tilt_value = None
-                        if 'tilt' in caps:
-                            tilt_value = caps['tilt'].get('value', 0)
-                        
-                        # Hole Kontakt-Status
-                        is_contact_open = False
-                        if 'alarm_contact' in caps:
-                            is_contact_open = bool(caps['alarm_contact'].get('value', False))
-                        
-                        # Bestimme Zustand basierend auf Kalibrierung
-                        calibration = calibrations.get(zone_id, {
-                            'closed_angle': 0,
-                            'tilted_min': 5,
-                            'tilted_max': 45
-                        })
-                        
-                        state = 'closed'  # Default
-                        if tilt_value is not None:
-                            closed_angle = calibration.get('closed_angle', 0)
-                            tilted_min = calibration.get('tilted_min', 5)
-                            tilted_max = calibration.get('tilted_max', 45)
-                            
-                            # Logik: Kontakt + Winkel kombinieren
-                            # - Kontakt zu = Fenster geschlossen
-                            # - Kontakt offen + Winkel im Kippbereich (5°-45°) = gekippt
-                            # - Kontakt offen + Winkel außerhalb Kippbereich (0° oder >45°) = weit offen
-                            diff = abs(tilt_value - closed_angle)
-                            
-                            if not is_contact_open:
-                                # Kontakt geschlossen = Fenster zu
-                                state = 'closed'
-                            elif is_contact_open and diff >= tilted_min and diff <= tilted_max:
-                                # Kontakt offen + Winkel im Kippbereich = gekippt
-                                state = 'tilted'
-                            elif is_contact_open:
-                                # Kontakt offen + Winkel nahe geschlossen (0°) oder sehr groß (>45°) = weit offen
-                                state = 'open'
-                        elif is_contact_open:
-                            # Kein Tilt-Sensor, aber Kontakt offen
-                            state = 'open'
-                        
-                        window_status.append({
-                            'device_id': device.get('id'),
-                            'name': device.get('name'),
-                            'zone_id': zone_id,
-                            'tilt': tilt_value,
-                            'contact_open': is_contact_open,
-                            'state': state,
-                            'state_label': {
-                                'closed': '🟢 Geschlossen',
-                                'tilted': '🟡 Gekippt',
-                                'open': '🔴 Offen'
-                            }.get(state, state)
-                        })
+                for w in all_windows:
+                    window_status.append({
+                        'device_id': w['device_id'],
+                        'name': w['device_name'],
+                        'zone_id': w['zone_id'],
+                        'room_name': w['room_name'],
+                        'tilt': w['tilt'],
+                        'contact_open': w['is_open'],
+                        'state': w['state'],
+                        'source': w['source'],
+                        'state_label': w['state_label'],
+                        'ignored': w.get('ignored', False)
+                    })
                 
                 return jsonify({
                     'success': True,
                     'windows': window_status
                 })
-                
+
             except Exception as e:
                 logger.error(f"Error getting window status: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/window-ignore', methods=['POST'])
+        def api_window_ignore():
+            """API: Fenster ignorieren/aktivieren"""
+            try:
+                data = request.json
+                device_id = data.get('device_id')
+                ignore = data.get('ignore', True)
+                
+                if not device_id:
+                    return jsonify({'error': 'Missing device_id'}), 400
+                
+                rooms_file = Path('data/rooms.json')
+                rooms_data = {}
+                
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                
+                ignored_windows = rooms_data.get('ignored_windows', [])
+                
+                if ignore:
+                    if device_id not in ignored_windows:
+                        ignored_windows.append(device_id)
+                else:
+                    if device_id in ignored_windows:
+                        ignored_windows.remove(device_id)
+                
+                rooms_data['ignored_windows'] = ignored_windows
+                
+                with open(rooms_file, 'w') as f:
+                    json.dump(rooms_data, f, indent=2)
+                
+                return jsonify({'success': True, 'ignored': ignore})
+                
+            except Exception as e:
+                logger.error(f"Error updating window ignore status: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/rooms/sensor-ignore', methods=['POST'])
+        def api_sensor_ignore():
+            """API: Sensor ignorieren/aktivieren"""
+            try:
+                data = request.json
+                device_id = data.get('device_id')
+                ignore = data.get('ignore', True)
+                
+                if not device_id:
+                    return jsonify({'error': 'Missing device_id'}), 400
+                
+                rooms_file = Path('data/rooms.json')
+                rooms_data = {}
+                
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                
+                ignored_sensors = rooms_data.get('ignored_sensors', [])
+                
+                if ignore:
+                    if device_id not in ignored_sensors:
+                        ignored_sensors.append(device_id)
+                else:
+                    if device_id in ignored_sensors:
+                        ignored_sensors.remove(device_id)
+                
+                rooms_data['ignored_sensors'] = ignored_sensors
+                
+                with open(rooms_file, 'w') as f:
+                    json.dump(rooms_data, f, indent=2)
+                
+                return jsonify({'success': True, 'ignored': ignore})
+                
+            except Exception as e:
+                logger.error(f"Error updating sensor ignore status: {e}")
                 return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/rooms/window-auto-calibrate', methods=['POST'])
@@ -4947,6 +4851,46 @@ class WebInterface:
                 try:
                     data = request.json
                     config = data.get('config', {})
+                    
+                    # Wenn room_id vorhanden ist, lade Geräte aus rooms.json
+                    if 'room_id' in config and config['room_id']:
+                        room_id = config['room_id']
+                        rooms_file = Path('data/rooms.json')
+                        
+                        if rooms_file.exists():
+                            try:
+                                with open(rooms_file, 'r') as f:
+                                    rooms_data = json.load(f)
+                                    
+                                # rooms.json kann Liste oder Dict mit 'rooms' sein
+                                rooms_list = []
+                                if isinstance(rooms_data, list):
+                                    rooms_list = rooms_data
+                                else:
+                                    rooms_list = rooms_data.get('rooms', [])
+                                    
+                                # Finde Raum
+                                target_room = None
+                                for room in rooms_list:
+                                    if room.get('id') == room_id:
+                                        target_room = room
+                                        break
+                                
+                                if target_room:
+                                    # Übernehme Geräte-IDs aus dem Raum
+                                    config['humidity_sensor_id'] = target_room.get('humidity_sensor_id')
+                                    config['temperature_sensor_id'] = target_room.get('temperature_sensor_id')
+                                    config['dehumidifier_id'] = target_room.get('dehumidifier_id')
+                                    config['heater_id'] = target_room.get('heater_id')
+                                    config['door_sensor_id'] = target_room.get('door_sensor_id')
+                                    config['window_sensor_id'] = target_room.get('window_sensor_id')
+                                    # Motion Sensor ist noch nicht im Room-Schema, aber falls doch:
+                                    if 'motion_sensor_id' in target_room:
+                                        config['motion_sensor_id'] = target_room.get('motion_sensor_id')
+                                        
+                                    logger.info(f"Updated bathroom config devices from room {room_id}")
+                            except Exception as e:
+                                logger.error(f"Error loading room data for config: {e}")
 
                     # Speichere in Datei
                     with open(config_file, 'w') as f:
@@ -6446,94 +6390,11 @@ class WebInterface:
 
         @self.app.route('/api/heating/windows/all')
         def api_heating_windows_all():
-            """Hole alle Fenster mit ihrem aktuellen Status - LIVE von Homey (wie /api/rooms/window-status)"""
-            import json
-            rooms_file = Path('data/rooms.json')
-            
+            """Hole alle Fenster mit ihrem aktuellen Status - LIVE von Homey + HA"""
             try:
-                # Lade Kalibrierungsdaten
-                if rooms_file.exists():
-                    with open(rooms_file, 'r') as f:
-                        rooms_data = json.load(f)
-                else:
-                    rooms_data = {'window_calibration': {}}
+                from src.web.blueprints.window_utils import get_all_windows
                 
-                calibrations = rooms_data.get('window_calibration', {})
-                
-                # Hole alle Fenster-Geräte LIVE von Homey (wie /api/rooms/window-status)
-                devices = []
-                if hasattr(self.engine, 'platform'):
-                    # Für Homey: nutze _device_cache oder get_states
-                    if hasattr(self.engine.platform, '_device_cache'):
-                        self.engine.platform._refresh_device_cache()
-                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                            self.engine.platform._device_cache, dict) else []
-                    elif hasattr(self.engine.platform, 'get_states'):
-                        states = self.engine.platform.get_states() or {}
-                        devices = list(states.values()) if isinstance(states, dict) else states
-                
-                # Hole Zone-Namen für Raum-Zuordnung
-                zone_names = {}
-                if hasattr(self.engine, 'platform') and hasattr(self.engine.platform, 'get_zones'):
-                    zones = self.engine.platform.get_zones() or {}
-                    zone_names = {z.get('id'): z.get('name', 'Unbekannt') for z in zones.values()} if isinstance(zones, dict) else {}
-                
-                windows = []
-                
-                for device in devices:
-                    name = device.get('name', '').lower()
-                    if 'fenster' in name or 'window' in name:
-                        caps = device.get('capabilitiesObj', {})
-                        zone_id = device.get('zone', '')
-                        room_name = zone_names.get(zone_id, 'Unbekannt')
-                        
-                        # Hole Kontakt-Status (alarm_contact = True bedeutet offen)
-                        is_open = False
-                        if 'alarm_contact' in caps:
-                            is_open = bool(caps['alarm_contact'].get('value', False))
-                        
-                        # Hole Tilt-Wert für detaillierten Status
-                        tilt_value = None
-                        if 'tilt' in caps:
-                            tilt_value = caps['tilt'].get('value', 0)
-                        
-                        # Bestimme detaillierten Zustand basierend auf Kalibrierung
-                        calibration = calibrations.get(zone_id, {
-                            'closed_angle': 0,
-                            'tilted_min': 5,
-                            'tilted_max': 45
-                        })
-                        
-                        state = 'closed'  # Default
-                        if tilt_value is not None:
-                            closed_angle = calibration.get('closed_angle', 0)
-                            tilted_min = calibration.get('tilted_min', 5)
-                            tilted_max = calibration.get('tilted_max', 45)
-                            diff = abs(tilt_value - closed_angle)
-                            
-                            if not is_open:
-                                state = 'closed'
-                            elif is_open and diff >= tilted_min and diff <= tilted_max:
-                                state = 'tilted'
-                            elif is_open:
-                                state = 'open'
-                        elif is_open:
-                            state = 'open'
-                        
-                        windows.append({
-                            'device_id': device.get('id'),
-                            'device_name': device.get('name'),
-                            'room_name': room_name,
-                            'zone_id': zone_id,
-                            'is_open': is_open,
-                            'state': state,
-                            'tilt': tilt_value,
-                            'state_label': {
-                                'closed': '🟢 Geschlossen',
-                                'tilted': '🟡 Gekippt',
-                                'open': '🔴 Offen'
-                            }.get(state, state)
-                        })
+                windows = get_all_windows(self.engine, self.db)
                 
                 return jsonify({
                     'success': True,
@@ -6545,51 +6406,19 @@ class WebInterface:
                 logger.error(f"Error getting all window statuses: {e}")
                 return jsonify({'error': str(e)}), 500
 
+            except Exception as e:
+                logger.error(f"Error getting all window statuses: {e}")
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/heating/windows/current')
         def api_heating_windows_current():
-            """Hole alle aktuell geöffneten Fenster mit Dauer - LIVE von Homey"""
+            """Hole alle aktuell geöffneten Fenster mit Dauer - LIVE von Homey + HA"""
             try:
-                # Nutze dieselbe Live-Datenquelle wie /api/heating/windows/all
-                # und filtere nur offene Fenster
-                devices = []
-                if hasattr(self.engine, 'platform'):
-                    if hasattr(self.engine.platform, '_device_cache'):
-                        self.engine.platform._refresh_device_cache()
-                        devices = list(self.engine.platform._device_cache.values()) if isinstance(
-                            self.engine.platform._device_cache, dict) else []
-                    elif hasattr(self.engine.platform, 'get_states'):
-                        states = self.engine.platform.get_states() or {}
-                        devices = list(states.values()) if isinstance(states, dict) else states
+                from src.web.blueprints.window_utils import get_all_windows
                 
-                # Hole Zone-Namen für Raum-Zuordnung
-                zone_names = {}
-                if hasattr(self.engine, 'platform') and hasattr(self.engine.platform, 'get_zones'):
-                    zones = self.engine.platform.get_zones() or {}
-                    zone_names = {z.get('id'): z.get('name', 'Unbekannt') for z in zones.values()} if isinstance(zones, dict) else {}
+                all_windows = get_all_windows(self.engine, self.db)
+                open_windows = [w for w in all_windows if w.get('is_open')]
                 
-                open_windows = []
-                
-                for device in devices:
-                    name = device.get('name', '').lower()
-                    if 'fenster' in name or 'window' in name:
-                        caps = device.get('capabilitiesObj', {})
-                        zone_id = device.get('zone', '')
-                        
-                        # Hole Kontakt-Status
-                        is_open = False
-                        if 'alarm_contact' in caps:
-                            is_open = bool(caps['alarm_contact'].get('value', False))
-                        
-                        if is_open:
-                            room_name = zone_names.get(zone_id, 'Unbekannt')
-                            open_windows.append({
-                                'device_id': device.get('id'),
-                                'device_name': device.get('name'),
-                                'room_name': room_name,
-                                'zone_id': zone_id,
-                                'is_open': True
-                            })
-
                 return jsonify({
                     'success': True,
                     'data': open_windows,

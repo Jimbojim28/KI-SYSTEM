@@ -2,6 +2,24 @@
 
 Alle wichtigen Änderungen am Projekt werden hier dokumentiert.
 
+## [1.0.0] - 2025-12-13
+
+### Hinzugefügt
+- **Zentralisierte Sensor-Verwaltung**
+  - Neue Logik zur Zusammenführung von Sensoren aus Homey und Home Assistant
+  - "Ignorieren"-Funktion für Sensoren in der Raumverwaltung (UI)
+  - Vermeidung von doppelten Sensoren (z.B. wenn Homey Sensoren an HA weiterleitet)
+- **Erweiterte Raumverwaltung**
+  - Checkboxen zum Ignorieren von Fenstersensoren
+  - Verbesserte Übersicht der zugeordneten Geräte
+- **UI Verbesserungen**
+  - Neue Sektion "Verfügbare Sensoren verwalten" im Raum-Edit-Modal
+  - Konsistente Darstellung von ignorierten Geräten
+
+### Geändert
+- Refactoring der Sensor-Abfrage (`sensor_utils.py`) für bessere Wartbarkeit
+- Optimierung der API-Endpunkte für Raum- und Sensordaten
+
 ## [0.9.5] - 2025-11-11
 
 ### Hinzugefügt

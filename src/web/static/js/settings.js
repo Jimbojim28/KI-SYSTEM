@@ -2543,6 +2543,204 @@ function initHAEntitiesTab() {
             }
         });
     }
+    
+    // Integration-Suche Event Listeners
+    const searchIntegrationBtn = document.getElementById('search-ha-integration');
+    if (searchIntegrationBtn) {
+        searchIntegrationBtn.addEventListener('click', searchHAIntegration);
+    }
+    
+    const integrationInput = document.getElementById('ha-integration-name');
+    if (integrationInput) {
+        integrationInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchHAIntegration();
+            }
+        });
+    }
+    
+    const selectAllBtn = document.getElementById('select-all-integration');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', toggleAllIntegrationResults);
+    }
+    
+    const addSelectedBtn = document.getElementById('add-selected-integration');
+    if (addSelectedBtn) {
+        addSelectedBtn.addEventListener('click', addSelectedIntegrationEntities);
+    }
+}
+
+// Suche nach Integration
+async function searchHAIntegration() {
+    const integrationName = document.getElementById('ha-integration-name')?.value?.trim();
+    const domainFilter = document.getElementById('ha-integration-domain')?.value || '';
+    const resultsDiv = document.getElementById('ha-integration-results');
+    const listDiv = document.getElementById('ha-integration-list');
+    const countSpan = document.getElementById('ha-integration-count');
+    const messageDiv = document.getElementById('ha-integration-message');
+    
+    if (!integrationName) {
+        if (messageDiv) {
+            messageDiv.innerHTML = '<div class="error-message">⚠️ Bitte gib einen Integration-Namen ein</div>';
+        }
+        return;
+    }
+    
+    if (listDiv) {
+        listDiv.innerHTML = '<div class="loading">🔍 Suche nach ' + escapeHtml(integrationName) + '...</div>';
+    }
+    if (resultsDiv) {
+        resultsDiv.style.display = 'block';
+    }
+    if (messageDiv) {
+        messageDiv.innerHTML = '';
+    }
+    
+    try {
+        const response = await fetch('/api/ha/search-integration', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                integration: integrationName,
+                domain: domainFilter
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.count === 0) {
+                listDiv.innerHTML = `
+                    <div style="text-align: center; padding: 30px; color: #6b7280;">
+                        <div style="font-size: 36px; margin-bottom: 10px;">🔍</div>
+                        <div>Keine Entities für "${escapeHtml(integrationName)}" gefunden</div>
+                        <div style="font-size: 13px; margin-top: 8px;">Versuche einen anderen Namen oder prüfe die Home Assistant Verbindung</div>
+                    </div>
+                `;
+                countSpan.textContent = '0 Entities gefunden';
+            } else {
+                renderIntegrationResults(data.entities);
+                countSpan.textContent = `${data.count} Entities gefunden`;
+            }
+        } else {
+            listDiv.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+        }
+    } catch (error) {
+        listDiv.innerHTML = `<div class="error-message">❌ Fehler: ${error.message}</div>`;
+    }
+}
+
+// Rendere Integration-Suchergebnisse
+function renderIntegrationResults(entities) {
+    const listDiv = document.getElementById('ha-integration-list');
+    if (!listDiv) return;
+    
+    let html = '';
+    
+    for (const entity of entities) {
+        const stateIcon = getStateIcon(entity.domain, entity.state);
+        const stateClass = entity.available ? (entity.state === 'on' ? 'state-on' : 'state-off') : 'state-unavailable';
+        
+        html += `
+            <div class="integration-entity-item" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-bottom: 1px solid #f3f4f6;">
+                <input type="checkbox" class="integration-entity-checkbox" 
+                       data-entity-id="${escapeHtml(entity.entity_id)}"
+                       data-entity-type="${escapeHtml(entity.domain)}"
+                       data-entity-name="${escapeHtml(entity.friendly_name || entity.entity_id)}"
+                       style="width: 20px; height: 20px; accent-color: #3b82f6;">
+                <div style="font-size: 24px;">${stateIcon}</div>
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; font-size: 14px;">${escapeHtml(entity.friendly_name || entity.entity_id)}</div>
+                    <div style="font-size: 12px; color: #6b7280; font-family: monospace;">${escapeHtml(entity.entity_id)}</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px;">
+                        ${escapeHtml(entity.domain)}
+                    </span>
+                    <span class="${stateClass}" style="padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+                          background: ${entity.available ? (entity.state === 'on' ? '#d1fae5' : '#f3f4f6') : '#fef3c7'};
+                          color: ${entity.available ? (entity.state === 'on' ? '#065f46' : '#374151') : '#92400e'};">
+                        ${entity.available ? entity.state : 'nicht verfügbar'}
+                    </span>
+                </div>
+            </div>
+        `;
+    }
+    
+    listDiv.innerHTML = html;
+}
+
+// Alle Suchergebnisse auswählen/abwählen
+function toggleAllIntegrationResults() {
+    const checkboxes = document.querySelectorAll('.integration-entity-checkbox');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    
+    checkboxes.forEach(cb => {
+        cb.checked = !allChecked;
+    });
+    
+    const btn = document.getElementById('select-all-integration');
+    if (btn) {
+        btn.textContent = allChecked ? '✅ Alle auswählen' : '☐ Alle abwählen';
+    }
+}
+
+// Ausgewählte Entities hinzufügen
+async function addSelectedIntegrationEntities() {
+    const checkboxes = document.querySelectorAll('.integration-entity-checkbox:checked');
+    const messageDiv = document.getElementById('ha-integration-message');
+    
+    if (checkboxes.length === 0) {
+        if (messageDiv) {
+            messageDiv.innerHTML = '<div class="warning-message">⚠️ Keine Entities ausgewählt</div>';
+        }
+        return;
+    }
+    
+    const entities = Array.from(checkboxes).map(cb => ({
+        entity_id: cb.dataset.entityId,
+        type: cb.dataset.entityType,
+        name: cb.dataset.entityName
+    }));
+    
+    const addBtn = document.getElementById('add-selected-integration');
+    if (addBtn) {
+        addBtn.disabled = true;
+        addBtn.textContent = '⏳ Füge hinzu...';
+    }
+    
+    try {
+        const response = await fetch('/api/ha/add-multiple', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entities })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (messageDiv) {
+                messageDiv.innerHTML = `<div class="success-message">✅ ${data.message}</div>`;
+            }
+            // Entitäten-Liste neu laden
+            loadHAEntities();
+            // Checkboxen zurücksetzen
+            checkboxes.forEach(cb => cb.checked = false);
+        } else {
+            if (messageDiv) {
+                messageDiv.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+            }
+        }
+    } catch (error) {
+        if (messageDiv) {
+            messageDiv.innerHTML = `<div class="error-message">❌ Fehler: ${error.message}</div>`;
+        }
+    } finally {
+        if (addBtn) {
+            addBtn.disabled = false;
+            addBtn.textContent = '➕ Ausgewählte hinzufügen';
+        }
+    }
 }
 
 // Lade alle HA Entitäten

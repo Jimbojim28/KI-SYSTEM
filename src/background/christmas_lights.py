@@ -56,6 +56,7 @@ class ChristmasLightsController:
             'devices': [],
             'device_labels': {},  # Benutzerdefinierte Namen für Geräte
             'device_schedules': {},  # Individuelle Zeitpläne pro Gerät {device_id: {on_time, off_time}}
+            'presence_devices': [],  # Geräte die nur bei Anwesenheit leuchten
             'presence_only': False,
             'weekend_extended': False,
             'random_delay': True,
@@ -215,14 +216,18 @@ class ChristmasLightsController:
                 self._turn_all_lights_off("Outside date range")
             return
         
-        # Prüfe Anwesenheit (falls aktiviert)
-        if self.config['presence_only'] and not self._is_someone_home():
+        # Prüfe Anwesenheit (global)
+        someone_home = self._is_someone_home()
+        
+        # Falls globale Anwesenheitssteuerung aktiv und niemand zuhause
+        if self.config['presence_only'] and not someone_home:
             if self.lights_on:
                 self._turn_all_lights_off("No one home")
             return
         
         devices = self.config.get('devices', [])
         device_schedules = self.config.get('device_schedules', {})
+        presence_devices = self.config.get('presence_devices', [])  # Geräte mit Anwesenheitssteuerung
         current_time = now.time()
         
         any_on = False
@@ -251,7 +256,15 @@ class ChristmasLightsController:
             
             # Log die Entscheidung
             device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
-            logger.debug(f"🎄 {device_label}: on={on_time}, off={off_time}, now={current_time}, should_be_on={should_be_on}")
+            
+            # Prüfe individuelle Anwesenheitssteuerung für dieses Gerät
+            device_has_presence_control = device_id in presence_devices
+            if device_has_presence_control and not someone_home:
+                # Dieses Gerät soll nur bei Anwesenheit leuchten - ausschalten
+                should_be_on = False
+                logger.debug(f"🎄 {device_label}: Anwesenheitssteuerung aktiv, niemand zuhause -> AUS")
+            else:
+                logger.debug(f"🎄 {device_label}: on={on_time}, off={off_time}, now={current_time}, should_be_on={should_be_on}")
             
             # Track state changes for notifications
             was_on = self._device_states.get(device_id)
@@ -296,8 +309,13 @@ class ChristmasLightsController:
         # Individuelle Zeit hat Vorrang
         if schedule.get('on_time'):
             try:
-                return datetime.strptime(schedule['on_time'], '%H:%M').time()
+                t_str = schedule['on_time']
+                if len(t_str) == 5: # HH:MM
+                    return datetime.strptime(t_str, '%H:%M').time()
+                elif len(t_str) == 8: # HH:MM:SS
+                    return datetime.strptime(t_str, '%H:%M:%S').time()
             except ValueError:
+                logger.warning(f"Invalid on_time format: {schedule.get('on_time')}")
                 pass
         
         # Fallback: globale Einstellung
@@ -313,7 +331,12 @@ class ChristmasLightsController:
         
         # Fallback: konfigurierte Zeit
         try:
-            return datetime.strptime(self.config['on_time'], '%H:%M').time()
+            t_str = self.config['on_time']
+            if len(t_str) == 5:
+                return datetime.strptime(t_str, '%H:%M').time()
+            elif len(t_str) == 8:
+                return datetime.strptime(t_str, '%H:%M:%S').time()
+            return datetime.strptime(t_str, '%H:%M').time()
         except ValueError:
             return datetime.strptime('16:00', '%H:%M').time()
     
@@ -322,8 +345,13 @@ class ChristmasLightsController:
         # Individuelle Zeit hat Vorrang
         if schedule.get('off_time'):
             try:
-                return datetime.strptime(schedule['off_time'], '%H:%M').time()
+                t_str = schedule['off_time']
+                if len(t_str) == 5:
+                    return datetime.strptime(t_str, '%H:%M').time()
+                elif len(t_str) == 8:
+                    return datetime.strptime(t_str, '%H:%M:%S').time()
             except ValueError:
+                logger.warning(f"Invalid off_time format: {schedule.get('off_time')}")
                 pass
         
         # Fallback: globale Einstellung
@@ -334,15 +362,44 @@ class ChristmasLightsController:
             base_time = '00:00'  # Bis Mitternacht
         
         try:
+            if len(base_time) == 5:
+                return datetime.strptime(base_time, '%H:%M').time()
+            elif len(base_time) == 8:
+                return datetime.strptime(base_time, '%H:%M:%S').time()
             return datetime.strptime(base_time, '%H:%M').time()
         except ValueError:
             return datetime.strptime('23:00', '%H:%M').time()
     
+    def _get_device_state(self, device_id: str) -> Optional[bool]:
+        """Ermittelt den aktuellen Status eines Geräts vom Platform-Provider"""
+        if not self.platform:
+            return self._device_states.get(device_id)
+            
+        try:
+            # Versuche Status direkt abzufragen
+            if hasattr(self.platform, 'get_state'):
+                state = self.platform.get_state(device_id)
+                if state:
+                    # Prüfe onoff capability
+                    caps = state.get('attributes', {}).get('capabilities', {})
+                    if 'onoff' in caps:
+                        return caps['onoff'].get('value')
+            
+            # Fallback auf Cache
+            return self._device_states.get(device_id)
+        except Exception as e:
+            logger.debug(f"Error getting device state for {device_id}: {e}")
+            return self._device_states.get(device_id)
+
     def _turn_device_on(self, device_id: str):
         """Schaltet ein einzelnes Gerät ein (nur wenn nicht schon an)"""
-        # Prüfe ob schon an
-        if self._device_states.get(device_id) == True:
-            return  # Schon an, nichts tun
+        # Prüfe echten Status
+        current_state = self._get_device_state(device_id)
+        
+        if current_state is True:
+            # Update cache just in case
+            self._device_states[device_id] = True
+            return  # Schon an
         
         try:
             if self.platform:
@@ -355,9 +412,13 @@ class ChristmasLightsController:
     
     def _turn_device_off(self, device_id: str):
         """Schaltet ein einzelnes Gerät aus (nur wenn nicht schon aus)"""
-        # Prüfe ob schon aus
-        if self._device_states.get(device_id) == False:
-            return  # Schon aus, nichts tun
+        # Prüfe echten Status
+        current_state = self._get_device_state(device_id)
+        
+        if current_state is False:
+            # Update cache just in case
+            self._device_states[device_id] = False
+            return  # Schon aus
         
         try:
             if self.platform:

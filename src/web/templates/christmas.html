@@ -307,6 +307,35 @@
     background: #d1d5db;
 }
 
+/* Anwesenheits-Steuerung pro Gerät */
+.christmas-device .presence-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border-radius: 8px;
+    font-size: 11px;
+    color: #92400e;
+    cursor: pointer;
+    border: 1px solid #f59e0b;
+}
+
+.christmas-device .presence-control:hover {
+    background: linear-gradient(135deg, #fde68a, #fcd34d);
+}
+
+.christmas-device .presence-control input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: #f59e0b;
+}
+
+.christmas-device .presence-control span {
+    white-space: nowrap;
+}
+
 .labels-container {
     display: flex;
     flex-direction: column;
@@ -517,6 +546,7 @@ let christmasConfig = {
     devices: [],
     device_labels: {},  // { device_id: "Mein Name" }
     device_schedules: {},  // { device_id: { on_time: "16:00", off_time: "23:00" } }
+    presence_devices: [],  // Geräte die nur bei Anwesenheit leuchten
     presence_only: false,
     weekend_extended: false,
     random_delay: true,
@@ -675,6 +705,7 @@ async function loadChristmasDevices() {
         
         const html = devices.map(device => {
             const isSelected = christmasConfig.devices.includes(device.id);
+            const hasPresenceControl = christmasConfig.presence_devices?.includes(device.id);
             const icon = device.type === 'light' ? '💡' : '🔌';
             const isFromZone = device.is_christmas_zone;
             const statusIcon = device.is_on ? '🟢' : '⚫';
@@ -698,6 +729,15 @@ async function loadChristmasDevices() {
                             ${device.is_on ? '⭕ Aus' : '🔆 An'}
                         </button>
                     </div>
+                    ${isSelected ? `
+                    <label class="presence-control" onclick="event.stopPropagation();" title="Nur einschalten wenn jemand zuhause ist">
+                        <input type="checkbox"
+                               class="presence-device-checkbox"
+                               data-device-id="${device.id}"
+                               ${hasPresenceControl ? 'checked' : ''}>
+                        <span>🏠 Nur bei Anwesenheit</span>
+                    </label>
+                    ` : ''}
                     ${isFromZone ? '<span class="zone-badge">🎄 Weihnachtsraum</span>' : ''}
                     ${customLabel ? `<span class="zone-badge" style="background: #e0e7ff; color: #4338ca;">📝 ${device.name}</span>` : ''}
                 </div>
@@ -706,7 +746,7 @@ async function loadChristmasDevices() {
         
         container.innerHTML = html;
         
-        // Event Listeners für Checkboxen
+        // Event Listeners für Geräte-Checkboxen
         container.querySelectorAll('.christmas-device-checkbox').forEach(cb => {
             cb.addEventListener('change', (e) => {
                 const deviceId = e.target.dataset.deviceId;
@@ -719,12 +759,32 @@ async function loadChristmasDevices() {
                     deviceEl?.classList.add('selected');
                 } else {
                     christmasConfig.devices = christmasConfig.devices.filter(id => id !== deviceId);
+                    // Auch aus presence_devices entfernen wenn abgewählt
+                    christmasConfig.presence_devices = (christmasConfig.presence_devices || []).filter(id => id !== deviceId);
                     deviceEl?.classList.remove('selected');
                 }
                 
-                // Labels- und Zeitplan-Bereiche aktualisieren
-                updateLabelsSection();
-                updateSchedulesSection();
+                // Geräteliste neu rendern um Anwesenheits-Checkbox zu zeigen/verstecken
+                loadChristmasDevices();
+            });
+        });
+        
+        // Event Listeners für Anwesenheits-Checkboxen
+        container.querySelectorAll('.presence-device-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const deviceId = e.target.dataset.deviceId;
+                
+                if (!christmasConfig.presence_devices) {
+                    christmasConfig.presence_devices = [];
+                }
+                
+                if (e.target.checked) {
+                    if (!christmasConfig.presence_devices.includes(deviceId)) {
+                        christmasConfig.presence_devices.push(deviceId);
+                    }
+                } else {
+                    christmasConfig.presence_devices = christmasConfig.presence_devices.filter(id => id !== deviceId);
+                }
             });
         });
         

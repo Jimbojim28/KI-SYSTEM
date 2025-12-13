@@ -4,13 +4,47 @@ API Blueprint für Home Assistant Entitäten-Verwaltung
 
 import json
 import logging
+import unicodedata
+import requests
 from pathlib import Path
 from flask import Blueprint, jsonify, request, current_app
 from datetime import datetime
+import yaml
 
 logger = logging.getLogger(__name__)
 
 ha_entities_bp = Blueprint('api_ha_entities', __name__)
+
+
+def get_homey_device_details(device_id: str) -> dict:
+    """Holt vollständige Device-Details direkt von der Homey API (inkl. MAC-Adresse in data.id)"""
+    try:
+        config_path = Path(__file__).parent.parent.parent.parent / 'config' / 'config.yaml'
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        homey_config = config.get('homey', {})
+        url = homey_config.get('url', '').rstrip('/')
+        token = homey_config.get('token', '')
+        
+        if not url or not token:
+            return {}
+            
+        api_url = f"{url}/api/manager/devices/device/{device_id}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.get(api_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error fetching Homey device details: {e}")
+    return {}
+
+# Globale Engine Referenz
+engine = None
 
 # Pfad zur JSON-Datei
 HA_ENTITIES_FILE = Path(__file__).parent.parent.parent.parent / 'data' / 'ha_entities.json'
@@ -671,6 +705,848 @@ def get_presence_history():
         }), 500
 
 
-def init_ha_entities_blueprint(app):
-    """Initialisiert den Blueprint - nichts zu initialisieren, Blueprint wird in app.py registriert"""
-    logger.info("HA Entities Blueprint bereit")
+def init_ha_entities_blueprint(engine_instance):
+    """Initialisiert den Blueprint mit Engine Referenz"""
+    global engine
+    engine = engine_instance
+    logger.info("HA Entities Blueprint initialized with engine")
+
+
+@ha_entities_bp.route('/api/ha/search-integration', methods=['POST'])
+def search_integration():
+    """
+    Sucht alle Entities einer bestimmten Integration in Home Assistant.
+    
+    Body-Parameter:
+    - integration: Name der Integration (z.B. 'bthome', 'shelly', 'zigbee2mqtt')
+    - domain: Optional - Filter für Domain (z.B. 'binary_sensor', 'sensor')
+    """
+    try:
+        req_data = request.get_json() or {}
+        integration = req_data.get('integration', '').strip().lower()
+        domain_filter = req_data.get('domain', '').strip().lower()
+        
+        if not integration:
+            return jsonify({
+                "success": False,
+                "error": "Integration name ist erforderlich"
+            }), 400
+        
+        collector = get_ha_collector()
+        if not collector:
+            return jsonify({
+                "success": False,
+                "error": "Keine Home Assistant Verbindung"
+            }), 503
+        
+        import requests
+        
+        # Hole alle States von Home Assistant
+        url = f"{collector.url}/api/states"
+        headers = {
+            "Authorization": f"Bearer {collector.token}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        if response.status_code != 200:
+            return jsonify({
+                "success": False,
+                "error": f"Home Assistant Fehler: {response.status_code}"
+            }), 500
+        
+        all_states = response.json()
+        
+        # Filtere nach Integration
+        # Suche in entity_id, friendly_name und attributes
+        found_entities = []
+        search_terms = [integration, integration.replace('_', ''), integration.replace('-', '')]
+        
+        for state in all_states:
+            entity_id = state.get('entity_id', '')
+            friendly_name = state.get('attributes', {}).get('friendly_name', '')
+            device_class = state.get('attributes', {}).get('device_class', '')
+            
+            # Domain-Filter anwenden
+            if domain_filter:
+                entity_domain = entity_id.split('.')[0] if '.' in entity_id else ''
+                if entity_domain != domain_filter:
+                    continue
+            
+            # Suche nach Integration im entity_id oder friendly_name
+            match = False
+            for term in search_terms:
+                if term in entity_id.lower() or term in friendly_name.lower():
+                    match = True
+                    break
+            
+            if match:
+                domain = entity_id.split('.')[0] if '.' in entity_id else 'unknown'
+                
+                # Bestimme den Typ basierend auf domain und device_class
+                entity_type = domain
+                if device_class:
+                    entity_type = f"{domain} ({device_class})"
+                
+                found_entities.append({
+                    "entity_id": entity_id,
+                    "friendly_name": friendly_name,
+                    "domain": domain,
+                    "device_class": device_class,
+                    "state": state.get('state'),
+                    "type": domain,
+                    "attributes": {
+                        k: v for k, v in state.get('attributes', {}).items() 
+                        if k in ['friendly_name', 'device_class', 'unit_of_measurement', 'icon']
+                    },
+                    "available": state.get('state') not in ['unavailable', 'unknown']
+                })
+        
+        # Sortiere nach domain und dann nach name
+        found_entities.sort(key=lambda x: (x['domain'], x['friendly_name']))
+        
+        return jsonify({
+            "success": True,
+            "integration": integration,
+            "domain_filter": domain_filter,
+            "count": len(found_entities),
+            "entities": found_entities
+        })
+        
+    except Exception as e:
+        logger.error(f"Fehler beim Suchen der Integration: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@ha_entities_bp.route('/api/ha/add-multiple', methods=['POST'])
+def add_multiple_entities():
+    """
+    Fügt mehrere HA-Entitäten gleichzeitig hinzu.
+    
+    Body-Parameter:
+    - entities: Liste von {entity_id, type, name} Objekten
+    """
+    try:
+        req_data = request.get_json() or {}
+        entities_to_add = req_data.get('entities', [])
+        
+        if not entities_to_add:
+            return jsonify({
+                "success": False,
+                "error": "Keine Entitäten zum Hinzufügen"
+            }), 400
+        
+        data = load_ha_entities()
+        existing_entities = data.get('entities', [])
+        existing_ids = {e.get('entity_id') for e in existing_entities}
+        
+        added = []
+        skipped = []
+        
+        for entity_info in entities_to_add:
+            entity_id = entity_info.get('entity_id', '').strip()
+            entity_type = entity_info.get('type', 'sensor')
+            custom_name = entity_info.get('name', '').strip()
+            
+            if not entity_id:
+                continue
+            
+            if entity_id in existing_ids:
+                skipped.append(entity_id)
+                continue
+            
+            # Erstelle neuen Eintrag
+            new_entity = {
+                "entity_id": entity_id,
+                "type": entity_type,
+                "name": custom_name or entity_info.get('friendly_name', entity_id),
+                "added_at": datetime.now().isoformat(),
+                "domain": entity_id.split('.')[0] if '.' in entity_id else "unknown"
+            }
+            
+            existing_entities.append(new_entity)
+            existing_ids.add(entity_id)
+            added.append(entity_id)
+        
+        data['entities'] = existing_entities
+        
+        if save_ha_entities(data):
+            return jsonify({
+                "success": True,
+                "added": added,
+                "added_count": len(added),
+                "skipped": skipped,
+                "skipped_count": len(skipped),
+                "message": f"{len(added)} Entitäten hinzugefügt" + (f", {len(skipped)} übersprungen (bereits vorhanden)" if skipped else "")
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Fehler beim Speichern"
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Fehler beim Hinzufügen mehrerer Entitäten: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# === HA Window Mapping Endpoints ===
+
+HA_MAPPING_FILE = Path(__file__).parent.parent.parent.parent / 'config' / 'ha_window_mapping.json'
+
+def load_ha_mapping() -> dict:
+    """Lädt das HA Window Mapping"""
+    if HA_MAPPING_FILE.exists():
+        try:
+            with open(HA_MAPPING_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Fehler beim Laden des HA Mappings: {e}")
+    return {"mappings": {}}
+
+def save_ha_mapping(data: dict) -> bool:
+    """Speichert das HA Window Mapping"""
+    try:
+        HA_MAPPING_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(HA_MAPPING_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern des HA Mappings: {e}")
+        return False
+
+@ha_entities_bp.route('/api/ha/mappings', methods=['GET'])
+def get_mappings():
+    """Gibt alle konfigurierten Mappings zurück, angereichert mit aktuellem Status"""
+    data = load_ha_mapping()
+    
+    # Versuche Status zu holen
+    try:
+        collector = get_ha_collector()
+        if collector:
+            mappings = data.get('mappings', {})
+            for m_id, mapping in mappings.items():
+                entities = mapping.get('entities', {})
+                contact_id = entities.get('contact')
+                if contact_id:
+                    state = get_entity_state(collector, contact_id)
+                    mapping['current_state'] = state.get('state')
+                    mapping['contact_entity'] = contact_id
+    except Exception as e:
+        logger.warning(f"Konnte Status für Mappings nicht laden: {e}")
+        
+    return jsonify(data)
+
+@ha_entities_bp.route('/api/ha/mappings', methods=['POST'])
+def save_mapping():
+    """Speichert ein neues Mapping oder aktualisiert ein bestehendes"""
+    try:
+        req_data = request.json
+        mapping_id = req_data.get('id')
+        
+        if not mapping_id:
+            import uuid
+            mapping_id = str(uuid.uuid4())
+            
+        mapping_data = {
+            "name": req_data.get('name'),
+            "room": req_data.get('room'),
+            "type": req_data.get('type', 'window'),
+            "source": req_data.get('source', 'ha'),
+            "entities": req_data.get('entities', {})
+        }
+        
+        # Validierung
+        if not mapping_data['name'] or not mapping_data['room']:
+            return jsonify({"success": False, "error": "Name und Raum sind erforderlich"}), 400
+            
+        current_data = load_ha_mapping()
+        current_data['mappings'][mapping_id] = mapping_data
+        
+        if save_ha_mapping(current_data):
+            return jsonify({"success": True, "id": mapping_id, "mapping": mapping_data})
+        else:
+            return jsonify({"success": False, "error": "Fehler beim Speichern"}), 500
+            
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern des Mappings: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@ha_entities_bp.route('/api/ha/mappings/<mapping_id>', methods=['DELETE'])
+def delete_mapping(mapping_id):
+    """Löscht ein Mapping"""
+    try:
+        current_data = load_ha_mapping()
+        if mapping_id in current_data['mappings']:
+            del current_data['mappings'][mapping_id]
+            if save_ha_mapping(current_data):
+                return jsonify({"success": True})
+            else:
+                return jsonify({"success": False, "error": "Fehler beim Speichern"}), 500
+        else:
+            return jsonify({"success": False, "error": "Mapping nicht gefunden"}), 404
+    except Exception as e:
+        logger.error(f"Fehler beim Löschen des Mappings: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@ha_entities_bp.route('/api/ha/available', methods=['GET'])
+def get_available_entities():
+    """Holt alle verfügbaren Entitäten von HA"""
+    collector = get_ha_collector()
+    if not collector:
+        return jsonify({"success": False, "error": "Keine Verbindung zu Home Assistant"}), 503
+        
+    try:
+        states = collector.get_states()
+        entities = []
+        for entity_id, state in states.items():
+            entities.append({
+                "entity_id": entity_id,
+                "name": state.get('attributes', {}).get('friendly_name', entity_id),
+                "domain": entity_id.split('.')[0],
+                "state": state.get('state')
+            })
+        return jsonify({"success": True, "entities": entities})
+    except Exception as e:
+        logger.error(f"Fehler beim Abrufen der HA Entitäten: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@ha_entities_bp.route('/api/ha/match-room', methods=['POST'])
+def match_room():
+    """Versucht den Raum anhand der MAC-Adresse in Homey zu finden"""
+    try:
+        req_data = request.json
+        entity_name = req_data.get('name', '')
+        
+        if not entity_name:
+            return jsonify({"success": False, "error": "Kein Name übergeben"})
+            
+        # Extrahiere MAC (z.B. "9F3D" aus "BTHome sensor 9F3D")
+        import re
+        # Suche nach 4 Hex-Zeichen, die oft am Ende von Namen stehen oder Teil einer MAC sind
+        # Shelly BLU devices haben oft die letzten 4 Zeichen der MAC im Namen
+        mac_match = re.search(r'([0-9A-Fa-f]{4})', entity_name)
+        
+        if not mac_match:
+             return jsonify({"success": False, "error": "Keine MAC-ID im Namen gefunden"})
+             
+        mac_part = mac_match.group(1).lower()
+        logger.info(f"Searching for device with MAC part: {mac_part} (extracted from '{entity_name}')")
+        
+        if not engine:
+             logger.error("Engine is None in match_room")
+             return jsonify({"success": False, "error": "Interner Fehler: Engine nicht initialisiert"})
+
+        if not engine.platform:
+             logger.error("Engine.platform is None in match_room")
+             return jsonify({"success": False, "error": "Keine Homey Verbindung (Platform nicht initialisiert)"})
+             
+        # Suche in Homey Devices
+        devices = engine.platform.get_all_devices()
+        logger.info(f"Searching in {len(devices)} Homey devices")
+        
+        zones = engine.platform.get_zones()
+        
+        found_device = None
+        found_room = None
+        
+        for device in devices:
+            # Sammle alle relevanten Werte zum Durchsuchen
+            candidates = []
+            
+            # Name
+            candidates.append(device.get('name', ''))
+            
+            # Settings Werte (z.B. address)
+            if 'settings' in device and isinstance(device['settings'], dict):
+                candidates.extend([str(v) for v in device['settings'].values()])
+                
+            # Data Werte
+            if 'data' in device and isinstance(device['data'], dict):
+                candidates.extend([str(v) for v in device['data'].values()])
+            
+            # Prüfe jeden Kandidaten
+            for val in candidates:
+                # Normalisiere: Kleinbuchstaben und Doppelpunkte entfernen
+                # Aus "7C:C6:B6:71:9F:3D" wird "7cc6b6719f3d"
+                val_norm = val.lower().replace(':', '')
+                
+                if mac_part in val_norm:
+                    found_device = device
+                    logger.info(f"Match found! Device: {device.get('name')}, Value: {val}, Norm: {val_norm}, Search: {mac_part}")
+                    break
+            
+            if found_device:
+                break
+        
+        if found_device:
+            zone_id = found_device.get('zone')
+            if zone_id and zone_id in zones:
+                found_room = zones[zone_id]
+                return jsonify({
+                    "success": True, 
+                    "room": found_room, 
+                    "device_name": found_device.get('name'),
+                    "match_type": "mac_address"
+                })
+            else:
+                return jsonify({"success": False, "error": f"Gerät '{found_device.get('name')}' gefunden, aber keinem Raum zugeordnet"})
+        
+        logger.warning(f"No match found for {mac_part} in {len(devices)} devices")
+        return jsonify({"success": False, "error": f"Kein Gerät mit ID {mac_part} in Homey gefunden"})
+        
+    except Exception as e:
+        logger.error(f"Fehler bei Raum-Suche: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@ha_entities_bp.route('/api/ha/find-sensor-for-room', methods=['POST'])
+def find_sensor_for_room():
+    """Findet einen HA Sensor passend zu einem Raum (via Homey MAC)"""
+    try:
+        req_data = request.json
+        room_name = req_data.get('room')
+        search_term = req_data.get('search_term', '').strip()
+        logger.info(f"DEBUG: find_sensor_for_room called for room: {room_name}, search_term: {search_term}")
+        
+        if not room_name:
+            return jsonify({"success": False, "error": "Kein Raum angegeben"})
+            
+        if not engine or not engine.platform:
+             return jsonify({"success": False, "error": "Keine Homey Verbindung"})
+        
+        # Bereits verwendete Sensoren aus dem Mapping laden
+        used_sensors = set()
+        mapping_file = Path(__file__).parent.parent.parent.parent / 'config' / 'ha_window_mapping.json'
+        if mapping_file.exists():
+            try:
+                with open(mapping_file, 'r') as f:
+                    mapping_data = json.load(f)
+                    for mapping in mapping_data.get('mappings', {}).values():
+                        if mapping.get('entities', {}).get('contact'):
+                            used_sensors.add(mapping['entities']['contact'])
+                logger.info(f"DEBUG: Already used sensors: {used_sensors}")
+            except Exception as e:
+                logger.warning(f"Could not load used sensors: {e}")
+             
+        search_criteria = [] # List of dicts: {'type': 'mac'|'name', 'value': str, 'device_name': str}
+
+        # If search term is provided, use it directly
+        if search_term:
+            search_criteria.append({
+                'type': 'name',
+                'value': search_term.lower(),
+                'device_name': search_term
+            })
+            # Also try to interpret as MAC if it looks like one
+            clean_term = search_term.replace(':', '').lower()
+            if len(clean_term) >= 4 and all(c in '0123456789abcdef' for c in clean_term):
+                 search_criteria.append({
+                     'type': 'mac', 
+                     'value': clean_term[-4:], 
+                     'device_name': search_term
+                 })
+        
+        # Otherwise (or additionally?), try to find devices in Homey Zone
+        # Let's only do Zone lookup if no search term, OR if we want to combine results
+        # For now, if search term is given, we prioritize it, but maybe we should still look in the room?
+        # The user might want to search for something specific because the room lookup failed.
+        
+        if not search_term:
+            # Normalize room name
+            room_name_norm = unicodedata.normalize('NFC', room_name).strip().lower()
+
+            # 1. Finde Zone ID für Raum
+            zones = engine.platform.get_zones()
+            zone_id = None
+            
+            # zones is a dict of dicts: {id: {id:..., name:..., ...}}
+            for z_id, z_data in zones.items():
+                z_name = z_data.get('name', '')
+                if unicodedata.normalize('NFC', z_name).strip().lower() == room_name_norm:
+                    zone_id = z_data.get('id', z_id)
+                    break
+            
+            if not zone_id:
+                logger.warning(f"DEBUG: Room '{room_name}' not found in zones. Available: {[z.get('name') for z in zones.values()]}")
+                # If room not found in Homey, we can't do auto-detect based on room content.
+                # But if we had a search term, we wouldn't be here.
+                return jsonify({"success": False, "error": f"Raum '{room_name}' in Homey nicht gefunden"})
+                
+            logger.info(f"DEBUG: Found Zone ID {zone_id} for room {room_name}")
+
+            # 2. Finde Geräte in Zone
+            devices = engine.platform.get_all_devices()
+            
+            if isinstance(devices, dict):
+                devices_list = list(devices.values())
+            else:
+                devices_list = devices
+                
+            room_devices = [d for d in devices_list if d.get('zone') == zone_id]
+            
+            logger.info(f"DEBUG: Found {len(room_devices)} devices in room {room_name}")
+            
+            if not room_devices:
+                return jsonify({"success": False, "error": f"Keine Geräte im Raum '{room_name}' gefunden"})
+                
+            # 3. Extrahiere MACs und Namen aus Homey Geräten
+            for device in room_devices:
+                device_name = device.get('name', '')
+                device_id = device.get('id', '')
+                
+                # Add Name Search Criteria
+                if device_name:
+                    search_criteria.append({
+                        'type': 'name',
+                        'value': device_name.lower(),
+                        'device_name': device_name
+                    })
+                
+                # Hole vollständige Device-Details direkt von Homey API
+                # Die lokale API gibt settings/data oft leer zurück, aber die direkte API hat die MAC in data.id
+                if device_id:
+                    full_device = get_homey_device_details(device_id)
+                    if full_device:
+                        # MAC-Adresse ist in data.id für Shelly BLU Geräte
+                        mac_from_data = full_device.get('data', {}).get('id', '')
+                        if mac_from_data and ':' in str(mac_from_data):
+                            clean_mac = str(mac_from_data).replace(':', '').lower()
+                            if len(clean_mac) >= 4 and all(c in '0123456789abcdef' for c in clean_mac):
+                                mac = clean_mac[-4:]
+                                search_criteria.append({'type': 'mac', 'value': mac, 'device_name': device_name})
+                                logger.info(f"DEBUG: Found MAC {mac} from Homey API for device {device_name}")
+                                continue  # Prioritize direct API MAC, skip local cache lookup
+                # Add MAC Search Criteria
+                candidates = []
+                if 'settings' in device and isinstance(device['settings'], dict):
+                    candidates.extend([str(v) for v in device['settings'].values()])
+                if 'data' in device and isinstance(device['data'], dict):
+                    candidates.extend([str(v) for v in device['data'].values()])
+                    
+                for val in candidates:
+                    val_str = str(val).strip()
+                    # Check for MAC format XX:XX:XX...
+                    if ':' in val_str and len(val_str) >= 11:
+                         clean = val_str.replace(':', '').lower()
+                         if all(c in '0123456789abcdef' for c in clean):
+                             mac = clean[-4:]
+                             search_criteria.append({'type': 'mac', 'value': mac, 'device_name': device_name})
+                             logger.info(f"DEBUG: Found MAC candidate {mac} in device {device_name}")
+                             continue
+                    
+                    # Check for raw hex string (12 chars)
+                    if len(val_str) == 12 and all(c in '0123456789abcdefABCDEF' for c in val_str):
+                         mac = val_str[-4:].lower()
+                         search_criteria.append({'type': 'mac', 'value': mac, 'device_name': device_name})
+                         logger.info(f"DEBUG: Found MAC candidate {mac} in device {device_name}")
+        
+        if not search_criteria:
+             logger.warning(f"DEBUG: No search criteria found in {len(room_devices)} devices")
+             return jsonify({"success": False, "error": "Keine suchbaren Merkmale (MAC/Name) gefunden"})
+             
+        # 4. Suche in HA Entities
+        collector = get_ha_collector()
+        if not collector:
+            return jsonify({"success": False, "error": "Keine HA Verbindung"})
+            
+        ha_states = collector.get_states()
+        logger.info(f"DEBUG: Checking {len(ha_states)} HA entities against criteria")
+        
+        # Collect all matches first
+        matches = {}  # key (mac or name) -> {name: str, entities: list, score_bonus: int}
+        available_devices = {} # Group all valid BTHome devices found (for fallback)
+
+        for entity_id, state in ha_states.items():
+            # NUR BTHome/Shelly BLU Sensoren berücksichtigen!
+            entity_id_lower = entity_id.lower()
+            friendly_name = state.get('attributes', {}).get('friendly_name', '').lower()
+            
+            # Strict Filter: Must be BTHome/Shelly BLU
+            if not ('bthome' in entity_id_lower or 'shelly_blu' in entity_id_lower):
+                continue
+                
+            # Strict Filter: Must be a Window/Door/Contact sensor
+            # Check domain and device_class/name
+            domain = entity_id.split('.')[0]
+            device_class = state.get('attributes', {}).get('device_class', '')
+            
+            is_window_door = False
+            if domain == 'binary_sensor':
+                if device_class in ['window', 'door', 'garage_door', 'opening', 'lock']:
+                    is_window_door = True
+                elif any(x in entity_id_lower or x in friendly_name for x in ['window', 'door', 'fenster', 'tür', 'contact', 'kontakt']):
+                    is_window_door = True
+            
+            # Also allow sensors that belong to a window device (battery, rotation, etc.)
+            # But we only want to MATCH on the main sensor or if we are sure it's a window device
+            if not is_window_door:
+                # If it's not a binary sensor, check if it's part of a device that IS a window sensor
+                # This is hard without device registry. 
+                # So we rely on naming convention: "shelly_blu_door_window"
+                if 'door_window' in entity_id_lower or 'door_window' in friendly_name:
+                    is_window_door = True
+            
+            if not is_window_door:
+                continue
+
+            # Überspringe bereits verwendete Sensoren!
+            if entity_id in used_sensors:
+                logger.info(f"DEBUG: Skipping already used sensor: {entity_id}")
+                continue
+            
+            # Add to available devices list (for fallback)
+            # Group by a simplified name (remove suffixes)
+            # e.g. "BTHome sensor 1E9B Window" -> "BTHome sensor 1E9B"
+            simple_name = state.get('attributes', {}).get('friendly_name', entity_id)
+            for suffix in [' Window', ' Door', ' Contact', ' Battery', ' Illuminance', ' Rotation', ' Button']:
+                if simple_name.endswith(suffix):
+                    simple_name = simple_name[:-len(suffix)]
+                    break
+            
+            if simple_name not in available_devices:
+                available_devices[simple_name] = {
+                    "device_name": simple_name,
+                    "entities": []
+                }
+            
+            available_devices[simple_name]["entities"].append({
+                "entity_id": entity_id,
+                "friendly_name": state.get('attributes', {}).get('friendly_name', ''),
+                "domain": domain,
+                "state": state.get('state'),
+                "attributes": state.get('attributes', {})
+            })
+                
+            for criteria in search_criteria:
+                match_found = False
+                score_bonus = 0
+                
+                if criteria['type'] == 'mac':
+                    if criteria['value'] in friendly_name or criteria['value'] in entity_id_lower:
+                        match_found = True
+                        score_bonus = 20 # MAC match is very strong
+                
+                elif criteria['type'] == 'name':
+                    # Token based matching with normalization
+                    # Replace special chars with spaces to handle "Fenster-Küche" vs "Fenster Küche"
+                    def normalize_tokens(text):
+                        text = text.lower()
+                        for char in ['-', '_', '.', '(', ')', '[', ']', ':']:
+                            text = text.replace(char, ' ')
+                        return set(text.split())
+
+                    dev_tokens = normalize_tokens(criteria['value'])
+                    ha_tokens = normalize_tokens(friendly_name)
+                    
+                    # Also check entity_id for tokens
+                    ha_tokens.update(normalize_tokens(entity_id_lower))
+                    
+                    common_tokens = dev_tokens.intersection(ha_tokens)
+                    
+                    # Calculate match ratio
+                    if len(dev_tokens) > 0:
+                        match_ratio = len(common_tokens) / len(dev_tokens)
+                    else:
+                        match_ratio = 0
+                    
+                    # Debug logging for specific room
+                    if 'küche' in criteria['value'] and 'fenster' in criteria['value']:
+                         print(f"DEBUG MATCH: Dev='{criteria['value']}' HA='{friendly_name}' Tokens={dev_tokens} HA_Tokens={ha_tokens} Common={common_tokens} Ratio={match_ratio}")
+
+                    # Strict matching: All tokens must be present (or at least most of them)
+                    if len(dev_tokens) > 1 and match_ratio >= 0.8:
+                        match_found = True
+                        score_bonus = 15 # Name match is strong if tokens match
+                    elif len(dev_tokens) == 1 and criteria['value'] in friendly_name:
+                         # Single word match
+                         pass
+
+                if match_found:
+                    key = criteria['value'] # Use the search value as key
+                    if key not in matches:
+                        matches[key] = {
+                            "name": state.get('attributes', {}).get('friendly_name', entity_id),
+                            "entities": [],
+                            "score_bonus": score_bonus,
+                            "device_name": criteria['device_name']
+                        }
+                    
+                    matches[key]["entities"].append({
+                        "entity_id": entity_id,
+                        "friendly_name": state.get('attributes', {}).get('friendly_name', ''),
+                        "domain": entity_id.split('.')[0],
+                        "state": state.get('state'),
+                        "attributes": state.get('attributes', {})
+                    })
+
+        if not matches:
+            logger.warning(f"DEBUG: No matching HA entity found")
+            
+            # Erstelle detaillierte Fehlermeldung
+            mac_searched = None
+            for c in search_criteria:
+                if c['type'] == 'mac':
+                    mac_searched = c['value']
+                    break
+            
+            error_msg = "Kein passendes BTHome/Shelly Gerät in Home Assistant gefunden"
+            if mac_searched:
+                error_msg += f" (MAC: ...{mac_searched})"
+            
+            # Add available devices to the response for debugging/selection
+            available_list = []
+            for name, data in available_devices.items():
+                # Pick the first entity to show ID
+                first_entity = data['entities'][0]['entity_id'] if data['entities'] else "unknown"
+                available_list.append({
+                    "name": name,
+                    "id": first_entity
+                })
+                
+            return jsonify({
+                "success": False, 
+                "error": error_msg,
+                "available_devices": available_list
+            })
+
+        # Select best match (prioritize binary_sensor for contact)
+        candidates = []
+        
+        for key, data in matches.items():
+            score = data['score_bonus']
+            has_binary = any(e['domain'] == 'binary_sensor' for e in data['entities'])
+            has_battery = any('battery' in e['entity_id'] or 'battery' in e['friendly_name'].lower() for e in data['entities'])
+            
+            if has_binary: score += 10
+            if has_battery: score += 1
+            
+            # Store candidate with score
+            candidates.append({
+                "key": key,
+                "score": score,
+                "data": data
+            })
+            
+        # Sort candidates by score descending
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        
+        if not candidates:
+             return jsonify({"success": False, "error": "Keine geeigneten Kandidaten gefunden"})
+
+        # If we have multiple good candidates (score > 10), return them all
+        # Or if the top 2 have similar scores
+        top_candidates = [c for c in candidates if c['score'] >= 10]
+        if not top_candidates:
+            top_candidates = candidates[:1] # Fallback to best one
+            
+        # If we have multiple candidates, we might want to let the user choose
+        # But for now, let's just return the best one, but include others in the response
+        
+        best_candidate = candidates[0]
+        best_key = best_candidate['key']
+        best_score = best_candidate['score']
+        
+        result = matches[best_key]
+        logger.info(f"DEBUG: Selected best match {best_key} with score {best_score}")
+        
+        # 5. Sibling Search (Expand Device)
+        # Try to find other entities that belong to the same device based on ID/Name similarity
+        
+        final_entities = {e['entity_id']: e for e in result['entities']} # Use dict to avoid duplicates
+        
+        # Use the "best" entity from the group to find siblings (prefer binary_sensor)
+        best_entity = next((e for e in result['entities'] if e['domain'] == 'binary_sensor'), result['entities'][0])
+        
+        # Strategy 1: Entity ID Prefix
+        # binary_sensor.kitchen_window_contact -> kitchen_window
+        entity_id_parts = best_entity['entity_id'].split('.')
+        if len(entity_id_parts) == 2:
+            obj_id = entity_id_parts[1]
+            # Common suffixes to strip
+            suffixes = ['_contact', '_battery', '_temperature', '_humidity', '_illuminance', '_lux', 
+                        '_pressure', '_power', '_energy', '_voltage', '_current', '_opening', 
+                        '_motion', '_occupancy', '_vibration', '_tilt', '_rotation', '_state', '_status',
+                        '_window', '_door', '_button']
+            
+            base_id = obj_id
+            for suffix in suffixes:
+                if base_id.endswith(suffix):
+                    base_id = base_id[:-len(suffix)]
+                    break
+            
+            # If base_id is too short (e.g. just "sensor"), ignore
+            if len(base_id) > 3:
+                logger.info(f"DEBUG: Searching siblings for base_id: {base_id}")
+                for eid, state in ha_states.items():
+                    # NUR BTHome/Shelly BLU Sensoren!
+                    if not ('bthome' in eid.lower() or 'shelly_blu' in eid.lower()):
+                        continue
+                    if base_id in eid and eid not in final_entities:
+                         final_entities[eid] = {
+                            "entity_id": eid,
+                            "friendly_name": state.get('attributes', {}).get('friendly_name', ''),
+                            "domain": eid.split('.')[0],
+                            "state": state.get('state'),
+                            "attributes": state.get('attributes', {})
+                        }
+
+        # Strategy 2: Friendly Name Prefix
+        # "Kitchen Window Contact" -> "Kitchen Window"
+        friendly_name = best_entity['friendly_name']
+        if friendly_name:
+            name_suffixes = [' Contact', ' Battery', ' Temperature', ' Humidity', ' Illuminance', 
+                             ' Lux', ' Power', ' Energy', ' Opening', ' Motion', ' Occupancy', 
+                             ' Vibration', ' Tilt', ' Rotation', ' Status', ' State',
+                             ' Window', ' Door', ' Button']
+            
+            base_name = friendly_name
+            for suffix in name_suffixes:
+                if base_name.lower().endswith(suffix.lower()):
+                    base_name = base_name[:-len(suffix)]
+                    break
+            
+            if len(base_name) > 3 and base_name != friendly_name:
+                 logger.info(f"DEBUG: Searching siblings for base_name: {base_name}")
+                 for eid, state in ha_states.items():
+                    # NUR BTHome/Shelly BLU Sensoren!
+                    if not ('bthome' in eid.lower() or 'shelly_blu' in eid.lower()):
+                        continue
+                    f_name = state.get('attributes', {}).get('friendly_name', '')
+                    if base_name.lower() in f_name.lower() and eid not in final_entities:
+                         final_entities[eid] = {
+                            "entity_id": eid,
+                            "friendly_name": f_name,
+                            "domain": eid.split('.')[0],
+                            "state": state.get('state'),
+                            "attributes": state.get('attributes', {})
+                        }
+        
+        # Prepare list of alternative candidates for frontend
+        alternatives = []
+        for c in candidates:
+            if c['key'] != best_key:
+                alternatives.append({
+                    "device_name": c['data']['device_name'],  # Use Homey device name, not HA friendly_name
+                    "score": c['score'],
+                    "entities": c['data']['entities'] # Note: These are not expanded with siblings yet
+                })
+
+        return jsonify({
+            "success": True,
+            "device_name": result["device_name"],  # Homey device name
+            "ha_friendly_name": result["name"],    # HA friendly name
+            "entities": list(final_entities.values()),
+            "alternatives": alternatives
+        })
+
+    except Exception as e:
+        logger.error(f"Error finding device for room: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+

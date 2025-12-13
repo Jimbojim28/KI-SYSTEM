@@ -50,6 +50,7 @@ def get_christmas_config():
                     'devices': [],
                     'device_labels': {},
                     'device_schedules': {},  # Individuelle Zeitpläne pro Gerät
+                    'presence_devices': [],  # Geräte mit Anwesenheitssteuerung
                     'presence_only': False,
                     'weekend_extended': False,
                     'random_delay': True
@@ -90,6 +91,7 @@ def save_christmas_config():
             'devices': data.get('devices', []),
             'device_labels': data.get('device_labels', {}),
             'device_schedules': data.get('device_schedules', {}),  # Individuelle Zeitpläne pro Gerät
+            'presence_devices': data.get('presence_devices', []),  # Geräte mit Anwesenheitssteuerung
             'presence_only': data.get('presence_only', False),
             'weekend_extended': data.get('weekend_extended', False),
             'random_delay': data.get('random_delay', True),

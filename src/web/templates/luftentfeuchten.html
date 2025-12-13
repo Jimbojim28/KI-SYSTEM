@@ -377,84 +377,23 @@
             <button class="tab-btn" data-tab="advanced">⚙️ Erweitert</button>
         </div>
 
-        <!-- Tab Content: Geräte -->
+        <!-- Tab Content: Raum-Auswahl -->
         <div class="tab-content active" id="tab-devices">
             <div class="form-section">
                 <div class="form-group">
-                    <label>Raum auswählen</label>
-                    <select id="room-filter" class="form-select">
-                        <option value="">-- Alle Räume --</option>
+                    <label>Badezimmer auswählen</label>
+                    <select id="room-select" class="form-select">
+                        <option value="">-- Raum auswählen --</option>
                     </select>
                     <small style="color: #6b7280; margin-top: 4px; display: block;">
-                        Wählen Sie einen Raum aus, um nur Geräte aus diesem Raum anzuzeigen
+                        Wählen Sie den Raum aus, der als Badezimmer gesteuert werden soll. 
+                        Die Geräte (Sensoren, Heizung, etc.) werden automatisch aus der Raum-Konfiguration übernommen.
                     </small>
-                </div>
-
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-top: 20px;">
-                    <div class="form-group">
-                        <label>Luftfeuchtigkeit-Sensor *</label>
-                        <select id="humidity-sensor" class="form-select">
-                            <option value="">-- Sensor auswählen --</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Temperatur-Sensor *</label>
-                        <select id="temperature-sensor" class="form-select">
-                            <option value="">-- Sensor auswählen --</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Luftentfeuchter *</label>
-                        <select id="dehumidifier" class="form-select">
-                            <option value="">-- Gerät auswählen --</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Heizung/Thermostat</label>
-                        <select id="heater" class="form-select">
-                            <option value="">-- Optional --</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Bewegungssensor (Optional)</label>
-                        <select id="motion-sensor" class="form-select">
-                            <option value="">-- Optional --</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Tür-Sensor (Optional)</label>
-                        <select id="door-sensor" class="form-select">
-                            <option value="">-- Optional --</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Fenster-Sensor (Empfohlen) ⚠️</label>
-                        <select id="window-sensor" class="form-select">
-                            <option value="">-- Optional --</option>
-                        </select>
-                        <small style="color: #d97706; margin-top: 4px; display: block; font-weight: 500;">
-                            ⚠️ Bei offenem Fenster: Heizung + Luftentfeuchter werden deaktiviert
-                        </small>
-                    </div>
                 </div>
 
                 <div style="background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px; margin-top: 20px;">
                     <small style="color: #1e40af;">
-                        <strong>💡 Tipp:</strong> Pflichtfelder (*) müssen ausgefüllt werden. Optionale Sensoren verbessern die Genauigkeit.
-                    </small>
-                </div>
-
-                <div style="background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 12px; margin-top: 15px;">
-                    <small style="color: #92400e;">
-                        <strong>⚠️ Wichtig:</strong> Der <strong>Fenster-Sensor</strong> ist dringend empfohlen!
-                        Bei offenem Fenster werden Heizung und Luftentfeuchter automatisch deaktiviert,
-                        um Energieverschwendung zu vermeiden und natürliche Lüftung zu nutzen.
+                        <strong>💡 Hinweis:</strong> Die Zuordnung von Geräten zu Räumen erfolgt jetzt zentral unter <a href="/rooms" style="color: #1e40af; text-decoration: underline;">Räume</a>.
                     </small>
                 </div>
 
@@ -462,8 +401,7 @@
                 <div style="margin-top: 25px; padding-top: 20px; border-top: 2px dashed #e5e7eb;">
                     <h4 style="margin: 0 0 15px 0; color: #374151;">🧪 Geräte-Test</h4>
                     <p style="color: #6b7280; font-size: 0.9em; margin-bottom: 15px;">
-                        Teste ob die konfigurierten Geräte erreichbar sind und korrekt reagieren.
-                        Das Gerät wird für 30 Sekunden eingeschaltet und dann automatisch wieder ausgeschaltet.
+                        Teste ob die konfigurierten Geräte im ausgewählten Raum erreichbar sind.
                     </p>
                     
                     <div style="display: flex; gap: 15px; flex-wrap: wrap;">

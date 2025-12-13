@@ -1,0 +1,77 @@
+{
+  "comment": "Mapping von Home Assistant Entit\u00e4ten zu R\u00e4umen f\u00fcr die Fenster-Erkennung",
+  "mappings": {
+    "53e4a842-a731-44d2-b0df-30ec4460fa1e": {
+      "name": "BTHome sensor 1E9B Window",
+      "room": "Wohnzimmer",
+      "type": "window",
+      "source": "ha",
+      "entities": {
+        "contact": "binary_sensor.shelly_blu_door_window_1e9b_window",
+        "battery": "sensor.shelly_blu_door_window_1e9b_battery",
+        "illuminance": "sensor.shelly_blu_door_window_1e9b_illuminance",
+        "rotation": "sensor.shelly_blu_door_window_1e9b_rotation"
+      }
+    },
+    "4fff23c2-fb77-4058-ac18-c9d729152faf": {
+      "name": "BTHome sensor 2EDA Window",
+      "room": "Wohnzimmer",
+      "type": "window",
+      "source": "ha",
+      "entities": {
+        "contact": "binary_sensor.shelly_blu_door_window_2eda_window",
+        "battery": "sensor.shelly_blu_door_window_2eda_battery",
+        "illuminance": "sensor.shelly_blu_door_window_2eda_illuminance",
+        "rotation": "sensor.shelly_blu_door_window_2eda_rotation"
+      }
+    },
+    "0cb2df41-73a2-4b78-88b3-04e3bc971669": {
+      "name": "BTHome sensor 75C7 Window",
+      "room": "Schlafzimmer (Doppelbett)",
+      "type": "window",
+      "source": "ha",
+      "entities": {
+        "contact": "binary_sensor.shelly_blu_door_window_75c7_window",
+        "battery": "sensor.shelly_blu_door_window_75c7_battery",
+        "illuminance": "sensor.shelly_blu_door_window_75c7_illuminance",
+        "rotation": "sensor.shelly_blu_door_window_75c7_rotation"
+      }
+    },
+    "6b500c68-d720-421b-8faf-ad8d274ac2e1": {
+      "name": "BTHome sensor 1AE2 Window",
+      "room": "Badezimmer",
+      "type": "window",
+      "source": "ha",
+      "entities": {
+        "contact": "binary_sensor.bthome_sensor_1ae2_window",
+        "battery": "sensor.bthome_sensor_1ae2_battery",
+        "illuminance": "sensor.bthome_sensor_1ae2_illuminance",
+        "rotation": "sensor.bthome_sensor_1ae2_rotation"
+      }
+    },
+    "9db443fc-523e-413e-996c-8103c8298761": {
+      "name": "BTHome sensor 5A56 Fenster",
+      "room": "Arbeitszimmer",
+      "type": "window",
+      "source": "ha",
+      "entities": {
+        "contact": "binary_sensor.bthome_sensor_5a56_window",
+        "battery": "sensor.bthome_sensor_5a56_battery",
+        "illuminance": "sensor.bthome_sensor_5a56_illuminance",
+        "rotation": "sensor.bthome_sensor_5a56_rotation"
+      }
+    },
+    "73fd0603-0abb-4c76-8d05-00afe087aa64": {
+      "name": "K\u00fcche Fenster",
+      "room": "K\u00fcche",
+      "type": "window",
+      "source": "ha",
+      "entities": {
+        "contact": "binary_sensor.fenster_kuche_window",
+        "battery": "sensor.fenster_kuche_battery",
+        "illuminance": "sensor.fenster_kuche_illuminance",
+        "rotation": "sensor.fenster_kuche_rotation"
+      }
+    }
+  }
+}
