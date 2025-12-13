@@ -981,14 +981,15 @@ async function loadHeatingAnalytics() {
 function renderCostEstimates(costData) {
     if (!costData) return;
 
-    document.getElementById('cost-daily').textContent =
-        (costData.daily_cost || 0).toFixed(2) + '€';
-    document.getElementById('cost-monthly').textContent =
-        (costData.monthly_cost || 0).toFixed(2) + '€';
-    document.getElementById('cost-yearly').textContent =
-        (costData.yearly_cost || 0).toFixed(0) + '€';
-    document.getElementById('heating-hours').textContent =
-        (costData.total_heating_hours || 0).toFixed(1) + 'h';
+    const costDaily = document.getElementById('cost-daily');
+    const costMonthly = document.getElementById('cost-monthly');
+    const costYearly = document.getElementById('cost-yearly');
+    const heatingHours = document.getElementById('heating-hours-per-day');
+
+    if (costDaily) costDaily.textContent = (costData.daily_cost || 0).toFixed(2) + '€';
+    if (costMonthly) costMonthly.textContent = (costData.monthly_cost || 0).toFixed(2) + '€';
+    if (costYearly) costYearly.textContent = (costData.yearly_cost || 0).toFixed(0) + '€';
+    if (heatingHours) heatingHours.textContent = (costData.total_heating_hours || 0).toFixed(1) + 'h';
 }
 
 // Rendere Heizzeiten-Chart
@@ -1851,6 +1852,11 @@ async function loadHumidityAlerts() {
         const container = document.getElementById('humidity-alerts-container');
         const card = document.getElementById('humidity-alerts-card');
 
+        if (!container || !card) {
+            console.log('Humidity alerts elements not found, skipping');
+            return;
+        }
+
         if (!response.alerts || response.alerts.length === 0) {
             card.style.display = 'none';
             return;
@@ -1893,7 +1899,8 @@ async function loadHumidityAlerts() {
 
     } catch (error) {
         console.error('Error loading humidity alerts:', error);
-        document.getElementById('humidity-alerts-card').style.display = 'none';
+        const alertCard = document.getElementById('humidity-alerts-card');
+        if (alertCard) alertCard.style.display = 'none';
     }
 }
 
@@ -1906,6 +1913,11 @@ async function loadVentilationRecommendations() {
         
         const container = document.getElementById('ventilation-recommendations-container');
         const card = document.getElementById('ventilation-card');
+
+        if (!container || !card) {
+            console.log('Ventilation elements not found, skipping');
+            return;
+        }
 
         if (!response.recommendations || response.recommendations.length === 0) {
             card.style.display = 'none';
