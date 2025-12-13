@@ -1542,6 +1542,57 @@ let forgottenChart = null;
 let roomChart = null;
 let autoRefreshInterval = null;
 
+// Zentrale Raum-Konfiguration (aus /api/rooms)
+let allRooms = [];
+let hiddenRooms = [];
+let roomNameMap = {}; // zone_id -> room_name
+
+// Zentrale Raum-Konfiguration laden
+async function loadRoomsConfig() {
+    try {
+        // Versteckte Räume laden
+        const hiddenResponse = await fetch('/api/rooms/hidden');
+        if (hiddenResponse.ok) {
+            const hiddenData = await hiddenResponse.json();
+            hiddenRooms = hiddenData.hidden || [];
+            console.log('Hidden rooms loaded:', hiddenRooms);
+        }
+        
+        // Alle Räume laden für Zone-ID zu Name Mapping
+        const roomsResponse = await fetch('/api/rooms');
+        if (roomsResponse.ok) {
+            const roomsData = await roomsResponse.json();
+            allRooms = roomsData.rooms || [];
+            
+            // Baue Zone-ID zu Raumname Mapping
+            allRooms.forEach(room => {
+                if (room.id) {
+                    roomNameMap[room.id] = room.name;
+                }
+            });
+            console.log('Rooms loaded:', allRooms.length, 'rooms');
+        }
+    } catch (error) {
+        console.error('Error loading rooms config:', error);
+    }
+}
+
+// Raumnamen auflösen (Zone-ID zu Name)
+function resolveRoomName(roomNameOrId) {
+    if (!roomNameOrId) return 'Unbekannt';
+    // Wenn es eine UUID ist, versuche sie aufzulösen
+    if (roomNameOrId.match(/^[0-9a-f-]{36}$/i)) {
+        return roomNameMap[roomNameOrId] || roomNameOrId;
+    }
+    return roomNameOrId;
+}
+
+// Prüfen ob Raum versteckt ist
+function isRoomHidden(roomName) {
+    const resolved = resolveRoomName(roomName);
+    return hiddenRooms.includes(resolved);
+}
+
 // Tab-Wechsel
 function switchTab(tabName) {
     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -1749,7 +1800,20 @@ function renderCurrentPredictions(predictions) {
         return;
     }
     
-    container.innerHTML = predictions.map(p => `
+    // Filtere versteckte Räume und löse Raumnamen auf
+    const filteredPredictions = predictions
+        .map(p => ({
+            ...p,
+            room_name: resolveRoomName(p.room_name)
+        }))
+        .filter(p => !isRoomHidden(p.room_name));
+    
+    if (filteredPredictions.length === 0) {
+        container.innerHTML = '<p class="empty-state">Keine Vorhersagen in sichtbaren Räumen.</p>';
+        return;
+    }
+    
+    container.innerHTML = filteredPredictions.map(p => `
         <div class="prediction-item ${p.ml_prediction ? 'ml-prediction' : ''}">
             <div class="prediction-info">
                 <div class="prediction-device">💡 ${p.device_name} ${p.ml_prediction ? '<span class="ml-tag">🤖 ML</span>' : ''}</div>
@@ -1878,6 +1942,16 @@ function renderTimelineChart(dataPoints) {
 function renderRoomChart(byRoom) {
     if (!byRoom || byRoom.length === 0) return;
     
+    // Filtere versteckte Räume und löse Raumnamen auf
+    const filteredRooms = byRoom
+        .map(r => ({
+            ...r,
+            room: resolveRoomName(r.room)
+        }))
+        .filter(r => !isRoomHidden(r.room));
+    
+    if (filteredRooms.length === 0) return;
+    
     const ctx = document.getElementById('room-chart').getContext('2d');
     
     if (roomChart) roomChart.destroy();
@@ -1885,9 +1959,9 @@ function renderRoomChart(byRoom) {
     roomChart = new Chart(ctx, {
         type: 'doughnut',
         data: {
-            labels: byRoom.map(r => r.room),
+            labels: filteredRooms.map(r => r.room),
             datasets: [{
-                data: byRoom.map(r => r.count),
+                data: filteredRooms.map(r => r.count),
                 backgroundColor: [
                     '#667eea', '#764ba2', '#27ae60', '#e74c3c', 
                     '#f39c12', '#3498db', '#9b59b6', '#1abc9c'
@@ -1922,7 +1996,20 @@ async function loadHistory() {
             return;
         }
         
-        container.innerHTML = data.history.map(h => `
+        // Filtere versteckte Räume und löse Raumnamen auf
+        const filteredHistory = data.history
+            .map(h => ({
+                ...h,
+                room_name: resolveRoomName(h.room_name)
+            }))
+            .filter(h => !isRoomHidden(h.room_name));
+        
+        if (filteredHistory.length === 0) {
+            container.innerHTML = '<p class="empty-state">Keine Einträge in sichtbaren Räumen.</p>';
+            return;
+        }
+        
+        container.innerHTML = filteredHistory.map(h => `
             <div class="history-item">
                 <div>
                     <span class="history-device">💡 ${h.device_name}</span>
@@ -2187,7 +2274,7 @@ async function loadRecentEvents() {
     const container = document.getElementById('recent-events-list');
     
     try {
-        const response = await fetch('/api/lighting/events/recent?limit=20');
+        const response = await fetch('/api/lighting/events/recent?limit=30');
         const data = await response.json();
         
         if (!data.events || data.events.length === 0) {
@@ -2195,7 +2282,21 @@ async function loadRecentEvents() {
             return;
         }
         
-        container.innerHTML = data.events.map(e => `
+        // Filtere versteckte Räume und löse Raumnamen auf
+        const filteredEvents = data.events
+            .map(e => ({
+                ...e,
+                room_name: resolveRoomName(e.room_name)
+            }))
+            .filter(e => !isRoomHidden(e.room_name))
+            .slice(0, 20);
+        
+        if (filteredEvents.length === 0) {
+            container.innerHTML = '<p class="empty-state">Noch keine Events in sichtbaren Räumen.</p>';
+            return;
+        }
+        
+        container.innerHTML = filteredEvents.map(e => `
             <div class="event-item ${e.state === 'on' ? 'event-on' : 'event-off'}">
                 <div class="event-indicator ${e.state}"></div>
                 <div class="event-info">
@@ -2229,7 +2330,20 @@ async function loadLightStats() {
             return;
         }
         
-        container.innerHTML = data.stats.map((s, i) => `
+        // Filtere versteckte Räume und löse Raumnamen auf
+        const filteredStats = data.stats
+            .map(s => ({
+                ...s,
+                room_name: resolveRoomName(s.room_name)
+            }))
+            .filter(s => !isRoomHidden(s.room_name));
+        
+        if (filteredStats.length === 0) {
+            container.innerHTML = '<p class="empty-state">Keine Lampen in sichtbaren Räumen.</p>';
+            return;
+        }
+        
+        container.innerHTML = filteredStats.map((s, i) => `
             <div class="light-stat-item">
                 <div class="light-rank">#${i + 1}</div>
                 <div class="light-info">
@@ -2264,10 +2378,23 @@ async function loadRoomLightStats() {
             return;
         }
         
-        // Finde Maximum für Balken-Skalierung
-        const maxDuration = Math.max(...data.stats.map(s => s.total_duration_minutes || 0));
+        // Filtere versteckte Räume und löse Raumnamen auf
+        const filteredStats = data.stats
+            .map(s => ({
+                ...s,
+                room_name: resolveRoomName(s.room_name)
+            }))
+            .filter(s => !isRoomHidden(s.room_name));
         
-        container.innerHTML = data.stats.map(s => {
+        if (filteredStats.length === 0) {
+            container.innerHTML = '<p class="empty-state">Keine Statistik für sichtbare Räume.</p>';
+            return;
+        }
+        
+        // Finde Maximum für Balken-Skalierung
+        const maxDuration = Math.max(...filteredStats.map(s => s.total_duration_minutes || 0));
+        
+        container.innerHTML = filteredStats.map(s => {
             const barWidth = maxDuration > 0 ? Math.round((s.total_duration_minutes || 0) / maxDuration * 100) : 0;
             const avgDuration = s.on_count > 0 ? Math.round(s.total_duration_minutes / s.on_count) : 0;
             
@@ -2324,7 +2451,11 @@ function startAutoRefresh() {
 }
 
 // Initialisierung
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Zuerst zentrale Raum-Konfiguration laden
+    await loadRoomsConfig();
+    
+    // Dann alle anderen Daten laden
     loadStatus();
     loadChart(7);
     loadRoomLightStats();
