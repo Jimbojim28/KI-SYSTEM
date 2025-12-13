@@ -276,15 +276,17 @@ class ForgottenLightDetector:
                 device_id = device.get('id')
                 device_name = device.get('name', 'Unknown')
                 
-                # Handle zone - löse UUID zu Raumname auf
-                zone = device.get('zone')
-                if isinstance(zone, dict):
-                    room_name = zone.get('name', 'Unknown')
-                elif isinstance(zone, str):
-                    # Zone ist UUID - versuche aufzulösen
-                    room_name = zone_mapping.get(zone, zone)
-                else:
-                    room_name = 'Unknown'
+                # Handle zone - prefer zoneName, then resolve UUID
+                room_name = device.get('zoneName')
+                if not room_name:
+                    zone = device.get('zone')
+                    if isinstance(zone, dict):
+                        room_name = zone.get('name', 'Unknown')
+                    elif isinstance(zone, str):
+                        # Zone ist UUID - versuche aufzulösen
+                        room_name = zone_mapping.get(zone, zone)
+                    else:
+                        room_name = 'Unknown'
                 
                 # Versteckte Räume überspringen
                 if room_name in self.hidden_rooms:
@@ -703,14 +705,16 @@ class ForgottenLightDetector:
             device_id = device.get('id')
             device_name = device.get('name', 'Unknown')
             
-            # Raumname ermitteln
-            zone = device.get('zone')
-            if isinstance(zone, dict):
-                room_name = zone.get('name', 'Unknown')
-            elif isinstance(zone, str):
-                room_name = zone_mapping.get(zone, zone)
-            else:
-                room_name = 'Unknown'
+            # Raumname ermitteln - prefer zoneName
+            room_name = device.get('zoneName')
+            if not room_name:
+                zone = device.get('zone')
+                if isinstance(zone, dict):
+                    room_name = zone.get('name', 'Unknown')
+                elif isinstance(zone, str):
+                    room_name = zone_mapping.get(zone, zone)
+                else:
+                    room_name = 'Unknown'
             
             # Versteckte Räume überspringen
             if room_name in self.hidden_rooms:

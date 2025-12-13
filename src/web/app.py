@@ -1165,6 +1165,18 @@ class WebInterface:
                 conn = self.db._get_connection()
                 cursor = conn.cursor()
                 
+                # Zone-UUID zu Raumname Mapping holen
+                zone_mapping = {}
+                try:
+                    if self.engine and hasattr(self.engine, 'platform') and self.engine.platform:
+                        zones = self.engine.platform.get_zones()
+                        if isinstance(zones, dict):
+                            for zid, zdata in zones.items():
+                                if isinstance(zdata, dict):
+                                    zone_mapping[zid] = zdata.get('name', zid)
+                except Exception as e:
+                    logger.debug(f"Could not get zone mapping: {e}")
+                
                 cursor.execute("""
                     SELECT timestamp, device_name, room_name, state, brightness
                     FROM lighting_events
@@ -1174,10 +1186,14 @@ class WebInterface:
                 
                 events = []
                 for row in cursor.fetchall():
+                    room_id = row[2] or ''
+                    # Übersetze Zone-UUID in Raumname falls nötig
+                    room_name = zone_mapping.get(room_id, room_id) if room_id else 'Unbekannt'
+                    
                     events.append({
                         'timestamp': row[0],
                         'device_name': row[1],
-                        'room_name': row[2],
+                        'room_name': room_name,
                         'state': row[3],
                         'brightness': row[4]
                     })

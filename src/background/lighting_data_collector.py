@@ -149,14 +149,16 @@ class LightingDataCollector:
                     device_id = device.get('id')
                     device_name = device.get('name', 'Unknown')
 
-                    # Handle zone - can be string (ID) or dict
-                    zone = device.get('zone')
-                    if isinstance(zone, dict):
-                        room_name = zone.get('name', 'Unknown')
-                    elif isinstance(zone, str):
-                        room_name = zone  # Zone ID
-                    else:
-                        room_name = 'Unknown'
+                    # Handle zone - prefer zoneName, fallback to zone dict/string
+                    room_name = device.get('zoneName')
+                    if not room_name:
+                        zone = device.get('zone')
+                        if isinstance(zone, dict):
+                            room_name = zone.get('name', 'Unknown')
+                        elif isinstance(zone, str):
+                            room_name = zone  # Zone ID as fallback
+                        else:
+                            room_name = 'Unknown'
                     
                     # Aktueller Zustand
                     state = device.get('capabilitiesObj', {}).get('onoff', {}).get('value')
