@@ -27,12 +27,24 @@ echo ""
 PORT=${1:-$DEFAULT_PORT}
 HOST=${2:-$DEFAULT_HOST}
 FORCE_RESTART=false
+DEBUG_MODE=false
 
-if [[ "$1" == "--restart" ]] || [[ "$1" == "-r" ]]; then
-    FORCE_RESTART=true
-    PORT=${2:-$DEFAULT_PORT}
-    HOST=${3:-$DEFAULT_HOST}
-fi
+for arg in "$@"; do
+    case $arg in
+        --restart|-r)
+            FORCE_RESTART=true
+            ;;
+        --debug|-d)
+            DEBUG_MODE=true
+            ;;
+        *)
+            # Versuche als Port zu interpretieren
+            if [[ "$arg" =~ ^[0-9]+$ ]]; then
+                PORT=$arg
+            fi
+            ;;
+    esac
+done
 
 # Prüfe ob Virtual Environment aktiviert ist
 if [[ -z "$VIRTUAL_ENV" ]] && [[ -d "venv" ]]; then
@@ -103,10 +115,19 @@ start_webapp() {
     echo "   Host: $HOST"
     echo "   Port: $PORT"
     echo "   Logs: $LOG_FILE"
+    if [[ "$DEBUG_MODE" == true ]]; then
+        echo -e "   ${YELLOW}Debug-Modus: AKTIV (Auto-Reload bei Code-Änderungen)${NC}"
+    fi
     echo ""
 
+    # Debug-Flag für Python
+    DEBUG_FLAG=""
+    if [[ "$DEBUG_MODE" == true ]]; then
+        DEBUG_FLAG="--debug"
+    fi
+
     # Starte im Hintergrund mit nohup
-    nohup python3 main.py web --host $HOST --port $PORT > "$LOG_FILE" 2>&1 &
+    nohup python3 main.py web --host $HOST --port $PORT $DEBUG_FLAG > "$LOG_FILE" 2>&1 &
 
     # Speichere PID
     echo $! > "$PID_FILE"
@@ -132,10 +153,14 @@ start_webapp() {
         echo "   PID: $PID"
         echo "   Port: $PORT"
         echo "   Host: $HOST"
+        if [[ "$DEBUG_MODE" == true ]]; then
+            echo -e "   ${YELLOW}Debug: AKTIV (Auto-Reload)${NC}"
+        fi
         echo ""
         echo "💡 Nützliche Befehle:"
         echo "   tail -f $LOG_FILE          # Logs live ansehen"
         echo "   ./start.sh --restart         # Neu starten"
+        echo "   ./start.sh --debug           # Mit Auto-Reload starten"
         echo "   ./stop.sh                    # Stoppen"
         echo "   ps -p $PID                   # Prozess-Status prüfen"
         echo ""

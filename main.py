@@ -289,10 +289,11 @@ def cmd_web(args):
     """Startet das Web-Interface"""
     from src.web.app import WebInterface
 
-    logger.info(f"Starting web interface on http://{args.host}:{args.port}")
+    debug_mode = getattr(args, 'debug', False)
+    logger.info(f"Starting web interface on http://{args.host}:{args.port} (debug={debug_mode})")
 
     web = WebInterface(args.config)
-    web.run(host=args.host, port=args.port, debug=False)
+    web.run(host=args.host, port=args.port, debug=debug_mode)
 
     return 0
 
@@ -348,6 +349,12 @@ Konfiguration:
         type=str,
         default='0.0.0.0',
         help='Host für Web-Interface (default: 0.0.0.0)'
+    )
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Aktiviert Debug-Modus mit Auto-Reload bei Code-Änderungen'
     )
 
     args = parser.parse_args()
