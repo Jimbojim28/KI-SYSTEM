@@ -101,6 +101,15 @@
         </div>
     </div>
     
+    <!-- Beobachtete Lampen -->
+    <div class="section-card">
+        <h3>👀 Eingeschaltete Lampen</h3>
+        <p class="section-hint">Lampen die gerade überwacht werden:</p>
+        <div id="watched-lights" class="predictions-list">
+            <p class="empty-state">Keine eingeschalteten Lampen gefunden.</p>
+        </div>
+    </div>
+    
     <!-- Chart: Wann wurden Lampen vergessen? -->
     <div class="section-card">
         <h3>📈 Wann wurden Lampen vergessen?</h3>
@@ -825,6 +834,45 @@
 .prediction-item.ml-prediction {
     border-left-color: #667eea;
     background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, #fff 100%);
+}
+
+/* Watched lights status colors */
+.prediction-item.watched-forgotten {
+    border-left-color: #ef4444;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, #fff 100%);
+}
+
+.prediction-item.watched-watched {
+    border-left-color: #f59e0b;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, #fff 100%);
+}
+
+.prediction-item.watched-ok {
+    border-left-color: #10b981;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, #fff 100%);
+}
+
+.watched-status-badge {
+    font-size: 0.75em;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    margin-bottom: 0.3rem;
+}
+
+.watched-status-badge.status-forgotten {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.watched-status-badge.status-watched {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.watched-status-badge.status-ok {
+    background: #d1fae5;
+    color: #059669;
 }
 
 .ml-tag {
@@ -1670,6 +1718,9 @@ async function loadStatus() {
         // Aktuelle Vorhersagen
         renderCurrentPredictions(data.current_predictions || []);
         
+        // Beobachtete Lampen rendern
+        renderWatchedLights(data.watched_lights || []);
+        
         // ML Status laden
         loadMLStatus();
         
@@ -1824,6 +1875,56 @@ function renderCurrentPredictions(predictions) {
                 <div class="prediction-confidence">${Math.round(p.confidence * 100)}%</div>
                 <div>${formatTime(p.timestamp)}</div>
                 <div>${p.on_duration_minutes} Min. an</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Beobachtete Lampen rendern
+function renderWatchedLights(lights) {
+    const container = document.getElementById('watched-lights');
+    
+    if (!lights || lights.length === 0) {
+        container.innerHTML = '<p class="empty-state">Keine eingeschalteten Lampen gefunden.</p>';
+        return;
+    }
+    
+    // Filtere versteckte Räume und löse Raumnamen auf
+    const filteredLights = lights
+        .map(l => ({
+            ...l,
+            room_name: resolveRoomName(l.room_name)
+        }))
+        .filter(l => !isRoomHidden(l.room_name));
+    
+    if (filteredLights.length === 0) {
+        container.innerHTML = '<p class="empty-state">Keine Lampen in sichtbaren Räumen.</p>';
+        return;
+    }
+    
+    const statusIcons = {
+        'forgotten': '🔴',
+        'watched': '🟡',
+        'ok': '🟢'
+    };
+    
+    const statusLabels = {
+        'forgotten': 'Vergessen',
+        'watched': 'Beobachtet',
+        'ok': 'OK'
+    };
+    
+    container.innerHTML = filteredLights.map(l => `
+        <div class="prediction-item watched-${l.status}">
+            <div class="prediction-info">
+                <div class="prediction-device">${statusIcons[l.status] || '⚪'} ${l.device_name}</div>
+                <div class="prediction-room">📍 ${l.room_name}</div>
+                <div class="prediction-reasons">${l.status_reasons.join(' • ')}</div>
+            </div>
+            <div class="prediction-time">
+                <div class="watched-status-badge status-${l.status}">${statusLabels[l.status] || l.status}</div>
+                <div>${l.on_minutes} Min. an</div>
+                ${l.minutes_since_motion !== null ? `<div>Bewegung: ${l.minutes_since_motion} Min.</div>` : '<div>Kein Sensor</div>'}
             </div>
         </div>
     `).join('');

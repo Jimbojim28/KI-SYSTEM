@@ -892,6 +892,103 @@ class ForgottenLightDetector:
         """Gibt aktuelle Vorhersagen zurück"""
         return self.predictions.copy()
     
+    def get_watched_lights(self) -> List[Dict]:
+        """
+        Gibt alle eingeschalteten Lampen mit ihrem Beobachtungsstatus zurück.
+        Zeigt auch Lampen die noch nicht als "vergessen" gelten mit Gründen warum nicht.
+        """
+        watched = []
+        now = datetime.now()
+        
+        try:
+            if not self.platform:
+                return []
+            
+            devices = self.platform.get_all_devices()
+            if isinstance(devices, dict):
+                devices = list(devices.values())
+            
+            zone_mapping = self._get_zone_mapping()
+            
+            for device in devices:
+                if not self._is_light_device(device):
+                    continue
+                
+                device_id = device.get('id')
+                device_name = device.get('name', 'Unknown')
+                
+                # Raumname ermitteln
+                room_name = device.get('zoneName')
+                if not room_name:
+                    zone = device.get('zone')
+                    if isinstance(zone, dict):
+                        room_name = zone.get('name', 'Unknown')
+                    elif isinstance(zone, str):
+                        room_name = zone_mapping.get(zone, zone)
+                    else:
+                        room_name = 'Unknown'
+                
+                # Versteckte Räume überspringen
+                if room_name in self.hidden_rooms:
+                    continue
+                
+                # Ist die Lampe an?
+                state = device.get('capabilitiesObj', {}).get('onoff', {}).get('value')
+                
+                if state:
+                    # Berechne wie lange an
+                    on_since = self.light_on_times.get(device_id)
+                    on_minutes = 0
+                    if on_since:
+                        on_minutes = (now - on_since).total_seconds() / 60
+                    
+                    # Bewegung im Raum
+                    last_motion = self.last_motion_times.get(room_name)
+                    minutes_since_motion = None
+                    if last_motion:
+                        minutes_since_motion = (now - last_motion).total_seconds() / 60
+                    
+                    # Status ermitteln
+                    status = 'ok'
+                    status_reasons = []
+                    
+                    if on_minutes < self.min_on_duration_minutes:
+                        status_reasons.append(f"Erst {int(on_minutes)} Min. an (min. {self.min_on_duration_minutes})")
+                    elif minutes_since_motion is not None and minutes_since_motion < self.no_motion_threshold_minutes:
+                        status_reasons.append(f"Bewegung vor {int(minutes_since_motion)} Min. (Schwelle: {self.no_motion_threshold_minutes})")
+                    else:
+                        # Könnte als vergessen gelten
+                        status = 'watched'
+                        if minutes_since_motion is None:
+                            status_reasons.append("Kein Bewegungssensor im Raum")
+                        else:
+                            status_reasons.append(f"Keine Bewegung seit {int(minutes_since_motion)} Min.")
+                    
+                    # Prüfe ob bereits als vergessen erkannt
+                    is_forgotten = any(p['device_id'] == device_id for p in self.predictions)
+                    if is_forgotten:
+                        status = 'forgotten'
+                    
+                    watched.append({
+                        'device_id': device_id,
+                        'device_name': device_name,
+                        'room_name': room_name,
+                        'on_minutes': int(on_minutes),
+                        'minutes_since_motion': int(minutes_since_motion) if minutes_since_motion else None,
+                        'status': status,
+                        'status_reasons': status_reasons
+                    })
+            
+            # Sortiere: vergessen > beobachtet > ok
+            status_order = {'forgotten': 0, 'watched': 1, 'ok': 2}
+            watched.sort(key=lambda x: (status_order.get(x['status'], 3), -x['on_minutes']))
+            
+            return watched
+            
+        except Exception as e:
+            logger.error(f"Error getting watched lights: {e}")
+            return []
+    
     def get_predictions_history(self, hours: int = 24) -> List[Dict]:
         """Holt Vorhersage-Historie aus DB"""
         try:

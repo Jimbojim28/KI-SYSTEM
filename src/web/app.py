@@ -862,7 +862,8 @@ class WebInterface:
                     'running': detector.running,
                     'test_mode': detector.test_mode,
                     'statistics': detector.get_statistics(),
-                    'current_predictions': detector.get_current_predictions()[:10]
+                    'current_predictions': detector.get_current_predictions()[:10],
+                    'watched_lights': detector.get_watched_lights()[:20]  # Eingeschaltete Lampen mit Status
                 })
             except Exception as e:
                 logger.error(f"Error getting forgotten light status: {e}")
