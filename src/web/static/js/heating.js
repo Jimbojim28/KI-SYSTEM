@@ -1180,7 +1180,9 @@ function renderRoomComparison(roomData) {
 
 // Rendere Wetter-Korrelation
 function renderWeatherCorrelation(weatherData) {
-    if (!weatherData || weatherData.length === 0) return;
+    // Handle both array and object with 'correlation_data' property
+    const dataArray = Array.isArray(weatherData) ? weatherData : (weatherData?.correlation_data || []);
+    if (!dataArray || dataArray.length === 0) return;
 
     const ctx = document.getElementById('weather-correlation-chart');
     if (!ctx) return;
@@ -1190,13 +1192,15 @@ function renderWeatherCorrelation(weatherData) {
         weatherCorrelationChart.destroy();
     }
 
-    const labels = weatherData.map(w => w.temp_range);
-    const heatingPercent = weatherData.map(w => w.heating_percent);
+    // Support both old and new field names
+    const labels = dataArray.map(w => w.temp_range || w.range || 'Unbekannt');
+    const heatingPercent = dataArray.map(w => w.heating_percent ?? w.heating_percentage ?? 0);
 
     // Farben basierend auf Temperatur-Bereich
-    const colors = weatherData.map(w => {
-        const temp = parseFloat(w.temp_range.split('-')[0]); // Nimm untere Grenze
-        if (temp < 0) return '#3b82f6'; // Blau (kalt)
+    const colors = dataArray.map(w => {
+        const rangeStr = w.temp_range || w.range || '';
+        const temp = parseFloat(rangeStr.replace(/[^\d-]/g, '').split('-')[0]) || 0; // Nimm untere Grenze
+        if (temp < 0 || rangeStr.toLowerCase().includes('unter')) return '#3b82f6'; // Blau (kalt)
         if (temp < 10) return '#10b981'; // Grün (kühl)
         if (temp < 15) return '#f59e0b'; // Orange (mild)
         return '#ef4444'; // Rot (warm)
@@ -1222,11 +1226,13 @@ function renderWeatherCorrelation(weatherData) {
                 tooltip: {
                     callbacks: {
                         label: (context) => {
-                            const dataPoint = weatherData[context.dataIndex];
-                            return [
-                                `Heizaktivität: ${context.parsed.y.toFixed(1)}%`,
-                                `Ø Außentemp: ${dataPoint.avg_outdoor_temp.toFixed(1)}°C`
-                            ];
+                            const dataPoint = dataArray[context.dataIndex];
+                            const avgTemp = dataPoint?.avg_outdoor_temp ?? dataPoint?.avg_outdoor ?? null;
+                            const lines = [`Heizaktivität: ${context.parsed.y.toFixed(1)}%`];
+                            if (avgTemp !== null) {
+                                lines.push(`Ø Außentemp: ${avgTemp.toFixed(1)}°C`);
+                            }
+                            return lines;
                         }
                     }
                 }
@@ -1878,14 +1884,29 @@ async function loadHumidityAlerts() {
         // Zeige Card wenn Warnungen vorhanden
         card.style.display = 'block';
 
-        const alertsHTML = response.alerts.map(alert => {
+        // Dedupliziere Alerts - zeige nur den neuesten pro Raum
+        const latestAlerts = {};
+        response.alerts.forEach(alert => {
+            const roomKey = alert.room_name || 'unknown';
+            if (!latestAlerts[roomKey] || new Date(alert.timestamp) > new Date(latestAlerts[roomKey].timestamp)) {
+                latestAlerts[roomKey] = alert;
+            }
+        });
+        const uniqueAlerts = Object.values(latestAlerts);
+
+        const alertsHTML = uniqueAlerts.map(alert => {
             const severityColors = {
                 'critical': { bg: '#fee2e2', border: '#dc2626', icon: '🚨' },
                 'warning': { bg: '#fef3c7', border: '#f59e0b', icon: '⚠️' },
                 'info': { bg: '#dbeafe', border: '#3b82f6', icon: 'ℹ️' }
             };
             
-            const colors = severityColors[alert.severity] || severityColors['info'];
+            const colors = severityColors[alert.severity] || severityColors['warning'];
+            
+            // Support both old and new field names
+            const humidity = alert.current_humidity ?? alert.humidity ?? '?';
+            const temperature = alert.current_temperature ?? alert.temperature ?? '?';
+            const message = alert.message || alert.alert_type || 'Luftfeuchtigkeits-Warnung';
 
             return `
                 <div style="margin-bottom: 12px; padding: 15px; background: ${colors.bg}; border-left: 4px solid ${colors.border}; border-radius: 8px;">
@@ -1893,14 +1914,14 @@ async function loadHumidityAlerts() {
                         <span style="font-size: 1.5em;">${colors.icon}</span>
                         <div style="flex: 1;">
                             <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">${alert.room_name || 'Unbekannter Raum'}</div>
-                            <div style="font-size: 0.9em; color: #6b7280; margin-bottom: 8px;">${alert.message}</div>
+                            <div style="font-size: 0.9em; color: #6b7280; margin-bottom: 8px;">${message}</div>
                             ${alert.recommendation ? `
                                 <div style="font-size: 0.85em; color: #374151; background: white; padding: 8px; border-radius: 4px;">
                                     💡 ${alert.recommendation}
                                 </div>
                             ` : ''}
                             <div style="font-size: 0.75em; color: #9ca3af; margin-top: 8px;">
-                                ${alert.current_humidity}% Luftfeuchtigkeit bei ${alert.current_temperature}°C
+                                ${humidity}% Luftfeuchtigkeit bei ${temperature}°C
                             </div>
                         </div>
                     </div>
