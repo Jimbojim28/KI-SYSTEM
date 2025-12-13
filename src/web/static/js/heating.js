@@ -820,17 +820,28 @@ function updateModeUI(mode) {
 async function loadOptimizationData() {
     try {
         // Lade Insights
-        const insights = await fetchJSON('/api/heating/insights');
-        renderInsights(insights.insights || []);
+        let insights = [];
+        try {
+            const insightsResponse = await fetchJSON('/api/heating/insights');
+            insights = insightsResponse.insights || [];
+        } catch (e) {
+            console.warn('Could not load heating insights:', e.message);
+        }
+        renderInsights(insights);
 
         // Lade Statistiken
-        const stats = await fetchJSON('/api/heating/statistics');
-        console.log('Heating statistics loaded:', stats);
+        let stats = {};
+        try {
+            stats = await fetchJSON('/api/heating/statistics');
+            console.log('Heating statistics loaded:', stats);
+        } catch (e) {
+            console.warn('Could not load heating statistics:', e.message);
+        }
         
         if (stats.success) {
             renderStatistics(stats);
         } else {
-            console.warn('Heating statistics returned success=false');
+            console.warn('Heating statistics returned success=false or empty');
             renderStatistics({});
         }
 
@@ -959,12 +970,12 @@ async function loadHeatingAnalytics() {
         const data = await fetchJSON(`/api/heating/analytics?days=${days}`);
 
         if (data.sufficient_data) {
-            // Rendere alle Analytics
-            renderCostEstimates(data.cost_estimates);
-            renderHeatingTimes(data.heating_times);
-            renderTemperatureEfficiency(data.temperature_efficiency);
-            renderRoomComparison(data.room_comparison);
-            renderWeatherCorrelation(data.weather_correlation);
+            // Rendere alle Analytics - mit Try-Catch für jeden Teil
+            try { renderCostEstimates(data.cost_estimates); } catch (e) { console.warn('Error rendering cost estimates:', e); }
+            try { renderHeatingTimes(data.heating_times); } catch (e) { console.warn('Error rendering heating times:', e); }
+            try { renderTemperatureEfficiency(data.temperature_efficiency); } catch (e) { console.warn('Error rendering temperature efficiency:', e); }
+            try { renderRoomComparison(data.room_comparison); } catch (e) { console.warn('Error rendering room comparison:', e); }
+            try { renderWeatherCorrelation(data.weather_correlation); } catch (e) { console.warn('Error rendering weather correlation:', e); }
 
             // Zeige Analytics-Section
             document.querySelector('.heating-analytics-card')?.classList.remove('hidden');
@@ -1102,7 +1113,9 @@ function renderTemperatureEfficiency(efficiencyData) {
 
 // Rendere Raum-Vergleich
 function renderRoomComparison(roomData) {
-    if (!roomData || roomData.length === 0) return;
+    // Handle both array and object with 'rooms' property
+    const roomsArray = Array.isArray(roomData) ? roomData : (roomData?.rooms || []);
+    if (!roomsArray || roomsArray.length === 0) return;
 
     const ctx = document.getElementById('room-comparison-chart');
     if (!ctx) return;
@@ -1112,9 +1125,9 @@ function renderRoomComparison(roomData) {
         roomComparisonChart.destroy();
     }
 
-    const rooms = roomData.map(r => r.room_name);
-    const heatingPercent = roomData.map(r => r.heating_percent);
-    const avgTemp = roomData.map(r => r.avg_temp);
+    const rooms = roomsArray.map(r => r.room || r.room_name);
+    const heatingPercent = roomsArray.map(r => r.heating_percentage || r.heating_percent || 0);
+    const avgTemp = roomsArray.map(r => r.avg_temperature || r.avg_temp || 0);
 
     roomComparisonChart = new Chart(ctx, {
         type: 'bar',
