@@ -381,6 +381,11 @@ class WebInterface:
             """Geräte-Übersicht Seite"""
             return render_template('devices.html')
 
+        @self.app.route('/presence')
+        def presence_page():
+            """Anwesenheits-Seite"""
+            return render_template('presence.html')
+
         @self.app.route('/automations')
         def automations_page():
             """Automatisierungs-Seite"""

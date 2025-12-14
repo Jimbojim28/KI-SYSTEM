@@ -22,6 +22,7 @@
             <li><a href="/heizung" class="{% if request.path == '/heizung' %}active{% endif %}">🔥 Heizung</a></li>
             <li><a href="/luftentfeuchten" class="{% if request.path.startswith('/luftentfeuchten') %}active{% endif %}">🚿 Badezimmer</a></li>
             <li><a href="/rooms" class="{% if request.path == '/rooms' %}active{% endif %}">🏠 Räume</a></li>
+            <li><a href="/presence" class="{% if request.path == '/presence' %}active{% endif %}">📍 Anwesenheit</a></li>
             <li><a href="/devices" class="{% if request.path == '/devices' %}active{% endif %}">🔌 Geräte</a></li>
             <li><a href="/automations" class="{% if request.path == '/automations' %}active{% endif %}">🤖 Automatisierungen</a></li>
             <li><a href="/christmas" class="{% if request.path == '/christmas' %}active{% endif %}">🎄 Weihnachten</a></li>
@@ -43,6 +44,7 @@
     </footer>
 
     <script src="{{ url_for('static', filename='js/main.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/presence-service.js') }}?v={{ app_version }}"></script>
     
     <!-- Offline Detection & Auto-Reconnect -->
     <script>

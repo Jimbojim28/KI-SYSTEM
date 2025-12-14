@@ -79,23 +79,18 @@
         <div id="quick-action-result" class="action-result"></div>
     </div>
 
-    <!-- Presence Tracking Statistiken -->
-    <div class="card presence-tracking-card" id="presence-tracking-section">
-        <div class="card-header-with-actions">
-            <h3>📍 Handy-Tracking Statistiken</h3>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <select id="tracking-date-select" class="form-select" style="width: auto;">
-                    <option value="today">Heute</option>
-                    <option value="yesterday">Gestern</option>
-                    <option value="week">Letzte 7 Tage</option>
-                    <option value="alltime">Gesamt</option>
-                </select>
-                <button class="btn btn-small btn-secondary" id="refresh-tracking">🔄</button>
+    <!-- Link zur Anwesenheits-Seite -->
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px; border: none;">
+        <a href="/presence" style="color: white; text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span style="font-size: 2rem;">📍</span>
+                <div>
+                    <h3 style="margin: 0; color: white;">Anwesenheit & Tracking</h3>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Handy-Tracking Statistiken, Präsenz-Status und Historie</p>
+                </div>
             </div>
-        </div>
-        <div id="tracking-stats-container" style="min-height: 100px;">
-            <div class="loading">Lade Tracking-Daten...</div>
-        </div>
+            <span style="font-size: 1.5rem;">→</span>
+        </a>
     </div>
 
     <!-- Geräte-Anzeige -->

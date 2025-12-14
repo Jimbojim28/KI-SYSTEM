@@ -8,9 +8,21 @@
         "energy_saved": null,
         "climate_change": {}
       }
+    ],
+    "K\u00fcche": [
+      {
+        "timestamp": "2025-12-14T11:16:03.270054",
+        "duration": 2,
+        "score": 62,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.0,
+          "humidity": 0
+        }
+      }
     ]
   },
   "last_ventilation": {
-    "Unbekannt": "2025-12-14T09:40:55.144325"
+    "K\u00fcche": "2025-12-14T11:16:03.270060"
   }
 }
