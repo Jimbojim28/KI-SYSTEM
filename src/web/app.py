@@ -5372,6 +5372,8 @@ class WebInterface:
             import json
             from pathlib import Path
             from src.utils.sensor_helper import get_bathroom_config
+            
+            config_file = Path('data/luftentfeuchten_config.json')
 
             if request.method == 'GET':
                 # Lade Konfiguration aus zentraler Mapping-Datei
