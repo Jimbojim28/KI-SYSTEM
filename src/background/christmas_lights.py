@@ -11,12 +11,28 @@ Features:
 import json
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 import random
+import os
 
 from loguru import logger
+
+# Setze Zeitzone für Deutschland (MEZ/MESZ)
+try:
+    import zoneinfo
+    TIMEZONE = zoneinfo.ZoneInfo("Europe/Berlin")
+except ImportError:
+    # Fallback für ältere Python-Versionen
+    TIMEZONE = None
+    logger.warning("zoneinfo not available, using system timezone")
+
+def get_local_time() -> datetime:
+    """Gibt die aktuelle lokale Zeit zurück (Europe/Berlin)"""
+    if TIMEZONE:
+        return datetime.now(TIMEZONE)
+    return datetime.now()
 
 try:
     import requests
@@ -139,7 +155,7 @@ class ChristmasLightsController:
         
         # Cooldown: Max eine Notification pro 5 Minuten
         if self._last_notification_time:
-            if datetime.now() - self._last_notification_time < timedelta(minutes=5):
+            if get_local_time() - self._last_notification_time < timedelta(minutes=5):
                 logger.debug("Notification skipped (cooldown)")
                 return
         
@@ -161,7 +177,7 @@ class ChristmasLightsController:
                 timeout=10
             )
             if response.status_code == 200:
-                self._last_notification_time = datetime.now()
+                self._last_notification_time = get_local_time()
                 logger.info(f"🔔 Christmas notification sent: {title}")
             else:
                 logger.warning(f"Pushover notification failed: {response.status_code}")
@@ -201,7 +217,7 @@ class ChristmasLightsController:
     
     def _check_schedule(self):
         """Prüft ob Lichter ein- oder ausgeschaltet werden sollen"""
-        now = datetime.now()
+        now = get_local_time()
         
         # Debug: Zeige aktuelle Konfiguration
         logger.debug(f"🎄 Check schedule at {now.strftime('%H:%M:%S')}")
@@ -469,7 +485,7 @@ class ChristmasLightsController:
                 logger.error(f"Error turning off christmas device {device_id}: {e}")
         
         self.lights_on = False
-        self._last_action_time = datetime.now()
+        self._last_action_time = get_local_time()
         logger.info(f"🎄 Christmas lights OFF ({affected} devices) - {reason}")
     
     def _is_within_date_range(self, now: datetime) -> bool:
@@ -544,7 +560,7 @@ class ChristmasLightsController:
         # Bei manuellem AUS: Override setzen bis zur nächsten regulären Ausschaltzeit
         # Das verhindert, dass der automatische Scheduler sofort wieder einschaltet
         if not turn_on:
-            now = datetime.now()
+            now = get_local_time()
             off_time = self._get_device_off_time(now, {})
             # Override bis zur Ausschaltzeit + 1 Minute (damit der nächste Zyklus normal startet)
             override_until = datetime.combine(now.date(), off_time) + timedelta(minutes=1)
@@ -563,7 +579,7 @@ class ChristmasLightsController:
         else:
             # Bei manuellem AN: Override setzen bis zur nächsten Ausschaltzeit
             # Lichter bleiben AN bis zur regulären Ausschaltzeit
-            now = datetime.now()
+            now = get_local_time()
             off_time = self._get_device_off_time(now, {})
             override_until = datetime.combine(now.date(), off_time)
             
@@ -593,7 +609,7 @@ class ChristmasLightsController:
     
     def get_status(self) -> Dict:
         """Gibt aktuellen Status zurück"""
-        now = datetime.now()
+        now = get_local_time()
         
         # Berechne nächste Aktion basierend auf Standard-Zeit
         next_action = "--"
