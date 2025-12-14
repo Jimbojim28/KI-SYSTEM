@@ -4805,19 +4805,18 @@ class WebInterface:
                 except Exception as e:
                     logger.debug(f"Error getting zones: {e}")
                 
-                # Suche Geräte mit valve_position
+                # Suche Geräte mit valve_position ODER target_temperature (Thermostate)
                 for device in devices:
                     if not isinstance(device, dict):
                         continue
                     
                     caps = device.get('capabilitiesObj', {})
+                    device_name = device.get('name', 'Unbekannt')
+                    zone_id = device.get('zone', '')
+                    room_name = zones.get(zone_id, 'Unbekannt')
                     
                     # Prüfe auf valve_position (Heizkörperventil)
                     if 'valve_position' in caps:
-                        device_name = device.get('name', 'Unbekannt')
-                        zone_id = device.get('zone', '')
-                        room_name = zones.get(zone_id, 'Unbekannt')
-                        
                         valve_pos = caps['valve_position'].get('value', 0)
                         # Konvertiere zu Prozent (0-1 -> 0-100)
                         if valve_pos is not None:
@@ -4841,7 +4840,43 @@ class WebInterface:
                             'valve_position': round(valve_percent, 0),
                             'target_temperature': target_temp,
                             'current_temperature': current_temp,
-                            'is_heating': valve_percent > 10
+                            'is_heating': valve_percent > 10,
+                            'type': 'valve'
+                        }
+                        
+                        if room_name not in valves_by_room:
+                            valves_by_room[room_name] = []
+                        valves_by_room[room_name].append(valve_info)
+                    
+                    # AUCH Thermostate ohne valve_position aber mit target_temperature erkennen
+                    elif 'target_temperature' in caps and 'thermostat_mode' in caps:
+                        target_temp = caps['target_temperature'].get('value')
+                        current_temp = caps.get('measure_temperature', {}).get('value')
+                        mode = caps.get('thermostat_mode', {}).get('value', '')
+                        
+                        # Prüfe ob Thermostat aktiv heizt
+                        is_heating = False
+                        if target_temp and current_temp:
+                            is_heating = target_temp > current_temp + 0.5
+                        elif mode and mode.lower() in ['heat', 'heating', 'heizen', 'auto']:
+                            is_heating = True
+                        
+                        # Berechne geschätzte Ventilposition basierend auf Temperatur-Differenz
+                        estimated_valve = 0
+                        if target_temp and current_temp and is_heating:
+                            diff = target_temp - current_temp
+                            # Schätze: Pro Grad Differenz ca. 20% Ventilöffnung
+                            estimated_valve = min(100, max(0, diff * 20))
+                        
+                        valve_info = {
+                            'device_id': device.get('id', ''),
+                            'device_name': device_name,
+                            'valve_position': round(estimated_valve, 0),
+                            'target_temperature': target_temp,
+                            'current_temperature': current_temp,
+                            'is_heating': is_heating,
+                            'type': 'thermostat',
+                            'mode': mode
                         }
                         
                         if room_name not in valves_by_room:

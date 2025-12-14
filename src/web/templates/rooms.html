@@ -1661,35 +1661,50 @@ function renderOverview() {
         // Ventil-Status HTML
         let valvesHtml = '';
         if (hasValves) {
-            // Hauptventil (oder Durchschnitt wenn mehrere)
-            const avgValve = roomValves.reduce((sum, v) => sum + (v.valve_position || 0), 0) / roomValves.length;
-            const isHeating = avgValve > 10;
+            // Prüfe ob irgendein Gerät heizt
+            const isHeating = roomValves.some(v => v.is_heating);
             const targetTemp = roomValves[0]?.target_temperature;
+            const currentTemp = roomValves[0]?.current_temperature;
+            
+            // Für Thermostate ohne echte Ventilposition: Zeige Status anders an
+            const hasThermostat = roomValves.some(v => v.type === 'thermostat');
+            const hasRealValve = roomValves.some(v => v.type === 'valve');
             
             const valveIcons = roomValves.map(v => {
                 const pos = v.valve_position || 0;
-                let cssClass = pos > 50 ? 'valve-high' : pos > 10 ? 'valve-medium' : 'valve-off';
-                return `<span class="valve-dot ${cssClass}" title="${v.device_name}: ${pos}%${v.target_temperature ? ' → ' + v.target_temperature + '°C' : ''}"></span>`;
+                let cssClass = v.is_heating ? (pos > 50 ? 'valve-high' : 'valve-medium') : 'valve-off';
+                const typeIcon = v.type === 'thermostat' ? '🌡️' : '🔧';
+                return `<span class="valve-dot ${cssClass}" title="${v.device_name}: ${v.type === 'thermostat' ? (v.is_heating ? 'Heizt' : 'Aus') : pos + '%'}${v.target_temperature ? ' → ' + v.target_temperature + '°C' : ''}"></span>`;
             }).join('');
             
+            // Für Thermostate: Zeige Ist→Soll statt %
+            let statusText;
+            if (hasThermostat && !hasRealValve) {
+                statusText = currentTemp && targetTemp 
+                    ? `${currentTemp.toFixed(1)}° → ${targetTemp}°C`
+                    : (targetTemp ? `→ ${targetTemp}°C` : (isHeating ? 'Heizt' : 'Aus'));
+            } else {
+                const avgValve = roomValves.reduce((sum, v) => sum + (v.valve_position || 0), 0) / roomValves.length;
+                statusText = `${avgValve.toFixed(0)}%`;
+            }
+            
             valvesHtml = `
-                <div class="room-valves ${isHeating ? 'heating' : ''}" title="Heizung: ${avgValve.toFixed(0)}%">
+                <div class="room-valves ${isHeating ? 'heating' : ''}" title="Heizung">
                     <span class="valve-icon">${isHeating ? '🔥' : '❄️'}</span>
-                    <span class="valve-percent">${avgValve.toFixed(0)}%</span>
-                    ${targetTemp ? `<span class="valve-target">→ ${targetTemp}°C</span>` : ''}
+                    <span class="valve-percent">${statusText}</span>
                     <div class="valve-dots">${valveIcons}</div>
                 </div>
             `;
         }
         
         return `
-            <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''} ${hasValves && roomValves.some(v => v.valve_position > 10) ? 'is-heating' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
+            <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''} ${hasValves && roomValves.some(v => v.is_heating) ? 'is-heating' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
                 <div class="room-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${room}</span>
                     ${hasMotion ? '<span class="motion-badge" title="Bewegungssensor vorhanden">🚶</span>' : ''}
                     ${hasWindows ? `<span class="window-badge ${roomWindows.some(w => w.state === 'open') ? 'open' : roomWindows.some(w => w.state === 'tilted') ? 'tilted' : 'closed'}" title="Fenster">🪟</span>` : ''}
-                    ${hasValves ? `<span class="valve-badge ${roomValves.some(v => v.valve_position > 10) ? 'heating' : ''}" title="Heizung">🔥</span>` : ''}
+                    ${hasValves ? `<span class="valve-badge ${roomValves.some(v => v.is_heating) ? 'heating' : ''}" title="Heizung">🔥</span>` : ''}
                 </div>
                 ${lightsHtml}
                 ${windowsHtml}
