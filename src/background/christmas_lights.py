@@ -69,8 +69,9 @@ class ChristmasLightsController:
         # Track device states to avoid redundant commands
         self._device_states: Dict[str, bool] = {}  # device_id -> is_on
         
-        # Manuelle Überschreibung - verhindert automatisches Wiedereinschalten bis zur nächsten Ausschaltzeit
+        # Manuelle Überschreibung - verhindert automatisches Schalten bis zur Ausschaltzeit
         self._manual_override_until: Optional[datetime] = None
+        self._manual_override_keep_on: bool = False  # True = AN halten, False = AUS halten
         
         # Notification cooldown (verhindert Spam)
         self._last_notification_time: Optional[datetime] = None
@@ -203,12 +204,28 @@ class ChristmasLightsController:
         # Prüfe manuelle Überschreibung
         if self._manual_override_until:
             if now < self._manual_override_until:
-                logger.debug(f"🎄 Manual override active until {self._manual_override_until.strftime('%H:%M')}")
-                return  # Nichts tun während Override aktiv ist
+                # Override aktiv - prüfe ob Lichter AN oder AUS gehalten werden sollen
+                if self._manual_override_keep_on:
+                    # Manuell eingeschaltet - stelle sicher, dass Lichter AN bleiben
+                    logger.debug(f"🎄 Manual ON override active until {self._manual_override_until.strftime('%H:%M')} - keeping lights ON")
+                    # Stelle sicher, dass alle Geräte AN sind
+                    for device_id in self.config.get('devices', []):
+                        if self._device_states.get(device_id) != True:
+                            self._turn_device_on(device_id)
+                else:
+                    # Manuell ausgeschaltet - nichts tun
+                    logger.debug(f"🎄 Manual OFF override active until {self._manual_override_until.strftime('%H:%M')} - keeping lights OFF")
+                return  # Nichts weiter tun während Override aktiv ist
             else:
                 # Override abgelaufen
-                logger.info("🎄 Manual override expired, resuming automatic schedule")
+                if self._manual_override_keep_on:
+                    logger.info("🎄 Manual ON override expired - turning lights OFF")
+                    # Lichter ausschalten da Ausschaltzeit erreicht
+                    self._turn_all_lights_off("Manual override expired")
+                else:
+                    logger.info("🎄 Manual OFF override expired, resuming automatic schedule")
                 self._manual_override_until = None
+                self._manual_override_keep_on = False
         
         # Prüfe Datumsgrenzen
         if not self._is_within_date_range(now):
@@ -528,7 +545,8 @@ class ChristmasLightsController:
             if override_until <= now:
                 override_until = datetime.combine(now.date() + timedelta(days=1), datetime.strptime('06:00', '%H:%M').time())
             self._manual_override_until = override_until
-            logger.info(f"🎄 Manual override set until {override_until.strftime('%H:%M')}")
+            self._manual_override_keep_on = False  # Lichter sollen AUS bleiben
+            logger.info(f"🎄 Manual OFF override set until {override_until.strftime('%H:%M')}")
             
             # Push-Benachrichtigung für manuelles Ausschalten
             self._send_notification(
@@ -536,13 +554,31 @@ class ChristmasLightsController:
                 f"{affected} Gerät(e) ausgeschaltet. Automatik pausiert bis {override_until.strftime('%H:%M')} Uhr."
             )
         else:
-            # Bei manuellem AN: Override aufheben
-            self._manual_override_until = None
+            # Bei manuellem AN: Override setzen bis zur nächsten Ausschaltzeit
+            # Lichter bleiben AN bis zur regulären Ausschaltzeit
+            now = datetime.now()
+            off_time = self._get_device_off_time(now, {})
+            override_until = datetime.combine(now.date(), off_time)
+            
+            # Falls Ausschaltzeit schon vorbei ist (z.B. nach 23:00), bis morgen
+            if override_until <= now:
+                # Prüfe ob Ausschaltzeit über Mitternacht geht
+                off_time_str = self.config.get('off_time', '23:00')
+                off_hour = int(off_time_str.split(':')[0])
+                if off_hour < 12:  # Ausschaltzeit ist nach Mitternacht (z.B. 00:30)
+                    override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
+                else:
+                    # Reguläre Ausschaltzeit morgen
+                    override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
+            
+            self._manual_override_until = override_until
+            self._manual_override_keep_on = True  # Lichter sollen AN bleiben
+            logger.info(f"🎄 Manual ON override set until {override_until.strftime('%H:%M')} - lights will stay ON")
             
             # Push-Benachrichtigung für manuelles Einschalten
             self._send_notification(
                 "🎄 Weihnachtsbeleuchtung manuell AN",
-                f"{affected} Gerät(e) eingeschaltet."
+                f"{affected} Gerät(e) eingeschaltet. Bleiben AN bis {override_until.strftime('%H:%M')} Uhr."
             )
         
         logger.info(f"🎄 Christmas lights TEST: {'ON' if turn_on else 'OFF'} ({affected} devices)")
@@ -565,6 +601,17 @@ class ChristmasLightsController:
                 if self.config['use_sunset']:
                     next_action += " (Dämmerung)"
         
+        # Override-Info hinzufügen
+        manual_override_info = None
+        if self._manual_override_until:
+            override_type = "AN" if self._manual_override_keep_on else "AUS"
+            manual_override_info = {
+                'active': True,
+                'type': override_type,
+                'until': self._manual_override_until.strftime('%H:%M'),
+                'until_iso': self._manual_override_until.isoformat()
+            }
+        
         return {
             'enabled': self.config['enabled'],
             'lights_on': self.lights_on,
@@ -572,5 +619,6 @@ class ChristmasLightsController:
             'active_devices': len(self.config.get('devices', [])),
             'last_action': self._last_action_time.isoformat() if self._last_action_time else None,
             'within_date_range': self._is_within_date_range(now),
-            'device_schedules': self.config.get('device_schedules', {})
+            'device_schedules': self.config.get('device_schedules', {}),
+            'manual_override': manual_override_info
         }
