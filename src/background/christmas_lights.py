@@ -155,7 +155,10 @@ class ChristmasLightsController:
                     full_config = yaml.safe_load(f) or {}
                     notifications = full_config.get('notifications', {})
                     pushover = notifications.get('pushover', {})
-                    return pushover.get('api_key', ''), pushover.get('user_key', '')
+                    # Unterstütze beide Varianten: api_token (neu) und api_key (alt)
+                    api_key = pushover.get('api_token') or pushover.get('api_key', '')
+                    user_key = pushover.get('user_key', '')
+                    return api_key, user_key
         except Exception as e:
             logger.debug(f"Could not load pushover credentials: {e}")
         return '', ''
