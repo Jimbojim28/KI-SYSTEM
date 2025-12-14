@@ -242,9 +242,9 @@ class NotificationScheduler:
             for room_key, room_config in sensor_mapping.items():
                 room_display_name = room_config.get('name', room_key.title())
                 
-                # Temperatur aus gemapptem Sensor
+                # Temperatur aus gemapptem Sensor (überspringen wenn "none")
                 temp_id = room_config.get('temperature')
-                if temp_id and temp_id in devices_by_id:
+                if temp_id and temp_id != 'none' and temp_id in devices_by_id:
                     temp_device = devices_by_id[temp_id]
                     caps = temp_device.get('capabilitiesObj', {})
                     if 'measure_temperature' in caps:
@@ -252,9 +252,9 @@ class NotificationScheduler:
                         if val is not None and -10 < val < 50:
                             indoor_temps.append(val)
                 
-                # Feuchtigkeit aus gemapptem Sensor
+                # Feuchtigkeit aus gemapptem Sensor (überspringen wenn "none")
                 humidity_id = room_config.get('humidity')
-                if humidity_id and humidity_id in devices_by_id:
+                if humidity_id and humidity_id != 'none' and humidity_id in devices_by_id:
                     humidity_device = devices_by_id[humidity_id]
                     caps = humidity_device.get('capabilitiesObj', {})
                     if 'measure_humidity' in caps:
@@ -262,9 +262,9 @@ class NotificationScheduler:
                         if val is not None and 0 <= val <= 100:
                             humidities.append(val)
                 
-                # CO2 aus gemapptem Sensor
+                # CO2 aus gemapptem Sensor (überspringen wenn "none")
                 co2_id = room_config.get('co2')
-                if co2_id and co2_id in devices_by_id:
+                if co2_id and co2_id != 'none' and co2_id in devices_by_id:
                     co2_device = devices_by_id[co2_id]
                     caps = co2_device.get('capabilitiesObj', {})
                     if 'measure_co2' in caps:

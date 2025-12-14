@@ -1188,8 +1188,14 @@ class VentilationNotifier:
         return {}
 
     def _get_sensor_value_by_id(self, entity_id: str) -> Optional[float]:
-        """Hole den aktuellen Wert eines Sensors anhand der ID"""
-        if not entity_id:
+        """Hole den aktuellen Wert eines Sensors anhand der ID
+        
+        Gibt None zurück wenn:
+        - entity_id leer ist
+        - entity_id == 'none' (explizit kein Sensor gewünscht)
+        - Sensor nicht gefunden wird
+        """
+        if not entity_id or entity_id == 'none':
             return None
             
         try:
@@ -1268,8 +1274,17 @@ class VentilationNotifier:
             if room_id in hidden_rooms or room_name in hidden_rooms:
                 continue
             
-            temp = self._get_sensor_value_by_id(sensors.get('temperature'))
-            humidity = self._get_sensor_value_by_id(sensors.get('humidity'))
+            # Prüfe ob Raum explizit keine Sensoren haben soll (beide auf "none")
+            temp_sensor_id = sensors.get('temperature', '')
+            humidity_sensor_id = sensors.get('humidity', '')
+            
+            # Wenn beide explizit auf "none" gesetzt sind -> Raum komplett überspringen
+            if temp_sensor_id == 'none' and humidity_sensor_id == 'none':
+                logger.debug(f"Skipping room '{room_name}': sensors explicitly disabled")
+                continue
+            
+            temp = self._get_sensor_value_by_id(temp_sensor_id)
+            humidity = self._get_sensor_value_by_id(humidity_sensor_id)
             co2 = self._get_sensor_value_by_id(sensors.get('co2'))
             
             if temp is not None or humidity is not None or co2 is not None:
@@ -1288,7 +1303,12 @@ class VentilationNotifier:
         mapped_rooms_lower = set()
         for room_id, sensors in room_mapping.items():
             # Raum gilt als "gemappt" wenn mindestens ein Sensor konfiguriert ist
-            if sensors.get('temperature') or sensors.get('humidity') or sensors.get('co2'):
+            # AUCH wenn auf "none" gesetzt (explizit deaktiviert)
+            temp_id = sensors.get('temperature', '')
+            humidity_id = sensors.get('humidity', '')
+            co2_id = sensors.get('co2', '')
+            
+            if temp_id or humidity_id or co2_id:
                 room_display_name = room_names.get(room_id, room_id)
                 mapped_rooms_lower.add(room_display_name.lower())
                 mapped_rooms_lower.add(room_id.lower())

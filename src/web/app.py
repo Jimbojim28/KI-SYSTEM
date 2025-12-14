@@ -4647,24 +4647,24 @@ class WebInterface:
                         door_id = config.get('door_sensor')
                         motion_id = config.get('motion_sensor')
                         
-                        # Temperatur
-                        if temp_id and temp_id in all_devices:
+                        # Temperatur (überspringen wenn "none")
+                        if temp_id and temp_id != 'none' and temp_id in all_devices:
                             caps = all_devices[temp_id].get('capabilitiesObj', {})
                             if 'measure_temperature' in caps:
                                 val = caps['measure_temperature'].get('value')
                                 if val is not None and -10 <= val <= 50:
                                     room_data['temperature'] = val
                         
-                        # Feuchtigkeit
-                        if hum_id and hum_id in all_devices:
+                        # Feuchtigkeit (überspringen wenn "none")
+                        if hum_id and hum_id != 'none' and hum_id in all_devices:
                             caps = all_devices[hum_id].get('capabilitiesObj', {})
                             if 'measure_humidity' in caps:
                                 val = caps['measure_humidity'].get('value')
                                 if val is not None and 0 <= val <= 100:
                                     room_data['humidity'] = val
                         
-                        # CO2
-                        if co2_id and co2_id in all_devices:
+                        # CO2 (überspringen wenn "none")
+                        if co2_id and co2_id != 'none' and co2_id in all_devices:
                             caps = all_devices[co2_id].get('capabilitiesObj', {})
                             if 'measure_co2' in caps:
                                 val = caps['measure_co2'].get('value')
@@ -4709,31 +4709,37 @@ class WebInterface:
                             room_data['motion_detected'] = True
                     
                     # Durchsuche alle Geräte im Raum
+                    # Prüfe ob Sensoren explizit deaktiviert sind ("none")
+                    temp_disabled = config and config.get('temperature') == 'none'
+                    humidity_disabled = config and config.get('humidity') == 'none'
+                    co2_disabled = config and config.get('co2') == 'none'
+                    pm25_disabled = config and config.get('pm25') == 'none'
+                    
                     for device_id, device in room_devices.items():
                         caps = device.get('capabilitiesObj', {})
                         device_class = device.get('class', '')
                         device_name = device.get('name', '')
                         
-                        # Temperatur (falls noch nicht gesetzt)
-                        if room_data['temperature'] is None and 'measure_temperature' in caps:
+                        # Temperatur (falls noch nicht gesetzt UND nicht explizit deaktiviert)
+                        if room_data['temperature'] is None and not temp_disabled and 'measure_temperature' in caps:
                             val = caps['measure_temperature'].get('value')
                             if val is not None and -10 <= val <= 50:
                                 room_data['temperature'] = val
                         
-                        # Feuchtigkeit (falls noch nicht gesetzt)
-                        if room_data['humidity'] is None and 'measure_humidity' in caps:
+                        # Feuchtigkeit (falls noch nicht gesetzt UND nicht explizit deaktiviert)
+                        if room_data['humidity'] is None and not humidity_disabled and 'measure_humidity' in caps:
                             val = caps['measure_humidity'].get('value')
                             if val is not None and 0 <= val <= 100:
                                 room_data['humidity'] = val
                         
-                        # CO2 (falls noch nicht gesetzt)
-                        if room_data['co2'] is None and 'measure_co2' in caps:
+                        # CO2 (falls noch nicht gesetzt UND nicht explizit deaktiviert)
+                        if room_data['co2'] is None and not co2_disabled and 'measure_co2' in caps:
                             val = caps['measure_co2'].get('value')
                             if val is not None:
                                 room_data['co2'] = val
                         
-                        # PM2.5 Feinstaub (falls noch nicht gesetzt)
-                        if room_data['pm25'] is None and 'measure_pm25' in caps:
+                        # PM2.5 Feinstaub (falls noch nicht gesetzt UND nicht explizit deaktiviert)
+                        if room_data['pm25'] is None and not pm25_disabled and 'measure_pm25' in caps:
                             val = caps['measure_pm25'].get('value')
                             if val is not None:
                                 room_data['pm25'] = val

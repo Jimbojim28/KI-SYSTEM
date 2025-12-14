@@ -361,6 +361,7 @@ def get_bathroom_config() -> dict:
             
             if bathroom_config:
                 # Überschreibe Sensor-IDs mit zentralen Werten (falls vorhanden)
+                # "none" bedeutet explizit kein Sensor gewünscht -> nicht übernehmen
                 sensor_mapping = {
                     'humidity_sensor_id': bathroom_config.get('humidity'),
                     'temperature_sensor_id': bathroom_config.get('temperature'),
@@ -371,10 +372,13 @@ def get_bathroom_config() -> dict:
                     'window_sensor_id': bathroom_config.get('window_sensor'),
                 }
                 
-                # Nur nicht-leere Werte übernehmen
+                # Nur nicht-leere Werte übernehmen, "none" = kein Sensor
                 for key, value in sensor_mapping.items():
-                    if value:
+                    if value and value != 'none':
                         config[key] = value
+                    elif value == 'none':
+                        # Explizit auf None setzen wenn "none" konfiguriert
+                        config[key] = None
                 
                 # Auch humidity_threshold_high/low aus zentraler Config übernehmen falls vorhanden
                 if bathroom_config.get('humidity_threshold_high'):
