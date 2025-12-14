@@ -93,7 +93,14 @@ def get_all_windows(engine, db, include_ignored=False):
             zone_names = {}
             if hasattr(engine.platform, 'get_zones'):
                 zones = engine.platform.get_zones() or {}
-                zone_names = {z.get('id'): z.get('name', 'Unbekannt') for z in zones.values()} if isinstance(zones, dict) else {}
+                # Homey API gibt {zone_id: zone_data, ...} zurück
+                # zone_data hat 'name' aber 'id' ist der Key
+                if isinstance(zones, dict):
+                    for zone_id, zone_data in zones.items():
+                        if isinstance(zone_data, dict):
+                            zone_names[zone_id] = zone_data.get('name', 'Unbekannt')
+                        else:
+                            zone_names[zone_id] = str(zone_data)
             
             for device in devices:
                 name = device.get('name', '').lower()

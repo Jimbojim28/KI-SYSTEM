@@ -122,8 +122,12 @@ class WindowDataCollector:
                 zones = {}
                 if self.engine and self.engine.platform:
                     try:
-                        zone_list = self.engine.platform.get_zones() or []
-                        zones = {z.get('id'): z.get('name') for z in zone_list}
+                        zone_dict = self.engine.platform.get_zones() or {}
+                        # Homey API gibt {zone_id: zone_data, ...} zurück
+                        if isinstance(zone_dict, dict):
+                            for zone_id, zone_data in zone_dict.items():
+                                if isinstance(zone_data, dict):
+                                    zones[zone_id] = zone_data.get('name', '')
                     except:
                         pass
                 
@@ -250,8 +254,12 @@ class WindowDataCollector:
             # Hole Zone-Mapping
             zones = {}
             try:
-                zone_list = self.engine.platform.get_zones() or []
-                zones = {z.get('id'): z.get('name') for z in zone_list}
+                zone_dict = self.engine.platform.get_zones() or {}
+                # Homey API gibt {zone_id: zone_data, ...} zurück
+                if isinstance(zone_dict, dict):
+                    for zone_id, zone_data in zone_dict.items():
+                        if isinstance(zone_data, dict):
+                            zones[zone_id] = zone_data.get('name', '')
             except:
                 pass
             
@@ -603,11 +611,12 @@ class WindowDataCollector:
 
         if not room_name and zone_id and hasattr(self.engine, 'platform'):
             try:
-                zones = self.engine.platform.get_zones()
-                for zone in zones:
-                    if zone.get('id') == zone_id:
-                        room_name = zone.get('name')
-                        break
+                zones = self.engine.platform.get_zones() or {}
+                # Homey API gibt {zone_id: zone_data, ...} zurück
+                if isinstance(zones, dict) and zone_id in zones:
+                    zone_data = zones[zone_id]
+                    if isinstance(zone_data, dict):
+                        room_name = zone_data.get('name')
             except (AttributeError, KeyError, TypeError) as e:
                 logger.debug(f"Could not fetch zone name for zone_id {zone_id}: {e}")
         

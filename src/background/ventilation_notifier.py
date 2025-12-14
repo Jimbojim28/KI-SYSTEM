@@ -982,8 +982,12 @@ class VentilationNotifier:
             # Hole Zone-Mapping
             zones = {}
             try:
-                zone_list = platform.get_zones() or []
-                zones = {z.get('id'): z.get('name') for z in zone_list}
+                zone_dict = platform.get_zones() or {}
+                # Homey API gibt {zone_id: zone_data, ...} zurück
+                if isinstance(zone_dict, dict):
+                    for zone_id, zone_data in zone_dict.items():
+                        if isinstance(zone_data, dict):
+                            zones[zone_id] = zone_data.get('name', '')
             except:
                 pass
             
@@ -1211,8 +1215,12 @@ class VentilationNotifier:
                 # Hole Zone-Mapping
                 zones = {}
                 try:
-                    zone_list = platform.get_zones() or []
-                    zones = {z.get('id'): z.get('name') for z in zone_list}
+                    zone_dict = platform.get_zones() or {}
+                    # Homey API gibt {zone_id: zone_data, ...} zurück
+                    if isinstance(zone_dict, dict):
+                        for zone_id, zone_data in zone_dict.items():
+                            if isinstance(zone_data, dict):
+                                zones[zone_id] = zone_data.get('name', '')
                     logger.debug(f"Available zones: {zones}")
                 except Exception as ze:
                     logger.debug(f"Could not get zones: {ze}")
@@ -1312,8 +1320,12 @@ class VentilationNotifier:
             # Hole Zone-Mapping für Raum-Namen
             zones = {}
             try:
-                zone_list = platform.get_zones() or []
-                zones = {z.get('id'): z.get('name') for z in zone_list}
+                zone_dict = platform.get_zones() or {}
+                # Homey API gibt {zone_id: zone_data, ...} zurück
+                if isinstance(zone_dict, dict):
+                    for zone_id, zone_data in zone_dict.items():
+                        if isinstance(zone_data, dict):
+                            zones[zone_id] = zone_data.get('name', '')
                 logger.debug(f"Window zones available: {zones}")
             except Exception as ze:
                 logger.debug(f"Could not get zones for windows: {ze}")
