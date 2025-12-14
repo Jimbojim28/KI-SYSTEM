@@ -399,4 +399,52 @@ def init_absence_blueprint(engine, db, config):
             logger.error(f"Error triggering absence check: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
+    @absence_bp.route('/presence-leave-notifier/status', methods=['GET'])
+    def get_presence_leave_status():
+        """Hole Status des Presence Leave Notifiers"""
+        try:
+            from src.background.presence_leave_notifier import get_presence_leave_notifier
+            
+            notifier = get_presence_leave_notifier()
+            
+            if notifier:
+                return jsonify({
+                    'success': True,
+                    'status': notifier.get_status()
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Presence Leave Notifier not initialized'
+                })
+                
+        except Exception as e:
+            logger.error(f"Error getting presence leave notifier status: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @absence_bp.route('/presence-leave-notifier/test', methods=['POST'])
+    def test_presence_leave_notification():
+        """Sende Test-Benachrichtigung vom Presence Leave Notifier"""
+        try:
+            from src.background.presence_leave_notifier import get_presence_leave_notifier
+            
+            notifier = get_presence_leave_notifier()
+            
+            if not notifier:
+                return jsonify({
+                    'success': False,
+                    'error': 'Presence Leave Notifier not initialized'
+                }), 400
+            
+            success = notifier.test_notification()
+            
+            return jsonify({
+                'success': success,
+                'message': 'Test-Benachrichtigung gesendet' if success else 'Fehler beim Senden'
+            })
+                
+        except Exception as e:
+            logger.error(f"Error testing presence leave notification: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
     return absence_bp

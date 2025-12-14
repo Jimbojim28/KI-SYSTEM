@@ -17,6 +17,7 @@ from .bathroom_data_collector import BathroomDataCollector
 from .bathroom_optimizer import BathroomOptimizer
 from .ml_auto_trainer import MLAutoTrainer
 from .database_maintenance import DatabaseMaintenance
+from .presence_leave_notifier import PresenceLeaveNotifier
 
 from ..utils.config_loader import ConfigLoader
 from ..utils.config_manager import get_config_value, get_config_section
@@ -137,6 +138,17 @@ class CollectorManager:
                 logger.info(f"Database Maintenance initialized (time: {cleanup_time}, retention: {retention_days} days)")
             except Exception as e:
                 logger.warning(f"Database Maintenance not available: {e}")
+        
+        # 9. Presence Leave Notifier - Benachrichtigung wenn alle gehen
+        if get_config_value('presence_leave_notification.enabled', True):
+            interval = get_config_value('presence_leave_notification.check_interval', 30)
+            try:
+                self.collectors['presence_leave'] = PresenceLeaveNotifier(
+                    check_interval=interval
+                )
+                logger.info(f"Presence Leave Notifier initialized (interval: {interval}s)")
+            except Exception as e:
+                logger.warning(f"Presence Leave Notifier not available: {e}")
 
     def start_all(self):
         """Startet alle Collectors"""
