@@ -1,0 +1,16 @@
+{
+  "stats": {
+    "Unbekannt": [
+      {
+        "timestamp": "2025-12-14T09:40:55.144319",
+        "duration": 34,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      }
+    ]
+  },
+  "last_ventilation": {
+    "Unbekannt": "2025-12-14T09:40:55.144325"
+  }
+}

@@ -24,6 +24,20 @@
         </div>
     </div>
 
+    <!-- Schnell-Status-Übersicht -->
+    <div id="quick-status" class="card" style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, #1a1a2e, #16213e); border: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0; color: white; font-size: 18px;">💡 Schnellübersicht</h3>
+            <div style="display: flex; gap: 15px; font-size: 14px;">
+                <span style="color: #4ade80;">🟢 <span id="quick-on-count">0</span> AN</span>
+                <span style="color: #9ca3af;">⚫ <span id="quick-off-count">0</span> AUS</span>
+            </div>
+        </div>
+        <div id="quick-status-grid" style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <span style="color: #6b7280; font-style: italic;">Lade Status...</span>
+        </div>
+    </div>
+
     <div class="grid-2">
         <!-- Zeitplan -->
         <div class="card">
@@ -227,6 +241,31 @@
     border-radius: 12px;
     max-height: 400px;
     overflow-y: auto;
+}
+
+/* Quick Status Badges */
+.quick-device {
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.quick-device.on {
+    background: linear-gradient(135deg, #065f46, #047857);
+    color: #ecfdf5;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.quick-device.off {
+    background: #374151;
+    color: #9ca3af;
+}
+
+.quick-device:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
 .christmas-device {
@@ -792,10 +831,56 @@ async function loadChristmasDevices() {
         updateLabelsSection();
         updateSchedulesSection();
         
+        // Schnellübersicht aktualisieren
+        updateQuickStatus(devices);
+        
     } catch (error) {
         console.error('Error loading christmas devices:', error);
         container.innerHTML = '<p class="error">Fehler beim Laden der Geräte</p>';
     }
+}
+
+// Schnellübersicht aktualisieren
+function updateQuickStatus(devices) {
+    const grid = document.getElementById('quick-status-grid');
+    const onCountEl = document.getElementById('quick-on-count');
+    const offCountEl = document.getElementById('quick-off-count');
+    
+    if (!grid) return;
+    
+    // Nur ausgewählte Geräte zeigen
+    const selectedDevices = devices.filter(d => christmasConfig.devices.includes(d.id));
+    
+    if (selectedDevices.length === 0) {
+        grid.innerHTML = '<span style="color: #6b7280; font-style: italic;">Keine Geräte ausgewählt</span>';
+        if (onCountEl) onCountEl.textContent = '0';
+        if (offCountEl) offCountEl.textContent = '0';
+        return;
+    }
+    
+    const onCount = selectedDevices.filter(d => d.is_on).length;
+    const offCount = selectedDevices.filter(d => !d.is_on).length;
+    
+    if (onCountEl) onCountEl.textContent = onCount;
+    if (offCountEl) offCountEl.textContent = offCount;
+    
+    const html = selectedDevices.map(device => {
+        const customLabel = christmasConfig.device_labels?.[device.id];
+        const displayName = customLabel || device.name;
+        const icon = device.type === 'light' ? '💡' : '🔌';
+        
+        if (device.is_on) {
+            return `<span class="quick-device on" title="${device.name}" onclick="toggleSingleDevice('${device.id}', false)" style="cursor: pointer;">
+                ${icon} ${displayName} 🟢
+            </span>`;
+        } else {
+            return `<span class="quick-device off" title="${device.name}" onclick="toggleSingleDevice('${device.id}', true)" style="cursor: pointer;">
+                ${icon} ${displayName} ⚫
+            </span>`;
+        }
+    }).join('');
+    
+    grid.innerHTML = html;
 }
 
 // Einzelnes Gerät schalten
