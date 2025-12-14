@@ -27,7 +27,10 @@ DEFAULT_CONFIG = {
         'mold_warning': True,
         'window_opened_alert': True,
         'window_closed_alert': True,
-        'window_away_alert': True
+        'window_away_alert': True,
+        'long_ventilation_warning': True,  # Warnung bei zu langem Lüften
+        'ventilation_reminder': False,      # Lüftungserinnerung aktivieren
+        'ventilation_reminder_hours': 4     # Nach X Stunden erinnern
     },
     
     # Forgotten Light Detection

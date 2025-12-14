@@ -54,6 +54,14 @@ class VentilationNotifier:
         self._presence_home: bool = True
         self._away_since: Optional[datetime] = None
         
+        # Lüftungs-Statistiken für Vergleiche
+        self._ventilation_stats: Dict[str, list] = {}  # room -> [{duration, score, timestamp}, ...]
+        self._stats_file = Path('data/ventilation_stats.json')
+        self._load_stats()
+        
+        # Tracking für Lüftungserinnerung
+        self._last_ventilation: Dict[str, datetime] = {}  # room -> last_ventilation_time
+        
         logger.info(f"Ventilation Notifier initialized ({check_interval}s interval)")
     
     def _log_debug_event(self, event_type: str, message: str, details: dict = None, level: str = 'info'):
@@ -294,6 +302,29 @@ class VentilationNotifier:
                     # Prüfe ob Heizung im Raum aktiv ist
                     heater_warning = self._check_heater_active(room_name)
                     
+                    # Luftqualitäts-Empfehlung
+                    air_quality = self._get_air_quality_recommendation(
+                        co2=room_climate.get('co2'),
+                        humidity=room_climate.get('humidity')
+                    )
+                    
+                    # Saisonaler Tipp
+                    seasonal_tip = self._get_seasonal_tip(outdoor_temp, window_state)
+                    
+                    # Temperatur-Differenz berechnen
+                    temp_diff_info = None
+                    indoor_temp = room_climate.get('temp')
+                    if indoor_temp is not None and outdoor_temp is not None:
+                        temp_diff = indoor_temp - outdoor_temp
+                        if temp_diff > 15:
+                            temp_diff_info = f"🌡️ <b>{temp_diff:.0f}°C Unterschied</b> → sehr schneller Luftaustausch!"
+                        elif temp_diff > 10:
+                            temp_diff_info = f"🌡️ <b>{temp_diff:.0f}°C Unterschied</b> → effizientes Lüften möglich"
+                        elif temp_diff > 5:
+                            temp_diff_info = f"🌡️ {temp_diff:.0f}°C Unterschied → guter Luftaustausch"
+                        elif temp_diff < -5:
+                            temp_diff_info = f"🌡️ Außen {abs(temp_diff):.0f}°C wärmer als innen"
+                    
                     # Baue Nachrichtentext mit Zustand (gekippt/offen)
                     state_emoji = '📐' if window_state == 'tilted' else '🪟'
                     state_text = 'gekippt' if window_state == 'tilted' else 'geöffnet'
@@ -305,6 +336,14 @@ class VentilationNotifier:
                         if heater_warning.get('tip'):
                             message_parts.append(f"\n💡 {heater_warning['tip']}")
                     
+                    # Luftqualitäts-Warnung (wenn dringend)
+                    if air_quality and air_quality['urgency'] in ['urgent', 'recommended']:
+                        message_parts.append(f"\n\n{air_quality['main_issue']}")
+                    
+                    # Temperatur-Differenz anzeigen
+                    if temp_diff_info:
+                        message_parts.append(f"\n\n{temp_diff_info}")
+                    
                     # Zeige Raum-Klimadaten wenn verfügbar
                     climate_info = []
                     if room_climate.get('temp'):
@@ -312,7 +351,9 @@ class VentilationNotifier:
                     if room_climate.get('humidity'):
                         climate_info.append(f"💧 {room_climate['humidity']:.0f}%")
                     if room_climate.get('co2'):
-                        climate_info.append(f"💨 {room_climate['co2']:.0f} ppm")
+                        co2_val = room_climate['co2']
+                        co2_emoji = '🚨' if co2_val > 1400 else '⚠️' if co2_val > 1000 else '💨'
+                        climate_info.append(f"{co2_emoji} {co2_val:.0f} ppm")
                     
                     if climate_info:
                         message_parts.append(f"\n<b>{room_name}:</b> " + ' | '.join(climate_info))
@@ -325,9 +366,19 @@ class VentilationNotifier:
                     if duration.get('reason'):
                         message_parts.append(f"\n💡 {duration['reason']}")
                     
-                    # Titel mit Warnung wenn Heizung aktiv
+                    # Saisonaler Tipp (wenn nicht schon Heizungs-Warnung)
+                    if seasonal_tip and not (heater_warning and heater_warning.get('is_heating')):
+                        message_parts.append(f"\n\n{seasonal_tip}")
+                    
+                    # Gekippt vs Offen - spezifischer Hinweis
+                    if window_state == 'tilted' and outdoor_temp is not None and outdoor_temp < 10:
+                        message_parts.append(f"\n\n📐 <i>Tipp: Bei {outdoor_temp:.0f}°C ist Stoßlüften (ganz öffnen) effektiver als Kippen!</i>")
+                    
+                    # Titel mit Warnung wenn Heizung aktiv oder Luftqualität dringend
                     if heater_warning and heater_warning.get('is_heating'):
                         title = '🔥🪟 Fenster offen - Heizung aktiv!' if window_state != 'tilted' else '🔥📐 Fenster gekippt - Heizung aktiv!'
+                    elif air_quality and air_quality['urgency'] == 'urgent':
+                        title = '🚨 Fenster geöffnet - Lüften wichtig!'
                     else:
                         title = '📐 Fenster gekippt' if window_state == 'tilted' else '🪟 Fenster geöffnet'
                     
@@ -405,18 +456,16 @@ class VentilationNotifier:
                         climate_start, room_climate_now, duration_minutes
                     )
                     
-                    # Baue Nachrichtentext
-                    message_parts = [f'✅ {window_name} geschlossen']
-                    message_parts.append(f'\n\n⏱️ Lüftungsdauer: {duration_text}')
-                    
                     # Zeige Klima-Veränderungen (wenn Vorher/Nachher verfügbar)
                     changes = []
                     has_start_data = climate_start.get('temp') or climate_start.get('humidity') or climate_start.get('co2')
                     has_now_data = room_climate_now.get('temp') or room_climate_now.get('humidity') or room_climate_now.get('co2')
                     
-                    # Variablen für Temperatur-Bewertung
+                    # Variablen für Bewertungen
                     temp_diff = None
                     temp_rating = None
+                    energy_info = None
+                    climate_change = {}
                     
                     if has_start_data and has_now_data:
                         # Vollständiger Vergleich
@@ -424,21 +473,26 @@ class VentilationNotifier:
                             temp_diff = room_climate_now['temp'] - climate_start['temp']
                             arrow = '↓' if temp_diff < 0 else '↑' if temp_diff > 0 else '→'
                             changes.append(f"🌡️ {climate_start['temp']:.1f}→{room_climate_now['temp']:.1f}°C ({arrow}{abs(temp_diff):.1f}°)")
+                            climate_change['temp'] = temp_diff
+                            
+                            # Berechne Energie-Impact
+                            energy_info = self._calculate_energy_impact(
+                                temp_diff, duration_minutes, outdoor_temp
+                            )
                         
                         if climate_start.get('humidity') and room_climate_now.get('humidity'):
                             hum_diff = room_climate_now['humidity'] - climate_start['humidity']
                             arrow = '↓' if hum_diff < 0 else '↑' if hum_diff > 0 else '→'
                             changes.append(f"💧 {climate_start['humidity']:.0f}→{room_climate_now['humidity']:.0f}% ({arrow}{abs(hum_diff):.0f}%)")
+                            climate_change['humidity'] = hum_diff
                         
                         if climate_start.get('co2') and room_climate_now.get('co2'):
                             co2_diff = room_climate_now['co2'] - climate_start['co2']
                             arrow = '↓' if co2_diff < 0 else '↑' if co2_diff > 0 else '→'
                             changes.append(f"💨 {climate_start['co2']:.0f}→{room_climate_now['co2']:.0f} ppm ({arrow}{abs(co2_diff):.0f})")
+                            climate_change['co2'] = co2_diff
                         
-                        if changes:
-                            message_parts.append(f"\n\nVeränderung:\n" + '\n'.join(changes))
-                        
-                        # Raumtemperatur-Bewertung hinzufügen
+                        # Raumtemperatur-Bewertung 
                         if temp_diff is not None:
                             temp_rating = self._evaluate_temperature_change(
                                 temp_diff, 
@@ -446,13 +500,75 @@ class VentilationNotifier:
                                 climate_start.get('outdoor_temp'),
                                 duration_minutes
                             )
-                            if temp_rating:
-                                message_parts.append(f"\n\n{temp_rating['emoji']} <b>Raumklima:</b> {temp_rating['text']}")
-                                if temp_rating.get('tip'):
-                                    message_parts.append(f"\n💡 {temp_rating['tip']}")
                     
-                    elif has_now_data:
-                        # Nur aktuelle Daten verfügbar
+                    # Prüfe ob zu lange gelüftet
+                    too_long_warning = self._check_ventilation_too_long(duration_minutes, outdoor_temp)
+                    
+                    # Hole Ziel-Erreichung
+                    goals = self._get_ventilation_goals(climate_start, room_climate_now)
+                    
+                    # Vergleiche mit Durchschnitt
+                    comparison = self._compare_to_average(room_name, effectiveness['percentage'])
+                    
+                    # Speichere Statistik
+                    self._record_ventilation(
+                        room_name, 
+                        duration_minutes, 
+                        effectiveness['percentage'],
+                        energy_saved=energy_info.get('kwh') if energy_info else None,
+                        climate_change=climate_change
+                    )
+                    
+                    # === BAUE VERBESSERTE NACHRICHT ===
+                    message_parts = [f'✅ <b>{window_name}</b> geschlossen']
+                    
+                    # Dauer mit Warnung wenn zu lang
+                    if too_long_warning and too_long_warning.get('warning'):
+                        message_parts.append(f'\n\n{too_long_warning["emoji"]} {too_long_warning["text"]}')
+                        if too_long_warning.get('tip'):
+                            message_parts.append(f'\n💡 {too_long_warning["tip"]}')
+                    else:
+                        message_parts.append(f'\n\n⏱️ Lüftungsdauer: <b>{duration_text}</b>')
+                    
+                    # Grafischer Score mit Fortschrittsbalken
+                    score = effectiveness['percentage']
+                    progress_bar = self._create_progress_bar(score)
+                    message_parts.append(f'\n\n🎯 <b>Lüftungs-Score: {score}/100</b>')
+                    message_parts.append(f'\n{progress_bar} {effectiveness["rating"]}')
+                    
+                    # Vergleich mit Durchschnitt
+                    if comparison:
+                        message_parts.append(f'\n{comparison["emoji"]} {comparison["text"]}')
+                    
+                    # Klima-Veränderungen
+                    if changes:
+                        message_parts.append(f"\n\n📊 <b>Veränderung:</b>\n" + '\n'.join(changes))
+                    
+                    # Ziele erreicht?
+                    if goals:
+                        achieved = [g for g in goals if g['achieved']]
+                        not_achieved = [g for g in goals if not g['achieved']]
+                        
+                        if achieved:
+                            goal_text = ' | '.join([f"{g['emoji']} {g['name']}" for g in achieved])
+                            message_parts.append(f"\n\n🎯 <b>Ziele:</b> {goal_text}")
+                        
+                        if not_achieved:
+                            goal_text = ' | '.join([f"{g['emoji']} {g['name']}" for g in not_achieved])
+                            message_parts.append(f"\n⚠️ Nicht erreicht: {goal_text}")
+                    
+                    # Energie-Info (nur wenn Temperaturänderung bekannt)
+                    if energy_info and energy_info['kwh'] > 0:
+                        message_parts.append(f"\n\n⚡ <b>Energie:</b> {energy_info['text']}")
+                    
+                    # Raumklima-Bewertung
+                    if temp_rating:
+                        message_parts.append(f"\n\n{temp_rating['emoji']} <b>Raumklima:</b> {temp_rating['text']}")
+                        if temp_rating.get('tip'):
+                            message_parts.append(f"\n💡 {temp_rating['tip']}")
+                    
+                    # Fallback: Nur aktuelle Daten verfügbar
+                    elif has_now_data and not has_start_data:
                         current_info = []
                         if room_climate_now.get('temp'):
                             current_info.append(f"🌡️ {room_climate_now['temp']:.1f}°C")
@@ -462,10 +578,10 @@ class VentilationNotifier:
                             current_info.append(f"💨 {room_climate_now['co2']:.0f} ppm")
                         
                         if current_info:
-                            message_parts.append(f"\n\nAktuell:\n" + '\n'.join(current_info))
+                            message_parts.append(f"\n\n📍 <b>Aktuell:</b> " + ' | '.join(current_info))
                     
-                    else:
-                        # Keine Sensordaten - zeige Außentemperatur wenn verfügbar und logge Debug-Info
+                    # Keine Sensordaten
+                    elif not has_now_data and not has_start_data:
                         self._log_debug_event(
                             'no_sensor_data',
                             f"Keine Sensordaten für Raum '{room_name}' gefunden",
@@ -478,20 +594,28 @@ class VentilationNotifier:
                             },
                             level='warning'
                         )
-                        logger.warning(f"No sensor data for room '{room_name}' - available rooms: {list(room_data.keys())}, climate_start={climate_start}")
                         
                         if outdoor_temp is not None:
                             message_parts.append(f"\n\n🌤️ Außentemperatur: {outdoor_temp:.1f}°C")
                         else:
                             message_parts.append(f"\n\n<i>Keine Sensordaten für {room_name} verfügbar</i>")
                     
-                    # Effektivitäts-Bewertung
-                    message_parts.append(f"\n\n{effectiveness['emoji']} Effektivität: {effectiveness['rating']}")
+                    # Effektivitäts-Kommentar
                     if effectiveness.get('comment'):
-                        message_parts.append(f"\n{effectiveness['comment']}")
+                        message_parts.append(f"\n\n💬 {effectiveness['comment']}")
+                    
+                    # Titel basierend auf Score
+                    if score >= 80:
+                        title = '🌟 Sehr gute Lüftung!'
+                    elif score >= 60:
+                        title = '✅ Lüftung beendet'
+                    elif score >= 40:
+                        title = '👌 Lüftung beendet'
+                    else:
+                        title = '⚠️ Lüftung beendet'
                     
                     self._send_notification(
-                        '✅ Lüftung beendet',
+                        title,
                         ''.join(message_parts),
                         notification_key=f'window_closed_{device_id}'
                     )
@@ -563,6 +687,118 @@ class VentilationNotifier:
                                 f'🪟 Dringend lüften empfohlen.',
                                 priority=1,
                                 notification_key=f'mold_{room}'
+                            )
+            
+            # === NEU: Warnung bei zu langem Lüften (Energieverschwendung) ===
+            if config.get('long_ventilation_warning', True) and outdoor_temp is not None:
+                for window in open_windows:
+                    device_id = window['device_id']
+                    window_info = self._open_windows.get(device_id, {})
+                    opened_at = window_info.get('opened_at')
+                    
+                    if opened_at:
+                        minutes_open = (datetime.now() - opened_at).total_seconds() / 60
+                        
+                        # Berechne maximale empfohlene Dauer
+                        if outdoor_temp < 0:
+                            max_minutes = 10
+                            severity = 'critical'
+                        elif outdoor_temp < 5:
+                            max_minutes = 15
+                            severity = 'warning'
+                        elif outdoor_temp < 10:
+                            max_minutes = 25
+                            severity = 'info'
+                        else:
+                            max_minutes = 45  # Im Sommer weniger kritisch
+                            severity = 'info'
+                        
+                        # Warnen wenn deutlich über Maximum
+                        if minutes_open > max_minutes * 1.5 and severity in ['critical', 'warning']:
+                            room_name = window.get('room', 'Unbekannt')
+                            
+                            if severity == 'critical':
+                                title = '❄️ Fenster zu lange offen!'
+                                emoji = '🚨'
+                            else:
+                                title = '⏰ Lange Lüftungsdauer'
+                                emoji = '⚠️'
+                            
+                            message = (
+                                f'{emoji} <b>{window["name"]}</b> ist seit {int(minutes_open)} Min. offen!\n\n'
+                                f'🌡️ Bei {outdoor_temp:.1f}°C Außentemperatur empfohlen: max. {max_minutes} Min.\n\n'
+                                f'💡 <b>Tipp:</b> Stoßlüften (5-10 Min. weit öffnen) ist effektiver '
+                                f'als langes Kipplüften und spart Heizkosten!'
+                            )
+                            
+                            self._send_notification(
+                                title,
+                                message,
+                                priority=0 if severity == 'info' else 1,
+                                notification_key=f'long_ventilation_{device_id}'
+                            )
+            
+            # === NEU: Lüftungserinnerung (wenn lange nicht gelüftet) ===
+            if config.get('ventilation_reminder', False):
+                reminder_hours = config.get('ventilation_reminder_hours', 4)
+                
+                for room, data in room_data.items():
+                    # Prüfe ob Raum aktuell ein offenes Fenster hat
+                    room_has_open_window = any(
+                        w.get('room', '').lower() == room.lower() 
+                        for w in open_windows
+                    )
+                    
+                    # Keine Erinnerung wenn gerade gelüftet wird
+                    if room_has_open_window:
+                        continue
+                    
+                    # Prüfe letzte Lüftung
+                    last_vent = self._last_ventilation.get(room)
+                    if last_vent:
+                        hours_since = (datetime.now() - last_vent).total_seconds() / 3600
+                    else:
+                        hours_since = 999  # Noch nie gelüftet
+                    
+                    # Erinnerung wenn zu lange nicht gelüftet
+                    if hours_since >= reminder_hours:
+                        co2 = data.get('co2')
+                        humidity = data.get('humidity')
+                        
+                        # Nur erinnern wenn Luftqualität nicht optimal
+                        should_remind = False
+                        reason = ""
+                        
+                        if co2 and co2 > 900:
+                            should_remind = True
+                            reason = f"CO₂ bei {co2:.0f} ppm"
+                        elif humidity and humidity > 60:
+                            should_remind = True
+                            reason = f"Luftfeuchtigkeit bei {humidity:.0f}%"
+                        elif hours_since >= reminder_hours * 2:
+                            should_remind = True
+                            reason = f"Seit {int(hours_since)}h nicht gelüftet"
+                        
+                        if should_remind:
+                            message = (
+                                f'💨 <b>{room}</b> sollte gelüftet werden!\n\n'
+                                f'⏰ Letzte Lüftung: vor {int(hours_since)} Stunden\n'
+                                f'📊 {reason}\n\n'
+                                f'🪟 Kurzes Stoßlüften verbessert die Luftqualität.'
+                            )
+                            
+                            if outdoor_temp is not None:
+                                duration = self._calculate_ventilation_duration(
+                                    outdoor_temp=outdoor_temp,
+                                    co2=co2,
+                                    humidity=humidity
+                                )
+                                message += f'\n\n⏱️ Empfohlen: {duration["text"]}'
+                            
+                            self._send_notification(
+                                '💨 Lüftungserinnerung',
+                                message,
+                                notification_key=f'vent_reminder_{room}'
                             )
             
             # === Fenster offen bei Abwesenheit ===
@@ -1495,6 +1731,328 @@ class VentilationNotifier:
             'all_comments': comments
         }
 
+    # ============================================================================
+    # STATISTIK-SYSTEM: Speichert Lüftungsdaten für Vergleiche
+    # ============================================================================
+    
+    def _load_stats(self):
+        """Lade gespeicherte Lüftungsstatistiken"""
+        try:
+            if self._stats_file.exists():
+                with open(self._stats_file, 'r') as f:
+                    data = json.load(f)
+                    self._ventilation_stats = data.get('stats', {})
+                    # Lade letzte Lüftungszeiten
+                    last_vent = data.get('last_ventilation', {})
+                    for room, ts in last_vent.items():
+                        try:
+                            self._last_ventilation[room] = datetime.fromisoformat(ts)
+                        except:
+                            pass
+                    logger.debug(f"Loaded ventilation stats for {len(self._ventilation_stats)} rooms")
+        except Exception as e:
+            logger.error(f"Error loading ventilation stats: {e}")
+    
+    def _save_stats(self):
+        """Speichere Lüftungsstatistiken"""
+        try:
+            self._stats_file.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                'stats': self._ventilation_stats,
+                'last_ventilation': {room: ts.isoformat() for room, ts in self._last_ventilation.items()}
+            }
+            with open(self._stats_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving ventilation stats: {e}")
+    
+    def _record_ventilation(self, room: str, duration_minutes: int, score: int, 
+                           energy_saved: float = None, climate_change: dict = None):
+        """Speichere eine Lüftung für Statistiken"""
+        if room not in self._ventilation_stats:
+            self._ventilation_stats[room] = []
+        
+        record = {
+            'timestamp': datetime.now().isoformat(),
+            'duration': duration_minutes,
+            'score': score,
+            'energy_saved': energy_saved,
+            'climate_change': climate_change
+        }
+        
+        self._ventilation_stats[room].append(record)
+        
+        # Behalte nur die letzten 50 Einträge pro Raum
+        if len(self._ventilation_stats[room]) > 50:
+            self._ventilation_stats[room] = self._ventilation_stats[room][-50:]
+        
+        # Aktualisiere letzte Lüftungszeit
+        self._last_ventilation[room] = datetime.now()
+        
+        self._save_stats()
+    
+    def _get_room_stats(self, room: str) -> dict:
+        """Hole Statistiken für einen Raum"""
+        stats = self._ventilation_stats.get(room, [])
+        
+        if not stats:
+            return {'count': 0, 'avg_score': None, 'avg_duration': None}
+        
+        scores = [s['score'] for s in stats if s.get('score') is not None]
+        durations = [s['duration'] for s in stats if s.get('duration') is not None]
+        
+        return {
+            'count': len(stats),
+            'avg_score': sum(scores) / len(scores) if scores else None,
+            'avg_duration': sum(durations) / len(durations) if durations else None,
+            'last_scores': [s['score'] for s in stats[-5:] if s.get('score')]
+        }
+    
+    def _compare_to_average(self, room: str, current_score: int) -> dict:
+        """Vergleiche aktuelle Lüftung mit dem Durchschnitt"""
+        stats = self._get_room_stats(room)
+        
+        if stats['avg_score'] is None or stats['count'] < 3:
+            return None  # Nicht genug Daten
+        
+        avg = stats['avg_score']
+        diff = current_score - avg
+        percentile = sum(1 for s in self._ventilation_stats.get(room, []) 
+                        if s.get('score', 0) < current_score) / max(stats['count'], 1) * 100
+        
+        if diff >= 15:
+            text = f"🏆 Überdurchschnittlich! Besser als {int(percentile)}% deiner Lüftungen"
+            emoji = "🏆"
+        elif diff >= 5:
+            text = f"📈 Über dem Durchschnitt ({int(avg)}%)"
+            emoji = "📈"
+        elif diff >= -5:
+            text = f"📊 Im Durchschnitt ({int(avg)}%)"
+            emoji = "📊"
+        else:
+            text = f"📉 Unter dem Durchschnitt ({int(avg)}%)"
+            emoji = "📉"
+        
+        return {
+            'text': text,
+            'emoji': emoji,
+            'percentile': int(percentile),
+            'avg_score': int(avg),
+            'diff': int(diff)
+        }
+
+    # ============================================================================
+    # ENERGIE-BERECHNUNG
+    # ============================================================================
+    
+    def _calculate_energy_impact(self, temp_diff: float, duration_minutes: int,
+                                  outdoor_temp: float = None, room_size: str = 'medium') -> dict:
+        """Berechnet den Energie-Impact der Lüftung
+        
+        Vereinfachte Berechnung basierend auf:
+        - Temperaturänderung
+        - Lüftungsdauer
+        - Geschätzte Raumgröße
+        
+        Returns:
+            Dict mit kWh, Kosten-Schätzung und Bewertung
+        """
+        # Raumvolumen-Schätzung (m³)
+        room_volumes = {
+            'small': 30,    # ~12m² Raum
+            'medium': 50,   # ~20m² Raum
+            'large': 80     # ~32m² Raum
+        }
+        volume = room_volumes.get(room_size, 50)
+        
+        # Luftdichte: ~1.2 kg/m³, spez. Wärmekapazität Luft: ~1.005 kJ/(kg·K)
+        # Energie = Masse × spez. Wärme × Temperaturänderung
+        # Q = V × ρ × c × ΔT
+        
+        air_density = 1.2  # kg/m³
+        specific_heat = 1.005  # kJ/(kg·K)
+        
+        # Nur bei Temperaturverlust (Wärmeverlust) relevant
+        if temp_diff >= 0:
+            return {
+                'kwh': 0,
+                'cost': 0,
+                'text': 'Kein Wärmeverlust',
+                'emoji': '✅'
+            }
+        
+        abs_temp_diff = abs(temp_diff)
+        
+        # Energie in kJ, dann in kWh umrechnen
+        # Berücksichtige Luftaustauschrate (bei Stoßlüften ca. 50-100% pro 5 Min)
+        air_exchange_factor = min(duration_minutes / 10, 1.5)  # Max 150% Austausch
+        
+        energy_kj = volume * air_density * specific_heat * abs_temp_diff * air_exchange_factor
+        energy_kwh = energy_kj / 3600  # kJ zu kWh
+        
+        # Durchschnittlicher Gaspreis: ~0.10 EUR/kWh
+        gas_price = 0.10
+        cost = energy_kwh * gas_price
+        
+        # Bewertung
+        if energy_kwh < 0.1:
+            text = f"Minimal ({energy_kwh:.2f} kWh)"
+            emoji = "✅"
+        elif energy_kwh < 0.3:
+            text = f"Gering ({energy_kwh:.2f} kWh ≈ {cost:.2f}€)"
+            emoji = "👍"
+        elif energy_kwh < 0.5:
+            text = f"Moderat ({energy_kwh:.2f} kWh ≈ {cost:.2f}€)"
+            emoji = "⚡"
+        else:
+            text = f"Hoch ({energy_kwh:.2f} kWh ≈ {cost:.2f}€)"
+            emoji = "⚠️"
+        
+        return {
+            'kwh': round(energy_kwh, 3),
+            'cost': round(cost, 2),
+            'text': text,
+            'emoji': emoji
+        }
+
+    # ============================================================================
+    # VERBESSERTE BENACHRICHTIGUNGEN - Hilfsmethoden
+    # ============================================================================
+    
+    def _create_progress_bar(self, percentage: int, width: int = 10) -> str:
+        """Erstellt einen grafischen Fortschrittsbalken"""
+        filled = int(percentage / 100 * width)
+        empty = width - filled
+        return '▓' * filled + '░' * empty
+    
+    def _get_seasonal_tip(self, outdoor_temp: float, window_state: str = 'open') -> str:
+        """Gibt jahreszeit-spezifische Lüftungstipps"""
+        month = datetime.now().month
+        hour = datetime.now().hour
+        
+        if outdoor_temp is None:
+            return None
+        
+        if outdoor_temp < 0:
+            if window_state == 'tilted':
+                return "❄️ Bei Frost: Kippen vermeiden! Stoßlüften ist effizienter und spart Heizkosten."
+            return "❄️ Bei Frost: Maximal 5 Min. Stoßlüften, dann Fenster schließen!"
+        
+        elif outdoor_temp < 5:
+            return "🧣 Kalte Luft nimmt weniger Feuchtigkeit auf → kurz aber intensiv lüften"
+        
+        elif outdoor_temp < 15:
+            return "🍂 Ideale Lüftungsbedingungen für guten Luftaustausch"
+        
+        elif outdoor_temp >= 25:
+            if 6 <= hour <= 9:
+                return "☀️ Morgens ist die beste Zeit - jetzt ausgiebig lüften!"
+            elif 20 <= hour <= 23:
+                return "🌙 Abends kühle Luft nutzen für angenehme Nachttemperatur"
+            else:
+                return "🌡️ Tagsüber besser geschlossen halten, morgens/abends lüften"
+        
+        else:
+            return None
+    
+    def _get_air_quality_recommendation(self, co2: float = None, humidity: float = None) -> dict:
+        """Gibt Luftqualitäts-Empfehlung basierend auf aktuellen Werten"""
+        issues = []
+        urgency = 'normal'  # normal, recommended, urgent
+        
+        if co2:
+            if co2 > 2000:
+                issues.append(('co2_critical', '🚨 CO₂ kritisch hoch!', 'urgent'))
+                urgency = 'urgent'
+            elif co2 > 1400:
+                issues.append(('co2_high', '⚠️ CO₂ erhöht - Lüften empfohlen', 'recommended'))
+                if urgency != 'urgent':
+                    urgency = 'recommended'
+            elif co2 > 1000:
+                issues.append(('co2_elevated', '💨 CO₂ leicht erhöht', 'normal'))
+        
+        if humidity:
+            if humidity > 75:
+                issues.append(('humidity_high', '💧 Hohe Luftfeuchtigkeit - Schimmelgefahr!', 'urgent'))
+                urgency = 'urgent'
+            elif humidity > 65:
+                issues.append(('humidity_elevated', '💧 Luftfeuchtigkeit erhöht', 'recommended'))
+                if urgency != 'urgent':
+                    urgency = 'recommended'
+            elif humidity < 30:
+                issues.append(('humidity_low', '🏜️ Luft sehr trocken', 'normal'))
+        
+        if not issues:
+            return None
+        
+        return {
+            'issues': issues,
+            'urgency': urgency,
+            'main_issue': issues[0][1],
+            'all_texts': [i[1] for i in issues]
+        }
+    
+    def _get_ventilation_goals(self, climate_start: dict, climate_now: dict) -> list:
+        """Prüft welche Ziele erreicht wurden"""
+        goals = []
+        
+        co2_start = climate_start.get('co2')
+        co2_now = climate_now.get('co2')
+        hum_start = climate_start.get('humidity')
+        hum_now = climate_now.get('humidity')
+        
+        # CO2-Ziel: unter 800 ppm
+        if co2_start and co2_now:
+            if co2_now < 800:
+                goals.append({'name': 'CO₂ unter 800 ppm', 'achieved': True, 'emoji': '✅'})
+            elif co2_now < co2_start:
+                goals.append({'name': 'CO₂ gesenkt', 'achieved': True, 'emoji': '✅'})
+            else:
+                goals.append({'name': 'CO₂ senken', 'achieved': False, 'emoji': '❌'})
+        
+        # Luftfeuchtigkeit-Ziel: 40-60%
+        if hum_start and hum_now:
+            if 40 <= hum_now <= 60:
+                goals.append({'name': 'Optimale Feuchtigkeit (40-60%)', 'achieved': True, 'emoji': '✅'})
+            elif hum_start > 60 and hum_now < hum_start:
+                goals.append({'name': 'Feuchtigkeit gesenkt', 'achieved': True, 'emoji': '✅'})
+            elif hum_start > 60:
+                goals.append({'name': 'Feuchtigkeit senken', 'achieved': False, 'emoji': '⚠️'})
+        
+        return goals
+
+    def _check_ventilation_too_long(self, duration_minutes: int, outdoor_temp: float) -> dict:
+        """Prüft ob die Lüftung zu lang war (Energieverschwendung)"""
+        if outdoor_temp is None:
+            return None
+        
+        # Maximal empfohlene Dauer basierend auf Außentemperatur
+        if outdoor_temp < 0:
+            max_duration = 8
+        elif outdoor_temp < 5:
+            max_duration = 12
+        elif outdoor_temp < 10:
+            max_duration = 20
+        else:
+            max_duration = 30  # Im Sommer weniger kritisch
+        
+        if duration_minutes > max_duration * 2:
+            return {
+                'warning': True,
+                'text': f'⏰ {duration_minutes} Min. ist bei {outdoor_temp:.0f}°C sehr lang!',
+                'tip': f'Empfohlen: max. {max_duration} Min. bei dieser Temperatur',
+                'emoji': '⚠️'
+            }
+        elif duration_minutes > max_duration:
+            return {
+                'warning': False,
+                'text': f'⏰ Etwas länger als optimal ({max_duration} Min. empfohlen)',
+                'tip': None,
+                'emoji': '💡'
+            }
+        
+        return None
+
     def get_status(self) -> dict:
         """Gibt den aktuellen Status zurück"""
         config = self._load_config()
@@ -1503,5 +2061,7 @@ class VentilationNotifier:
             'enabled': config.get('enabled', False),
             'check_interval': self.check_interval,
             'open_windows_tracked': len(self._open_windows),
-            'notifications_sent': len(self._last_notifications)
+            'notifications_sent': len(self._last_notifications),
+            'rooms_with_stats': len(self._ventilation_stats),
+            'last_ventilation': {room: ts.isoformat() for room, ts in self._last_ventilation.items()}
         }
