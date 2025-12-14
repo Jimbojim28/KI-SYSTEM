@@ -1612,8 +1612,10 @@ function renderOverview() {
             </div>
         ` : '';
         
-        // Fenster-Status für diesen Raum ermitteln
-        const roomWindows = allWindowSensors.filter(w => zoneIdToName[w.zone_id] === room || w.room_name === room);
+        // Fenster-Status für diesen Raum ermitteln (nur nicht-ignorierte Fenster!)
+        const roomWindows = allWindowSensors.filter(w => 
+            (zoneIdToName[w.zone_id] === room || w.room_name === room) && !w.ignored
+        );
         const hasWindows = roomWindows.length > 0;
         
         // Fenster-Status HTML
