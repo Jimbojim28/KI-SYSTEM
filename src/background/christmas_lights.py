@@ -129,6 +129,14 @@ class ChristmasLightsController:
         """Gibt aktuelle Konfiguration zurück"""
         return self.config.copy()
     
+    def get_device_state(self, device_id: str) -> Optional[bool]:
+        """Öffentliche Methode: Gibt den aktuellen Status eines Geräts zurück"""
+        return self._device_states.get(device_id)
+    
+    def get_all_device_states(self) -> Dict[str, bool]:
+        """Gibt alle bekannten Gerätezustände zurück"""
+        return self._device_states.copy()
+    
     def _get_pushover_credentials(self):
         """Hole Pushover Credentials aus config.yaml"""
         try:

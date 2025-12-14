@@ -312,10 +312,20 @@ def get_christmas_devices():
             
             # NUR Geräte aus dem Weihnachts-Raum anzeigen!
             if is_controllable and is_relevant and is_in_christmas_zone:
-                # Prüfe aktuellen Zustand
+                # Prüfe aktuellen Zustand - nutze Controller-Status falls verfügbar
                 is_on = False
-                if 'onoff' in caps_obj:
-                    is_on = caps_obj['onoff'].get('value', False)
+                if _christmas_controller:
+                    # Controller trackt den echten Status
+                    controller_state = _christmas_controller.get_device_state(device_id)
+                    if controller_state is not None:
+                        is_on = controller_state
+                    else:
+                        # Fallback: aus capabilitiesObj
+                        if 'onoff' in caps_obj:
+                            is_on = caps_obj['onoff'].get('value', False)
+                else:
+                    if 'onoff' in caps_obj:
+                        is_on = caps_obj['onoff'].get('value', False)
                 
                 device_info = {
                     'id': device_id,
