@@ -406,6 +406,11 @@
 // Diese Seite nutzt den zentralen PresenceService aus presence-service.js
 // Der Service wird automatisch in base.html geladen
 
+// Lokale Daten für Tracking (nicht im zentralen Service)
+window.presenceData = {
+    tracking: null
+};
+
 // Status laden (nutzt zentralen Service)
 async function loadPresenceStatus() {
     const container = document.getElementById('presence-status-container');
@@ -753,23 +758,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 300000);
 });
 
-// Globale Funktion für andere Seiten
+// Globale Funktion für andere Seiten (nutzt PresenceService)
 window.getPresenceStatus = async function() {
-    if (window.presenceData.status && 
-        window.presenceData.lastUpdate && 
-        (new Date() - window.presenceData.lastUpdate) < 60000) {
-        return window.presenceData.status;
+    // Nutze den zentralen PresenceService wenn verfügbar
+    if (window.PresenceService) {
+        const data = window.PresenceService.data;
+        const lastUpdate = window.PresenceService.lastUpdate;
+        
+        // Cache nutzen wenn weniger als 60 Sekunden alt
+        if (data && lastUpdate && (new Date() - lastUpdate) < 60000) {
+            return data;
+        }
+        
+        // Sonst neu laden
+        return await window.PresenceService.refresh();
     }
     
+    // Fallback ohne Service
     const response = await fetch('/api/presence');
-    const data = await response.json();
-    
-    if (data.success) {
-        window.presenceData.status = data;
-        window.presenceData.lastUpdate = new Date();
-    }
-    
-    return data;
+    return await response.json();
 };
 </script>
 {% endblock %}
