@@ -102,12 +102,24 @@ def get_all_windows(engine, db, include_ignored=False):
                         else:
                             zone_names[zone_id] = str(zone_data)
             
+            # Räume die keine echten Fenster-Räume sind ausschließen
+            excluded_rooms = {'weihnachtsbeleuchtung', 'weihnachtslicht', 'christmas', 'nachtlicht'}
+            
             for device in devices:
                 name = device.get('name', '').lower()
+                caps = device.get('capabilitiesObj', {})
+                
+                # Muss alarm_contact haben um ein Fenstersensor zu sein
+                if 'alarm_contact' not in caps:
+                    continue
+                    
                 if 'fenster' in name or 'window' in name:
-                    caps = device.get('capabilitiesObj', {})
                     zone_id = device.get('zone', '')
                     room_name = zone_names.get(zone_id, 'Unbekannt')
+                    
+                    # Überspringe Räume die keine echten Fenster-Räume sind
+                    if room_name.lower() in excluded_rooms:
+                        continue
                     
                     # Fallback: Raum aus Gerätenamen
                     if not room_name or room_name == 'Unbekannt':

@@ -497,6 +497,20 @@ class WindowDataCollector:
             if not all_devices:
                 logger.debug("No devices found for window data collection")
                 return
+            
+            # Hole Zone-Mapping für Raum-Filterung
+            zone_names = {}
+            try:
+                zone_dict = self.engine.platform.get_zones() or {}
+                if isinstance(zone_dict, dict):
+                    for zone_id, zone_data in zone_dict.items():
+                        if isinstance(zone_data, dict):
+                            zone_names[zone_id] = zone_data.get('name', '')
+            except:
+                pass
+            
+            # Räume die keine echten Fenster-Räume sind ausschließen
+            excluded_rooms = {'weihnachtsbeleuchtung', 'weihnachtslicht', 'christmas', 'nachtlicht'}
                 
             window_devices = []
 
@@ -509,6 +523,12 @@ class WindowDataCollector:
                 device_class = device.get('class', '').lower()
                 device_name = device.get('name', '').lower()
                 capabilities = device.get('capabilitiesObj', {})
+                
+                # Überspringe Geräte aus ausgeschlossenen Räumen
+                zone_id = device.get('zone', '')
+                room_name = zone_names.get(zone_id, '').lower()
+                if room_name in excluded_rooms:
+                    continue
 
                 # Prüfe ob es ein Fenster-Sensor ist (aber KEINE Tür)
                 # Explizit Türen ausschließen
