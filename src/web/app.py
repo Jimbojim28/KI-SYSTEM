@@ -49,6 +49,7 @@ from src.background.temperature_data_collector import TemperatureDataCollector
 from src.background.database_maintenance import DatabaseMaintenanceJob
 from src.background.ventilation_notifier import VentilationNotifier
 from src.background.notification_scheduler import NotificationScheduler
+from src.background.presence_leave_notifier import PresenceLeaveNotifier
 from src.utils.database import Database
 
 # Christmas Controller - optional (falls astral nicht installiert)
@@ -210,6 +211,16 @@ class WebInterface:
             logger.info("Notification Scheduler initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Notification Scheduler: {e}")
+
+        # Presence Leave Notifier - Benachrichtigung wenn alle das Haus verlassen
+        self.presence_leave_notifier = None
+        try:
+            self.presence_leave_notifier = PresenceLeaveNotifier(
+                check_interval=30  # Alle 30 Sekunden prüfen
+            )
+            logger.info("Presence Leave Notifier initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Presence Leave Notifier: {e}")
 
         # Christmas Lights Controller für Weihnachtsbeleuchtung
         self.christmas_controller = None
@@ -7868,6 +7879,11 @@ class WebInterface:
         if self.notification_scheduler:
             self.notification_scheduler.start()
             logger.info("Notification Scheduler started (scheduled notifications)")
+
+        # Starte Presence Leave Notifier (Benachrichtigung beim Verlassen)
+        if self.presence_leave_notifier:
+            self.presence_leave_notifier.start()
+            logger.info("Presence Leave Notifier started (notifies when everyone leaves)")
 
         # Starte Christmas Lights Controller
         if self.christmas_controller:
