@@ -4772,6 +4772,91 @@ class WebInterface:
                 logger.error(f"Error managing device types: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/rooms/valves', methods=['GET'])
+        def api_room_valves():
+            """API: Heizkörper-Ventilpositionen pro Raum abrufen"""
+            try:
+                valves_by_room = {}
+                
+                if not self.engine or not self.engine.platform:
+                    return jsonify({
+                        'success': True,
+                        'valves': {},
+                        'warning': 'Platform nicht verfügbar'
+                    })
+                
+                platform = self.engine.platform
+                
+                # Hole alle Geräte
+                all_devices = platform.get_states() or {}
+                if isinstance(all_devices, dict):
+                    devices = list(all_devices.values())
+                else:
+                    devices = all_devices
+                
+                # Hole Zonen für Raumnamen
+                zones = {}
+                try:
+                    zone_dict = platform.get_zones() or {}
+                    if isinstance(zone_dict, dict):
+                        for zone_id, zone_data in zone_dict.items():
+                            if isinstance(zone_data, dict):
+                                zones[zone_id] = zone_data.get('name', '')
+                except Exception as e:
+                    logger.debug(f"Error getting zones: {e}")
+                
+                # Suche Geräte mit valve_position
+                for device in devices:
+                    if not isinstance(device, dict):
+                        continue
+                    
+                    caps = device.get('capabilitiesObj', {})
+                    
+                    # Prüfe auf valve_position (Heizkörperventil)
+                    if 'valve_position' in caps:
+                        device_name = device.get('name', 'Unbekannt')
+                        zone_id = device.get('zone', '')
+                        room_name = zones.get(zone_id, 'Unbekannt')
+                        
+                        valve_pos = caps['valve_position'].get('value', 0)
+                        # Konvertiere zu Prozent (0-1 -> 0-100)
+                        if valve_pos is not None:
+                            valve_percent = valve_pos * 100 if valve_pos <= 1 else valve_pos
+                        else:
+                            valve_percent = 0
+                        
+                        # Optional: Zieltemperatur wenn verfügbar
+                        target_temp = None
+                        if 'target_temperature' in caps:
+                            target_temp = caps['target_temperature'].get('value')
+                        
+                        # Aktuelle Temperatur wenn verfügbar
+                        current_temp = None
+                        if 'measure_temperature' in caps:
+                            current_temp = caps['measure_temperature'].get('value')
+                        
+                        valve_info = {
+                            'device_id': device.get('id', ''),
+                            'device_name': device_name,
+                            'valve_position': round(valve_percent, 0),
+                            'target_temperature': target_temp,
+                            'current_temperature': current_temp,
+                            'is_heating': valve_percent > 10
+                        }
+                        
+                        if room_name not in valves_by_room:
+                            valves_by_room[room_name] = []
+                        valves_by_room[room_name].append(valve_info)
+                
+                return jsonify({
+                    'success': True,
+                    'valves': valves_by_room
+                })
+                
+            except Exception as e:
+                logger.error(f"Error getting valve data: {e}")
+                return jsonify({'error': str(e)}), 500
+
         # === Analytics API Endpunkte ===
 
         @self.app.route('/api/analytics/temperature')

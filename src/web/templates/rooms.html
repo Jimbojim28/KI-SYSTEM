@@ -615,6 +615,99 @@
     color: #E65100;
 }
 
+/* Ventil-Anzeige */
+.room-valves {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+    border: 1px solid #d1d5db;
+}
+
+.room-valves.heating {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border-color: #f59e0b;
+}
+
+.valve-icon {
+    font-size: 1.1rem;
+}
+
+.valve-percent {
+    font-weight: 600;
+    color: #374151;
+    min-width: 35px;
+}
+
+.room-valves.heating .valve-percent {
+    color: #92400e;
+}
+
+.valve-target {
+    color: #6b7280;
+    font-size: 0.8rem;
+}
+
+.room-valves.heating .valve-target {
+    color: #b45309;
+}
+
+.valve-dots {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.valve-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d1d5db;
+    border: 1px solid #9ca3af;
+}
+
+.valve-dot.valve-off {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+}
+
+.valve-dot.valve-medium {
+    background: #fbbf24;
+    border-color: #f59e0b;
+}
+
+.valve-dot.valve-high {
+    background: #ef4444;
+    border-color: #dc2626;
+    animation: pulse-heat 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-heat {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.valve-badge {
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: #f3f4f6;
+    opacity: 0.5;
+}
+
+.valve-badge.heating {
+    background: #fef3c7;
+    opacity: 1;
+}
+
+.room-card.is-heating {
+    border-left: 3px solid #f59e0b;
+}
+
 .room-header {
     display: flex;
     align-items: center;
@@ -1299,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Alle Daten laden
 async function loadAllData() {
     try {
-        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes, motionRes, windowRes] = await Promise.all([
+        const [sensorsRes, mappingRes, hiddenRes, devicesRes, roomsRes, deviceTypesRes, motionRes, windowRes, valvesRes] = await Promise.all([
             fetch('/api/ventilation/sensors?include_ignored=true'),
             fetch('/api/ventilation/sensor-mapping'),
             fetch('/api/rooms/hidden'),
@@ -1307,7 +1400,8 @@ async function loadAllData() {
             fetch('/api/rooms'),
             fetch('/api/rooms/device-types'),
             fetch('/api/rooms/motion-sensors'),
-            fetch('/api/rooms/window-status')
+            fetch('/api/rooms/window-status'),
+            fetch('/api/rooms/valves')
         ]);
         
         const sensorsData = await sensorsRes.json();
@@ -1318,6 +1412,7 @@ async function loadAllData() {
         const deviceTypesData = await deviceTypesRes.json();
         const motionData = await motionRes.json();
         const windowData = await windowRes.json();
+        const valvesData = await valvesRes.json();
         
         if (sensorsData.success) {
             allSensors = sensorsData.sensors;
@@ -1336,6 +1431,13 @@ async function loadAllData() {
         // Geräte-Typen laden
         if (deviceTypesData.success) {
             deviceTypes = deviceTypesData.device_types || {};
+        }
+        
+        // Ventildaten laden
+        if (valvesData.success) {
+            window.valvesByRoom = valvesData.valves || {};
+        } else {
+            window.valvesByRoom = {};
         }
         
         // Bewegungssensor-Zuordnung vom Server laden
@@ -1552,16 +1654,46 @@ function renderOverview() {
             `;
         }
         
+        // Ventile für diesen Raum ermitteln
+        const roomValves = window.valvesByRoom?.[room] || [];
+        const hasValves = roomValves.length > 0;
+        
+        // Ventil-Status HTML
+        let valvesHtml = '';
+        if (hasValves) {
+            // Hauptventil (oder Durchschnitt wenn mehrere)
+            const avgValve = roomValves.reduce((sum, v) => sum + (v.valve_position || 0), 0) / roomValves.length;
+            const isHeating = avgValve > 10;
+            const targetTemp = roomValves[0]?.target_temperature;
+            
+            const valveIcons = roomValves.map(v => {
+                const pos = v.valve_position || 0;
+                let cssClass = pos > 50 ? 'valve-high' : pos > 10 ? 'valve-medium' : 'valve-off';
+                return `<span class="valve-dot ${cssClass}" title="${v.device_name}: ${pos}%${v.target_temperature ? ' → ' + v.target_temperature + '°C' : ''}"></span>`;
+            }).join('');
+            
+            valvesHtml = `
+                <div class="room-valves ${isHeating ? 'heating' : ''}" title="Heizung: ${avgValve.toFixed(0)}%">
+                    <span class="valve-icon">${isHeating ? '🔥' : '❄️'}</span>
+                    <span class="valve-percent">${avgValve.toFixed(0)}%</span>
+                    ${targetTemp ? `<span class="valve-target">→ ${targetTemp}°C</span>` : ''}
+                    <div class="valve-dots">${valveIcons}</div>
+                </div>
+            `;
+        }
+        
         return `
-            <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
+            <div class="room-card ${lightsOn.length > 0 ? 'has-lights-on' : ''} ${hasValves && roomValves.some(v => v.valve_position > 10) ? 'is-heating' : ''}" onclick="openRoomModal('${room.replace(/'/g, "\\'")}')">
                 <div class="room-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${room}</span>
                     ${hasMotion ? '<span class="motion-badge" title="Bewegungssensor vorhanden">🚶</span>' : ''}
                     ${hasWindows ? `<span class="window-badge ${roomWindows.some(w => w.state === 'open') ? 'open' : roomWindows.some(w => w.state === 'tilted') ? 'tilted' : 'closed'}" title="Fenster">🪟</span>` : ''}
+                    ${hasValves ? `<span class="valve-badge ${roomValves.some(v => v.valve_position > 10) ? 'heating' : ''}" title="Heizung">🔥</span>` : ''}
                 </div>
                 ${lightsHtml}
                 ${windowsHtml}
+                ${valvesHtml}
                 ${motionHtml}
                 <div class="room-sensors">
                     <div class="sensor-value temp">
@@ -1578,7 +1710,7 @@ function renderOverview() {
                     </div>
                 </div>
                 <div class="room-status">
-                    <span class="sensor-count">${sensorCount} Sensoren${hasLights ? `, ${roomLights.length} Lampen` : ''}${hasMotion ? ', 🚶' : ''}</span>
+                    <span class="sensor-count">${sensorCount} Sensoren${hasLights ? `, ${roomLights.length} Lampen` : ''}${hasMotion ? ', 🚶' : ''}${hasValves ? ', 🔥' : ''}</span>
                     ${isConfigured ? '<span class="configured-badge">✓ Konfiguriert</span>' : ''}
                     <button class="edit-btn" onclick="event.stopPropagation(); openRoomModal('${room.replace(/'/g, "\\'")}')">✏️</button>
                 </div>
