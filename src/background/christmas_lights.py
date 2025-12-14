@@ -191,6 +191,8 @@ class ChristmasLightsController:
             try:
                 if self.config['enabled']:
                     self._check_schedule()
+                else:
+                    logger.debug("🎄 Christmas lights disabled in config")
             except Exception as e:
                 logger.error(f"Error in christmas lights loop: {e}")
             
@@ -200,6 +202,11 @@ class ChristmasLightsController:
     def _check_schedule(self):
         """Prüft ob Lichter ein- oder ausgeschaltet werden sollen"""
         now = datetime.now()
+        
+        # Debug: Zeige aktuelle Konfiguration
+        logger.debug(f"🎄 Check schedule at {now.strftime('%H:%M:%S')}")
+        logger.debug(f"🎄 Config: on_time={self.config.get('on_time')}, off_time={self.config.get('off_time')}, use_sunset={self.config.get('use_sunset')}")
+        logger.debug(f"🎄 Devices configured: {len(self.config.get('devices', []))}")
         
         # Prüfe manuelle Überschreibung
         if self._manual_override_until:
@@ -612,6 +619,22 @@ class ChristmasLightsController:
                 'until_iso': self._manual_override_until.isoformat()
             }
         
+        # Debug-Info für Troubleshooting
+        debug_info = {
+            'current_time': now.strftime('%H:%M:%S'),
+            'on_time_raw': self.config.get('on_time'),
+            'off_time_raw': self.config.get('off_time'),
+            'on_time_calculated': on_time.strftime('%H:%M') if on_time else None,
+            'off_time_calculated': off_time.strftime('%H:%M') if off_time else None,
+            'use_sunset': self.config.get('use_sunset', False),
+            'start_date': self.config.get('start_date'),
+            'end_date': self.config.get('end_date'),
+            'device_count': len(self.config.get('devices', [])),
+            'devices': self.config.get('devices', []),
+            'device_states': self._device_states,
+            'controller_running': self.running
+        }
+        
         return {
             'enabled': self.config['enabled'],
             'lights_on': self.lights_on,
@@ -620,5 +643,6 @@ class ChristmasLightsController:
             'last_action': self._last_action_time.isoformat() if self._last_action_time else None,
             'within_date_range': self._is_within_date_range(now),
             'device_schedules': self.config.get('device_schedules', {}),
-            'manual_override': manual_override_info
+            'manual_override': manual_override_info,
+            'debug': debug_info
         }
