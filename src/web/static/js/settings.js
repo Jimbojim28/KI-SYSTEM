@@ -3207,7 +3207,8 @@ async function loadPresenceLeaveConfig() {
             // Zeige Status
             const statusEl = document.getElementById('presence-leave-status');
             if (status.running) {
-                statusEl.innerHTML = `✅ Notifier aktiv | Zuletzt: ${status.last_anyone_home ? 'Anwesend' : 'Abwesend'}`;
+                const homeStatus = status.last_anyone_home ? '🏠 Jemand zuhause' : '🚶 Niemand zuhause';
+                statusEl.innerHTML = `✅ Notifier aktiv | ${homeStatus}`;
                 statusEl.style.background = '#d1fae5';
                 statusEl.style.color = '#065f46';
                 statusEl.style.display = 'block';

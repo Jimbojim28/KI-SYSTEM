@@ -105,13 +105,39 @@ class PresenceLeaveNotifier:
         return '', ''
     
     def _get_presence_status(self) -> dict:
-        """Holt den aktuellen Anwesenheitsstatus von der zentralen API"""
+        """Holt den aktuellen Anwesenheitsstatus NUR von Homey (zuverlässiger als iBeacons)"""
         try:
-            response = requests.get('http://localhost:8080/api/presence', timeout=5)
-            if response.status_code == 200:
-                return response.json()
+            from src.data_collector.homey_collector import HomeyCollector
+            
+            homey_url, homey_token = self._get_homey_config()
+            
+            if not homey_url or not homey_token:
+                logger.warning("Homey not configured for presence detection")
+                return {'success': False, 'anyone_home': True}
+            
+            homey = HomeyCollector(homey_url, homey_token)
+            presence = homey.get_presence_status()
+            
+            users_home = presence.get('users_home', 0)
+            users = presence.get('users', [])
+            
+            logger.debug(f"Homey presence: {users_home} users home")
+            
+            return {
+                'success': True,
+                'anyone_home': users_home > 0,
+                'users_home': users_home,
+                'users': [
+                    {
+                        'name': u.get('name', 'Unbekannt'),
+                        'present': u.get('present', False)
+                    }
+                    for u in users
+                ]
+            }
+            
         except Exception as e:
-            logger.debug(f"Error getting presence status: {e}")
+            logger.error(f"Error getting Homey presence status: {e}")
         
         return {'success': False, 'anyone_home': True}  # Fallback: anwesend
     
@@ -410,15 +436,20 @@ Antworte NUR mit dem Kommentar, keine Anführungszeichen, kein "Hier ist..." etc
         presence = self._get_presence_status()
         
         if not presence.get('success'):
+            logger.debug("Presence API not available")
             return
         
         anyone_home = presence.get('anyone_home', True)
         users = presence.get('users', [])
+        total_home = presence.get('total_home', 0)
+        
+        # Debug-Log bei jedem Check
+        logger.debug(f"Presence check: anyone_home={anyone_home}, total_home={total_home}, last_state={self._last_anyone_home}")
         
         # Ersten Check initialisieren
         if self._last_anyone_home is None:
             self._last_anyone_home = anyone_home
-            logger.info(f"PresenceLeaveNotifier: Initial status - anyone_home={anyone_home}")
+            logger.info(f"PresenceLeaveNotifier: Initial status - anyone_home={anyone_home}, total_home={total_home}")
             return
         
         # Prüfe ob sich der Status geändert hat: vorher jemand da -> jetzt niemand da
