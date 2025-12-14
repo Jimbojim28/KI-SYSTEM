@@ -466,6 +466,14 @@ Antworte NUR mit dem Kommentar, keine Anführungszeichen, kein "Hier ist..." etc
         
         logger.info("PresenceLeaveNotifier stopped")
     
+    def run(self):
+        """Wird vom CollectorManager aufgerufen - startet die Überwachung einmalig"""
+        if not self._running:
+            self.start()
+        # Halte den Thread am Leben, da der CollectorManager in einer Schleife läuft
+        while self._running:
+            time.sleep(60)
+    
     def start(self):
         """Startet die Überwachung"""
         if self._running:
