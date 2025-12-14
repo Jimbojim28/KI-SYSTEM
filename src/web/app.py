@@ -48,6 +48,7 @@ from src.background.lighting_data_collector import LightingDataCollector
 from src.background.temperature_data_collector import TemperatureDataCollector
 from src.background.database_maintenance import DatabaseMaintenanceJob
 from src.background.ventilation_notifier import VentilationNotifier
+from src.background.notification_scheduler import NotificationScheduler
 from src.utils.database import Database
 
 # Christmas Controller - optional (falls astral nicht installiert)
@@ -198,6 +199,17 @@ class WebInterface:
             logger.info("Ventilation Notifier initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Ventilation Notifier: {e}")
+
+        # Notification Scheduler für geplante Benachrichtigungen (Morgenzusammenfassung etc.)
+        self.notification_scheduler = None
+        try:
+            self.notification_scheduler = NotificationScheduler(
+                engine=self.engine,
+                check_interval=60  # Alle 60 Sekunden prüfen
+            )
+            logger.info("Notification Scheduler initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Notification Scheduler: {e}")
 
         # Christmas Lights Controller für Weihnachtsbeleuchtung
         self.christmas_controller = None
@@ -7726,6 +7738,11 @@ class WebInterface:
         if self.ventilation_notifier:
             self.ventilation_notifier.start()
             logger.info("Ventilation Notifier started (checks every 60s)")
+
+        # Starte Notification Scheduler (Morgenzusammenfassung etc.)
+        if self.notification_scheduler:
+            self.notification_scheduler.start()
+            logger.info("Notification Scheduler started (scheduled notifications)")
 
         # Starte Christmas Lights Controller
         if self.christmas_controller:

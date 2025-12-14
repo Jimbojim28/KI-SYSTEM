@@ -2246,8 +2246,37 @@ function initNotificationsTab() {
     // Preview Text Button
     document.getElementById('preview-text')?.addEventListener('click', previewText);
     
+    // Test Morning Summary Button
+    document.getElementById('test-morning-summary')?.addEventListener('click', testMorningSummary);
+    
     // Save Notifications Button
     document.getElementById('save-notifications')?.addEventListener('click', saveNotificationConfig);
+}
+
+async function testMorningSummary() {
+    const resultDiv = document.getElementById('notification-result');
+    resultDiv.innerHTML = '<div class="loading">⏳ Sende Morgenzusammenfassung...</div>';
+    resultDiv.className = 'action-result';
+    
+    try {
+        const response = await fetch('/api/notifications/morning-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            resultDiv.innerHTML = `<div class="success">✅ ${data.message}</div>`;
+            resultDiv.className = 'action-result success';
+        } else {
+            resultDiv.innerHTML = `<div class="error">❌ ${data.error || 'Fehler beim Senden'}</div>`;
+            resultDiv.className = 'action-result error';
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ Fehler: ${error.message}</div>`;
+        resultDiv.className = 'action-result error';
+    }
 }
 
 async function loadNotificationConfig() {

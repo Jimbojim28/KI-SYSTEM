@@ -236,17 +236,12 @@ class VentilationNotifier:
                     room_name = window.get('room', 'Unbekannt')
                     room_climate = room_data.get(room_name, {})
                     
-                    # Fallback: Versuche Raumnamen-Varianten (case-insensitive)
+                    # Fallback: Versuche Raumnamen-Varianten mit strengerem Matching
                     fallback_key_used = None
                     if not room_climate:
-                        room_name_lower = room_name.lower()
-                        for key in room_data.keys():
-                            key_lower = key.lower()
-                            if key_lower == room_name_lower or room_name_lower in key_lower or key_lower in room_name_lower:
-                                room_climate = room_data[key]
-                                fallback_key_used = key
-                                logger.debug(f"Found climate data for {room_name} via fallback key: {key}")
-                                break
+                        room_climate, fallback_key_used = self._find_room_climate_fuzzy(
+                            room_name, room_data
+                        )
                     
                     # Debug-Event beim Fenster-Öffnen
                     has_climate_data = bool(room_climate.get('temp') or room_climate.get('humidity') or room_climate.get('co2'))
@@ -296,10 +291,19 @@ class VentilationNotifier:
                         co2=room_climate.get('co2')
                     )
                     
+                    # Prüfe ob Heizung im Raum aktiv ist
+                    heater_warning = self._check_heater_active(room_name)
+                    
                     # Baue Nachrichtentext mit Zustand (gekippt/offen)
                     state_emoji = '📐' if window_state == 'tilted' else '🪟'
                     state_text = 'gekippt' if window_state == 'tilted' else 'geöffnet'
                     message_parts = [f'{state_emoji} <b>{window["name"]}</b> wurde {state_text}']
+                    
+                    # Heizungs-Warnung direkt nach der Überschrift (wenn aktiv)
+                    if heater_warning and heater_warning.get('is_heating'):
+                        message_parts.append(f"\n\n🔥 <b>ACHTUNG:</b> {heater_warning['message']}")
+                        if heater_warning.get('tip'):
+                            message_parts.append(f"\n💡 {heater_warning['tip']}")
                     
                     # Zeige Raum-Klimadaten wenn verfügbar
                     climate_info = []
@@ -321,7 +325,12 @@ class VentilationNotifier:
                     if duration.get('reason'):
                         message_parts.append(f"\n💡 {duration['reason']}")
                     
-                    title = '📐 Fenster gekippt' if window_state == 'tilted' else '🪟 Fenster geöffnet'
+                    # Titel mit Warnung wenn Heizung aktiv
+                    if heater_warning and heater_warning.get('is_heating'):
+                        title = '🔥🪟 Fenster offen - Heizung aktiv!' if window_state != 'tilted' else '🔥📐 Fenster gekippt - Heizung aktiv!'
+                    else:
+                        title = '📐 Fenster gekippt' if window_state == 'tilted' else '🪟 Fenster geöffnet'
+                    
                     self._send_notification(
                         title,
                         ''.join(message_parts),
@@ -362,18 +371,12 @@ class VentilationNotifier:
                     # Hole aktuelle Klimadaten für Vergleich
                     room_climate_now = room_data.get(room_name, {})
                     
-                    # Fallback: Versuche Raumnamen-Varianten (case-insensitive)
+                    # Fallback: Versuche Raumnamen-Varianten mit strengerem Matching
                     fallback_used = None
                     if not room_climate_now:
-                        room_name_lower = room_name.lower()
-                        logger.debug(f"Room '{room_name}' not found directly in room_data. Trying fallback matching...")
-                        for key in room_data.keys():
-                            key_lower = key.lower()
-                            if key_lower == room_name_lower or room_name_lower in key_lower or key_lower in room_name_lower:
-                                room_climate_now = room_data[key]
-                                fallback_used = key
-                                logger.debug(f"Found climate_now for {room_name} via fallback key: {key}")
-                                break
+                        room_climate_now, fallback_used = self._find_room_climate_fuzzy(
+                            room_name, room_data
+                        )
                         
                         if not room_climate_now:
                             logger.warning(f"No climate data found for room '{room_name}'. Available rooms: {list(room_data.keys())}")
@@ -411,6 +414,10 @@ class VentilationNotifier:
                     has_start_data = climate_start.get('temp') or climate_start.get('humidity') or climate_start.get('co2')
                     has_now_data = room_climate_now.get('temp') or room_climate_now.get('humidity') or room_climate_now.get('co2')
                     
+                    # Variablen für Temperatur-Bewertung
+                    temp_diff = None
+                    temp_rating = None
+                    
                     if has_start_data and has_now_data:
                         # Vollständiger Vergleich
                         if climate_start.get('temp') and room_climate_now.get('temp'):
@@ -430,6 +437,19 @@ class VentilationNotifier:
                         
                         if changes:
                             message_parts.append(f"\n\nVeränderung:\n" + '\n'.join(changes))
+                        
+                        # Raumtemperatur-Bewertung hinzufügen
+                        if temp_diff is not None:
+                            temp_rating = self._evaluate_temperature_change(
+                                temp_diff, 
+                                outdoor_temp, 
+                                climate_start.get('outdoor_temp'),
+                                duration_minutes
+                            )
+                            if temp_rating:
+                                message_parts.append(f"\n\n{temp_rating['emoji']} <b>Raumklima:</b> {temp_rating['text']}")
+                                if temp_rating.get('tip'):
+                                    message_parts.append(f"\n💡 {temp_rating['tip']}")
                     
                     elif has_now_data:
                         # Nur aktuelle Daten verfügbar
@@ -652,6 +672,188 @@ class VentilationNotifier:
                 logger.debug(f"🏠 Jemand ist wieder zu Hause (war {int(away_duration)} Min. weg)")
             self._away_since = None
             self._presence_home = True
+
+    def _find_room_climate_fuzzy(self, room_name: str, room_data: Dict[str, Dict]) -> tuple:
+        """Findet Klimadaten für einen Raum mit intelligentem Fuzzy-Matching
+        
+        Verwendet strengere Matching-Regeln um falsche Zuordnungen zu vermeiden:
+        1. Exaktes Match (case-insensitive)
+        2. Der Suchraum ist ein vollständiges Wort im Zielraum
+        3. Der Zielraum ist ein vollständiges Wort im Suchraum
+        
+        Returns:
+            Tuple von (room_climate_dict, matched_key oder None)
+        """
+        if not room_name or not room_data:
+            return {}, None
+            
+        room_name_lower = room_name.lower().strip()
+        
+        # 1. Exaktes Match (case-insensitive)
+        for key in room_data.keys():
+            if key.lower().strip() == room_name_lower:
+                logger.debug(f"Exact match for '{room_name}': '{key}'")
+                return room_data[key], key
+        
+        # 2. Der Suchraum ist ein vollständiges Wort im Zielraum
+        # z.B. "Bad" findet "Bad (oben)" aber nicht "Schlafzimmer (Doppelbett)"
+        import re
+        for key in room_data.keys():
+            key_lower = key.lower()
+            # Suche nach dem Raumnamen als vollständiges Wort
+            pattern = r'\b' + re.escape(room_name_lower) + r'\b'
+            if re.search(pattern, key_lower):
+                logger.debug(f"Word match for '{room_name}' in '{key}'")
+                return room_data[key], key
+        
+        # 3. Der Zielraum ist ein vollständiges Wort im Suchraum
+        # z.B. "Schlafzimmer (Doppelbett)" findet "Schlafzimmer"
+        for key in room_data.keys():
+            key_lower = key.lower().strip()
+            # Nur wenn der Key mindestens 3 Zeichen hat (verhindert falsche Matches)
+            if len(key_lower) >= 3:
+                pattern = r'\b' + re.escape(key_lower) + r'\b'
+                if re.search(pattern, room_name_lower):
+                    logger.debug(f"Reverse word match: '{key}' found in '{room_name}'")
+                    return room_data[key], key
+        
+        # 4. Keine sinnvolle Übereinstimmung gefunden
+        logger.debug(f"No fuzzy match found for '{room_name}' in {list(room_data.keys())}")
+        return {}, None
+
+    def _check_heater_active(self, room_name: str) -> Optional[dict]:
+        """Prüft ob eine Heizung/Thermostat im Raum gerade aktiv heizt
+        
+        Args:
+            room_name: Name des Raums
+            
+        Returns:
+            Dict mit is_heating, heater_name, message, tip oder None wenn keine Heizung gefunden
+        """
+        platform = self._platform
+        if not platform or not room_name:
+            return None
+            
+        try:
+            # Hole alle Geräte
+            if hasattr(platform, '_device_cache'):
+                platform._refresh_device_cache()
+                devices = list(platform._device_cache.values()) if isinstance(
+                    platform._device_cache, dict) else platform._device_cache
+            else:
+                devices = platform.get_states() or []
+            
+            # Hole Zone-Mapping
+            zones = {}
+            try:
+                zone_list = platform.get_zones() or []
+                zones = {z.get('id'): z.get('name') for z in zone_list}
+            except:
+                pass
+            
+            room_lower = room_name.lower()
+            
+            # Suche Heizgeräte im Raum
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                
+                device_name = device.get('name', '').lower()
+                zone_id = device.get('zone')
+                device_room = zones.get(zone_id, '').lower()
+                
+                # Prüfe ob das Gerät zum Raum passt
+                room_match = (
+                    room_lower in device_room or
+                    device_room in room_lower or
+                    room_lower in device_name
+                )
+                
+                if not room_match:
+                    continue
+                
+                caps = device.get('capabilitiesObj', {})
+                
+                # === Prüfe verschiedene Heizungs-Typen ===
+                
+                # 1. Thermostat mit target_temperature (z.B. Homematic, Tado, etc.)
+                if 'target_temperature' in caps:
+                    target_temp = caps['target_temperature'].get('value')
+                    current_temp = caps.get('measure_temperature', {}).get('value')
+                    
+                    # Heizung ist aktiv wenn Zieltemperatur > aktuelle Temperatur
+                    if target_temp and current_temp:
+                        if target_temp > current_temp + 0.5:  # 0.5°C Toleranz
+                            return {
+                                'is_heating': True,
+                                'heater_name': device.get('name', 'Thermostat'),
+                                'target_temp': target_temp,
+                                'current_temp': current_temp,
+                                'message': f"Heizung '{device.get('name')}' heizt auf {target_temp:.1f}°C!",
+                                'tip': 'Thermostat runterdrehen oder Fenster schnell wieder schließen.'
+                            }
+                    elif target_temp and target_temp > 5:  # Frostschutz ist ok
+                        # Keine aktuelle Temperatur, aber Zieltemperatur gesetzt
+                        return {
+                            'is_heating': True,
+                            'heater_name': device.get('name', 'Thermostat'),
+                            'target_temp': target_temp,
+                            'current_temp': None,
+                            'message': f"Heizung '{device.get('name')}' ist auf {target_temp:.1f}°C eingestellt!",
+                            'tip': 'Thermostat runterdrehen um Energie zu sparen.'
+                        }
+                
+                # 2. Heizkörper-Ventil (valve_position > 0%)
+                if 'valve_position' in caps or 'windowcoverings_set' in caps:
+                    valve_cap = 'valve_position' if 'valve_position' in caps else 'windowcoverings_set'
+                    valve_pos = caps[valve_cap].get('value', 0)
+                    
+                    # Ventil ist offen wenn Position > 10%
+                    if valve_pos and valve_pos > 0.1:  # > 10%
+                        valve_percent = valve_pos * 100 if valve_pos <= 1 else valve_pos
+                        return {
+                            'is_heating': True,
+                            'heater_name': device.get('name', 'Heizkörper'),
+                            'valve_position': valve_percent,
+                            'message': f"Heizkörper '{device.get('name')}' ist {valve_percent:.0f}% offen!",
+                            'tip': 'Ventil schließen oder nur kurz lüften (5 Min).'
+                        }
+                
+                # 3. Elektrische Heizung (onoff + Heizung im Namen)
+                heater_keywords = ['heiz', 'heat', 'radiator', 'konvektor', 'infrarot', 'wärme']
+                is_heater = any(kw in device_name for kw in heater_keywords)
+                
+                if is_heater and 'onoff' in caps:
+                    is_on = caps['onoff'].get('value', False)
+                    if is_on:
+                        # Prüfe auch Leistung wenn verfügbar
+                        power = caps.get('measure_power', {}).get('value')
+                        power_text = f" ({power:.0f}W)" if power else ""
+                        
+                        return {
+                            'is_heating': True,
+                            'heater_name': device.get('name', 'Heizung'),
+                            'power': power,
+                            'message': f"Heizung '{device.get('name')}' ist eingeschaltet{power_text}!",
+                            'tip': 'Heizung ausschalten während des Lüftens.'
+                        }
+                
+                # 4. Fußbodenheizung / Heizungsaktoren
+                if 'thermostat_mode' in caps:
+                    mode = caps['thermostat_mode'].get('value', '')
+                    if mode and mode.lower() in ['heat', 'heating', 'heizen', 'auto']:
+                        return {
+                            'is_heating': True,
+                            'heater_name': device.get('name', 'Thermostat'),
+                            'mode': mode,
+                            'message': f"Heizung '{device.get('name')}' ist im Modus '{mode}'!",
+                            'tip': 'Kurz lüften (max 5-10 Min) um Energieverlust zu minimieren.'
+                        }
+                        
+        except Exception as e:
+            logger.debug(f"Error checking heater status for room {room_name}: {e}")
+        
+        return None
 
     def _load_sensor_mapping(self) -> dict:
         """Lade Sensor-Mapping aus Datei"""
@@ -1032,6 +1234,128 @@ class VentilationNotifier:
             'text': duration_text,
             'reason': reason
         }
+
+    def _evaluate_temperature_change(self, temp_diff: float, outdoor_temp: float = None,
+                                      outdoor_temp_start: float = None,
+                                      duration_minutes: int = 0) -> dict:
+        """Bewertet die Temperaturänderung im Kontext (Winter/Sommer, Dauer)
+        
+        Args:
+            temp_diff: Temperaturänderung (negativ = abgekühlt, positiv = erwärmt)
+            outdoor_temp: Aktuelle Außentemperatur
+            outdoor_temp_start: Außentemperatur beim Öffnen des Fensters
+            duration_minutes: Lüftungsdauer in Minuten
+            
+        Returns:
+            Dict mit emoji, text (Bewertung) und optional tip (Tipp)
+        """
+        # Bestimme Jahreszeit/Kontext basierend auf Außentemperatur
+        outdoor = outdoor_temp if outdoor_temp is not None else outdoor_temp_start
+        
+        # Default: Heizperiode (Oktober-April in Deutschland)
+        from datetime import datetime
+        month = datetime.now().month
+        is_heating_season = month in [1, 2, 3, 4, 10, 11, 12]
+        
+        # Überschreibe mit Außentemperatur wenn verfügbar
+        if outdoor is not None:
+            is_heating_season = outdoor < 15  # Unter 15°C = Heizperiode
+        
+        abs_diff = abs(temp_diff)
+        
+        if is_heating_season:
+            # === HEIZPERIODE (Winter/Herbst/Frühling) ===
+            # Ziel: Möglichst wenig Wärmeverlust bei gutem Luftaustausch
+            
+            if temp_diff >= 0:
+                # Temperatur ist gleich geblieben oder gestiegen (ungewöhnlich beim Lüften)
+                return {
+                    'emoji': '🤔',
+                    'text': f'Keine Abkühlung ({temp_diff:+.1f}°C)',
+                    'tip': 'Ungewöhnlich - war das Fenster wirklich offen?'
+                }
+            elif abs_diff <= 0.5:
+                # Minimale Abkühlung - perfekt!
+                return {
+                    'emoji': '🌟',
+                    'text': f'Minimale Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Perfekt! Frischluft ohne Wärmeverlust.'
+                }
+            elif abs_diff <= 1.5:
+                # Geringe Abkühlung - sehr gut
+                return {
+                    'emoji': '✅',
+                    'text': f'Geringe Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Sehr gut - Heizung gleicht das schnell aus.'
+                }
+            elif abs_diff <= 3.0:
+                # Moderate Abkühlung - akzeptabel
+                efficiency = abs_diff / max(duration_minutes, 1) * 10  # °C pro 10 Min
+                if efficiency > 2:
+                    return {
+                        'emoji': '⚠️',
+                        'text': f'Spürbare Abkühlung ({temp_diff:.1f}°C)',
+                        'tip': 'Tipp: Kürzer aber öfter lüften spart Heizkosten.'
+                    }
+                else:
+                    return {
+                        'emoji': '👌',
+                        'text': f'Moderate Abkühlung ({temp_diff:.1f}°C)',
+                        'tip': None
+                    }
+            elif abs_diff <= 5.0:
+                # Starke Abkühlung - Warnung
+                return {
+                    'emoji': '🥶',
+                    'text': f'Starke Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Nächstes Mal kürzer lüften (5-10 Min reichen).'
+                }
+            else:
+                # Sehr starke Abkühlung
+                return {
+                    'emoji': '❄️',
+                    'text': f'Sehr starke Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Raum stark ausgekühlt! Stoßlüften (3-5 Min) ist effizienter.'
+                }
+        else:
+            # === SOMMERZEIT ===
+            # Ziel: Abkühlung ist erwünscht (besonders morgens/abends)
+            
+            if temp_diff > 0:
+                # Temperatur ist gestiegen - schlecht im Sommer
+                return {
+                    'emoji': '🌡️',
+                    'text': f'Erwärmung ({temp_diff:+.1f}°C)',
+                    'tip': 'Draußen wärmer als drinnen - besser morgens/abends lüften.'
+                }
+            elif abs_diff <= 0.5:
+                # Keine Abkühlung
+                return {
+                    'emoji': '😐',
+                    'text': f'Kaum Temperaturänderung ({temp_diff:.1f}°C)',
+                    'tip': 'Außen- und Innentemperatur sind ähnlich.'
+                }
+            elif abs_diff <= 2.0:
+                # Leichte Abkühlung
+                return {
+                    'emoji': '👍',
+                    'text': f'Leichte Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Gut! Frische Luft reingeholt.'
+                }
+            elif abs_diff <= 4.0:
+                # Gute Abkühlung
+                return {
+                    'emoji': '✅',
+                    'text': f'Gute Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Super! Raum angenehm abgekühlt.'
+                }
+            else:
+                # Starke Abkühlung - ideal im Sommer
+                return {
+                    'emoji': '🌟',
+                    'text': f'Starke Abkühlung ({temp_diff:.1f}°C)',
+                    'tip': 'Perfekt! Ideale Zeit zum Lüften genutzt.'
+                }
 
     def _calculate_ventilation_effectiveness(self, climate_start: dict, 
                                              climate_now: dict, 

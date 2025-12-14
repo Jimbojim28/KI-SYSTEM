@@ -275,5 +275,69 @@ def init_notifications_blueprint(engine, db, config):
         except Exception as e:
             logger.error(f"Error sending notification: {e}")
             return jsonify({'error': str(e)}), 500
+
+    @notifications_bp.route('/morning-summary', methods=['POST'])
+    def send_morning_summary():
+        """Sendet die Morgenzusammenfassung sofort (manueller Test)"""
+        try:
+            from src.background.notification_scheduler import NotificationScheduler
+            
+            # Erstelle temporären Scheduler
+            scheduler = NotificationScheduler(engine=engine, check_interval=60)
+            
+            success = scheduler.send_morning_summary_now()
+            
+            if success:
+                return jsonify({
+                    'success': True, 
+                    'message': 'Morgenzusammenfassung gesendet!'
+                })
+            else:
+                return jsonify({
+                    'success': False, 
+                    'error': 'Fehler beim Senden. Ist Pushover konfiguriert?'
+                }), 400
+                
+        except Exception as e:
+            logger.error(f"Error sending morning summary: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @notifications_bp.route('/scheduler-status', methods=['GET'])
+    def get_scheduler_status():
+        """Gibt den Status des Notification Schedulers zurück"""
+        try:
+            from flask import current_app
+            
+            # Versuche Scheduler von der App zu holen
+            app_instance = current_app._get_current_object()
+            if hasattr(app_instance, 'smart_home_app') and hasattr(app_instance.smart_home_app, 'notification_scheduler'):
+                scheduler = app_instance.smart_home_app.notification_scheduler
+                if scheduler:
+                    return jsonify({
+                        'success': True,
+                        'status': scheduler.get_status()
+                    })
+            
+            # Fallback: Config-basierter Status
+            config = _get_notification_config()
+            events = config.get('events', {})
+            
+            return jsonify({
+                'success': True,
+                'status': {
+                    'running': False,
+                    'message': 'Scheduler nicht direkt erreichbar',
+                    'scheduled_events': {
+                        'morning_summary': {
+                            'enabled': events.get('morning_summary', {}).get('enabled', False),
+                            'time': events.get('morning_summary', {}).get('time', '07:00')
+                        }
+                    }
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting scheduler status: {e}")
+            return jsonify({'error': str(e)}), 500
     
     return notifications_bp
