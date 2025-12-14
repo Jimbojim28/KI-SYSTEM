@@ -199,9 +199,18 @@ class NotificationService:
                 Morgenzusammenfassung für Smart Home:
                 - Innentemperatur: {context.get('avg_indoor_temp', '?')}°C
                 - Außentemperatur: {context.get('outdoor_temp', '?')}°C
-                - Wetter: {context.get('weather', 'unbekannt')}
+                - Aktuelles Wetter: {context.get('weather', 'unbekannt')}
+                - Wettervorhersage heute: {context.get('forecast_description', 'keine Vorhersage verfügbar')}
+                - Höchsttemperatur heute: {context.get('forecast_high', '?')}°C
+                - Tiefsttemperatur heute: {context.get('forecast_low', '?')}°C
+                - Regenwahrscheinlichkeit: {context.get('rain_probability', '?')}%
                 - Offene Fenster: {context.get('open_windows', 0)}
-                Erstelle eine freundliche Morgen-Begrüßung.
+                - Luftfeuchtigkeit: {context.get('humidity_avg', '?')}%
+                - Höchster CO2-Wert: {context.get('co2_max', '-')} ppm ({context.get('co2_max_room', '')})
+                - Heizung aktiv: {'Ja' if context.get('heating_active') else 'Nein'}
+                - Energie-Tipp: {context.get('energy_tip', 'keiner')}
+                Erstelle eine freundliche, informative Morgen-Begrüßung mit Wettervorhersage.
+                Erwähne ob man einen Regenschirm braucht und wie man sich kleiden sollte.
             """,
             
             "heating_recommendation": f"""
@@ -234,6 +243,24 @@ class NotificationService:
     
     def _get_fallback_text(self, event_type: str, context: Dict[str, Any]) -> str:
         """Fallback-Texte wenn ChatGPT nicht verfügbar"""
+        
+        # Erweiterte Morning Summary für Fallback
+        def build_morning_fallback():
+            parts = [f"☀️ Guten Morgen! Innen: {context.get('avg_indoor_temp', '?')}°C, Außen: {context.get('outdoor_temp', '?')}°C"]
+            
+            if context.get('forecast_description'):
+                parts.append(f"Heute: {context.get('forecast_description')}")
+            elif context.get('forecast_high') is not None:
+                temp_part = f"Temperatur: {context.get('forecast_low', '?')}–{context.get('forecast_high', '?')}°C"
+                if context.get('rain_probability') and context.get('rain_probability') >= 30:
+                    temp_part += f" ☔ Regen: {int(context.get('rain_probability'))}%"
+                parts.append(temp_part)
+            
+            if context.get('energy_tip'):
+                parts.append(f"💡 {context.get('energy_tip')}")
+            
+            return ' | '.join(parts)
+        
         fallbacks = {
             "window_open_long": f"🪟 {context.get('window_name', 'Fenster')} ist seit {context.get('duration_minutes', '?')} Min. offen. Außen: {context.get('outdoor_temp', '?')}°C",
             "temperature_alert": f"🌡️ {context.get('room', 'Raum')}: {context.get('current_temp', '?')}°C (Soll: {context.get('target_temp', '?')}°C)",
@@ -241,7 +268,7 @@ class NotificationService:
             "co2_alert": f"🌬️ {context.get('room', 'Raum')}: CO2 bei {context.get('co2', '?')} ppm - Lüften empfohlen!",
             "ventilation_complete": f"✅ Lüftung {context.get('room', 'Raum')} beendet ({context.get('duration_minutes', '?')} Min.)",
             "energy_tip": f"💡 Energietipp: {context.get('tip_category', 'Sparen Sie Energie')}",
-            "morning_summary": f"☀️ Guten Morgen! Innen: {context.get('avg_indoor_temp', '?')}°C, Außen: {context.get('outdoor_temp', '?')}°C",
+            "morning_summary": build_morning_fallback(),
             "heating_recommendation": f"🔥 {context.get('room', 'Raum')}: {context.get('action', 'Heizung anpassen')}",
             "mold_risk": f"⚠️ Schimmelrisiko {context.get('room', 'Raum')}! Feuchtigkeit: {context.get('humidity', '?')}%",
             "device_status": f"📱 {context.get('device_name', 'Gerät')}: {context.get('status', 'Status geändert')}"

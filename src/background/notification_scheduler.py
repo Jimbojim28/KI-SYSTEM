@@ -11,7 +11,7 @@ import threading
 import time
 import json
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Any, TYPE_CHECKING
+from typing import Dict, Optional, Any, List, TYPE_CHECKING
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -22,6 +22,7 @@ import requests
 from loguru import logger
 
 from src.utils.notifications import NotificationService
+from src.data_collector.weather_collector import WeatherCollector
 
 
 class NotificationScheduler:
@@ -182,7 +183,13 @@ class NotificationScheduler:
             'co2_max': None,
             'co2_max_room': None,
             'heating_active': False,
-            'energy_tip': None
+            'energy_tip': None,
+            # Wettervorhersage
+            'forecast_high': None,
+            'forecast_low': None,
+            'rain_probability': None,
+            'weather_forecast': None,
+            'forecast_description': None
         }
         
         try:
@@ -299,10 +306,111 @@ class NotificationScheduler:
             elif context['humidity_avg'] and context['humidity_avg'] > 65:
                 context['energy_tip'] = 'Luftfeuchtigkeit etwas hoch - regelmäßig lüften.'
             
+            # Wettervorhersage von OpenWeatherMap holen
+            self._add_weather_forecast(context)
+            
         except Exception as e:
             logger.error(f"Error collecting morning data: {e}")
         
         return context
+
+    def _add_weather_forecast(self, context: Dict[str, Any]) -> None:
+        """Fügt Wettervorhersage zum Kontext hinzu"""
+        try:
+            weather_collector = WeatherCollector()
+            
+            # Aktuelle Wetterdaten
+            current_weather = weather_collector.get_openweathermap_data()
+            if current_weather:
+                # Wetter-Beschreibung von der API nutzen (statt nur Temperatur-basiert)
+                if current_weather.get('weather_description'):
+                    context['weather'] = current_weather['weather_description']
+                if current_weather.get('weather_condition'):
+                    context['weather_condition'] = current_weather['weather_condition']
+                    
+                # Außentemperatur von API wenn nicht von Sensoren
+                if context['outdoor_temp'] is None and current_weather.get('temperature'):
+                    context['outdoor_temp'] = round(current_weather['temperature'], 1)
+            
+            # Vorhersage für heute
+            forecast = weather_collector.get_forecast()
+            if forecast and forecast.get('forecasts'):
+                forecasts: List[Dict] = forecast['forecasts']
+                
+                # Filtere nur die Vorhersagen für heute (nächste 24 Stunden)
+                today = datetime.now().date()
+                today_forecasts = []
+                
+                for fc in forecasts:
+                    try:
+                        fc_time = datetime.fromisoformat(fc['timestamp'].replace('Z', '+00:00'))
+                        if fc_time.date() == today or (fc_time.date() == today + timedelta(days=1) and fc_time.hour < 6):
+                            today_forecasts.append(fc)
+                    except:
+                        continue
+                
+                if today_forecasts:
+                    # Temperaturen für heute
+                    temps = [fc['temperature'] for fc in today_forecasts if fc.get('temperature') is not None]
+                    if temps:
+                        context['forecast_high'] = round(max(temps), 0)
+                        context['forecast_low'] = round(min(temps), 0)
+                    
+                    # Regenwahrscheinlichkeit (Maximum über den Tag)
+                    rain_probs = [fc['rain_probability'] for fc in today_forecasts if fc.get('rain_probability') is not None]
+                    if rain_probs:
+                        context['rain_probability'] = round(max(rain_probs), 0)  # Bereits als Prozent vom Collector
+                    
+                    # Wetter-Vorhersage Beschreibung
+                    weather_conditions = [fc['weather'] for fc in today_forecasts if fc.get('weather')]
+                    if weather_conditions:
+                        # Zähle Wetterbedingungen
+                        from collections import Counter
+                        weather_counter = Counter(weather_conditions)
+                        most_common = weather_counter.most_common(1)[0][0]
+                        context['weather_forecast'] = most_common
+                        
+                        # Erstelle Zusammenfassung
+                        forecast_parts = []
+                        
+                        # Temperatur
+                        if context['forecast_high'] is not None and context['forecast_low'] is not None:
+                            if context['forecast_high'] == context['forecast_low']:
+                                forecast_parts.append(f"ca. {int(context['forecast_high'])}°C")
+                            else:
+                                forecast_parts.append(f"{int(context['forecast_low'])}°C bis {int(context['forecast_high'])}°C")
+                        
+                        # Regen
+                        if context['rain_probability'] is not None:
+                            if context['rain_probability'] >= 70:
+                                forecast_parts.append(f"Regen wahrscheinlich ({int(context['rain_probability'])}%)")
+                            elif context['rain_probability'] >= 40:
+                                forecast_parts.append(f"Regen möglich ({int(context['rain_probability'])}%)")
+                            elif context['rain_probability'] >= 20:
+                                forecast_parts.append(f"leichte Regenwahrscheinlichkeit ({int(context['rain_probability'])}%)")
+                        
+                        # Wetterbeschreibung
+                        weather_desc_map = {
+                            'Clear': 'Sonnig',
+                            'Clouds': 'Bewölkt',
+                            'Rain': 'Regnerisch',
+                            'Drizzle': 'Nieselregen',
+                            'Thunderstorm': 'Gewitter',
+                            'Snow': 'Schnee',
+                            'Mist': 'Neblig',
+                            'Fog': 'Neblig',
+                            'Haze': 'Diesig'
+                        }
+                        
+                        weather_de = weather_desc_map.get(most_common, most_common or 'Unbekannt')
+                        forecast_parts.insert(0, weather_de)
+                        
+                        context['forecast_description'] = ', '.join(forecast_parts)
+                
+                logger.debug(f"Weather forecast added: {context.get('forecast_description')}")
+                
+        except Exception as e:
+            logger.warning(f"Could not fetch weather forecast: {e}")
 
     def get_status(self) -> dict:
         """Gibt den aktuellen Status zurück"""
