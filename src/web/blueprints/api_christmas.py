@@ -202,6 +202,10 @@ def toggle_single_device():
             else:
                 _engine.platform.turn_off(device_id)
             
+            # Update den Controller-Status damit die UI den richtigen Status zeigt
+            if _christmas_controller:
+                _christmas_controller._device_states[device_id] = turn_on
+            
             return jsonify({
                 'success': True,
                 'device_id': device_id,
