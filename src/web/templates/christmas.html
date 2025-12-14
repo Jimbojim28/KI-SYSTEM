@@ -25,12 +25,12 @@
     </div>
 
     <!-- Schnell-Status-Übersicht -->
-    <div id="quick-status" class="card" style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, #1a1a2e, #16213e); border: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h3 style="margin: 0; color: white; font-size: 18px;">💡 Schnellübersicht</h3>
-            <div style="display: flex; gap: 15px; font-size: 14px;">
-                <span style="color: #4ade80;">🟢 <span id="quick-on-count">0</span> AN</span>
-                <span style="color: #9ca3af;">⚫ <span id="quick-off-count">0</span> AUS</span>
+    <div id="quick-status" class="card" style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid #334155; border-radius: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+            <h3 style="margin: 0; color: white; font-size: 18px;">🎄 Schnellübersicht</h3>
+            <div style="display: flex; gap: 20px; font-size: 14px; font-weight: 600;">
+                <span style="color: #4ade80; background: rgba(74, 222, 128, 0.1); padding: 6px 12px; border-radius: 20px;">✨ <span id="quick-on-count">0</span> AN</span>
+                <span style="color: #94a3b8; background: rgba(148, 163, 184, 0.1); padding: 6px 12px; border-radius: 20px;">💤 <span id="quick-off-count">0</span> AUS</span>
             </div>
         </div>
         <div id="quick-status-grid" style="display: flex; flex-wrap: wrap; gap: 10px;">
@@ -255,17 +255,29 @@
 .quick-device.on {
     background: linear-gradient(135deg, #065f46, #047857);
     color: #ecfdf5;
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.5), 0 0 30px rgba(16, 185, 129, 0.2);
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from { box-shadow: 0 0 10px rgba(16, 185, 129, 0.4), 0 0 20px rgba(16, 185, 129, 0.2); }
+    to { box-shadow: 0 0 20px rgba(16, 185, 129, 0.6), 0 0 40px rgba(16, 185, 129, 0.3); }
 }
 
 .quick-device.off {
-    background: #374151;
+    background: linear-gradient(135deg, #1f2937, #374151);
     color: #9ca3af;
+    border: 1px solid #4b5563;
 }
 
 .quick-device:hover {
     transform: scale(1.05);
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.quick-device.off:hover {
+    background: linear-gradient(135deg, #374151, #4b5563);
+    color: #e5e7eb;
 }
 
 .christmas-device {
@@ -657,8 +669,11 @@ function initChristmasPage() {
     // Config laden
     loadChristmasConfig();
     
-    // Status regelmäßig aktualisieren
+    // Status regelmäßig aktualisieren (alle 30 Sekunden)
     setInterval(updateChristmasStatus, 30000);
+    
+    // Geräte-Status regelmäßig aktualisieren (alle 15 Sekunden für Schnellübersicht)
+    setInterval(loadChristmasDevices, 15000);
 }
 
 async function loadChristmasConfig() {
@@ -867,15 +882,16 @@ function updateQuickStatus(devices) {
     const html = selectedDevices.map(device => {
         const customLabel = christmasConfig.device_labels?.[device.id];
         const displayName = customLabel || device.name;
-        const icon = device.type === 'light' ? '💡' : '🔌';
+        // Weihnachtlichere Icons
+        const icon = '🎄';
         
         if (device.is_on) {
-            return `<span class="quick-device on" title="${device.name}" onclick="toggleSingleDevice('${device.id}', false)" style="cursor: pointer;">
-                ${icon} ${displayName} 🟢
+            return `<span class="quick-device on" title="${device.name} - Klicken zum Ausschalten" onclick="toggleSingleDevice('${device.id}', false)" style="cursor: pointer;">
+                ${icon} ${displayName} ✨
             </span>`;
         } else {
-            return `<span class="quick-device off" title="${device.name}" onclick="toggleSingleDevice('${device.id}', true)" style="cursor: pointer;">
-                ${icon} ${displayName} ⚫
+            return `<span class="quick-device off" title="${device.name} - Klicken zum Einschalten" onclick="toggleSingleDevice('${device.id}', true)" style="cursor: pointer;">
+                ${icon} ${displayName} 💤
             </span>`;
         }
     }).join('');
