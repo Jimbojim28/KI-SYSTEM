@@ -517,7 +517,23 @@ class ChristmasLightsController:
         return random.randint(0, 300)
     
     def _is_someone_home(self) -> bool:
-        """Prüft ob jemand zuhause ist"""
+        """Prüft ob jemand zuhause ist - nutzt kombinierte Daten aus Homey UND Home Assistant"""
+        
+        # Zuerst: Versuche die zentrale Presence-API (kombiniert Homey + Home Assistant)
+        try:
+            import requests
+            response = requests.get('http://localhost:8080/api/presence', timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    anyone_home = data.get('anyone_home', False)
+                    total_home = data.get('total_home', 0)
+                    logger.debug(f"🎄 Presence check via API: anyone_home={anyone_home}, total={total_home}")
+                    return anyone_home
+        except Exception as e:
+            logger.debug(f"🎄 Presence API not available, falling back to Homey: {e}")
+        
+        # Fallback: Direkt Homey prüfen
         if not self.platform:
             return True  # Fallback: annehmen ja
         
