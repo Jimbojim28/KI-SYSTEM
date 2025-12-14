@@ -317,17 +317,30 @@ class NotificationScheduler:
     def _add_weather_forecast(self, context: Dict[str, Any]) -> None:
         """Fügt Wettervorhersage zum Kontext hinzu"""
         try:
-            weather_collector = WeatherCollector()
+            # Lade Weather-Config
+            config_path = Path(__file__).parent.parent.parent / 'config' / 'config.yaml'
+            api_key = None
+            location = "Berlin, DE"
+            
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+                    weather_config = config.get('platforms', {}).get('weather', {})
+                    api_key = weather_config.get('api_key')
+                    location = weather_config.get('location', 'Berlin, DE')
             
             # Prüfe ob API-Key konfiguriert ist
-            if not weather_collector.api_key or weather_collector.api_key == 'YOUR_OPENWEATHERMAP_API_KEY':
+            if not api_key or api_key == 'YOUR_OPENWEATHERMAP_API_KEY':
                 logger.info("⚠️ OpenWeatherMap API-Key nicht konfiguriert - keine Wettervorhersage")
                 return
+            
+            logger.info(f"🌤️ Fetching weather forecast for {location}...")
+            weather_collector = WeatherCollector(api_key=api_key, location=location)
             
             # Aktuelle Wetterdaten
             current_weather = weather_collector.get_openweathermap_data()
             if current_weather:
-                logger.debug(f"Current weather: {current_weather}")
+                logger.info(f"✅ Current weather: {current_weather.get('weather_description')}, {current_weather.get('temperature')}°C")
                 # Wetter-Beschreibung von der API nutzen (statt nur Temperatur-basiert)
                 if current_weather.get('weather_description'):
                     context['weather'] = current_weather['weather_description']
@@ -337,10 +350,13 @@ class NotificationScheduler:
                 # Außentemperatur von API wenn nicht von Sensoren
                 if context['outdoor_temp'] is None and current_weather.get('temperature'):
                     context['outdoor_temp'] = round(current_weather['temperature'], 1)
+            else:
+                logger.warning("❌ Could not fetch current weather data")
             
             # Vorhersage für heute
             forecast = weather_collector.get_forecast()
             if forecast and forecast.get('forecasts'):
+                logger.info(f"✅ Forecast received: {len(forecast['forecasts'])} entries")
                 forecasts: List[Dict] = forecast['forecasts']
                 
                 # Filtere nur die Vorhersagen für heute (nächste 24 Stunden)
@@ -349,11 +365,20 @@ class NotificationScheduler:
                 
                 for fc in forecasts:
                     try:
-                        fc_time = datetime.fromisoformat(fc['timestamp'].replace('Z', '+00:00'))
+                        # OpenWeatherMap format: "2025-12-14 12:00:00"
+                        timestamp_str = fc.get('timestamp', '')
+                        if ' ' in timestamp_str:
+                            fc_time = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                        else:
+                            fc_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        
                         if fc_time.date() == today or (fc_time.date() == today + timedelta(days=1) and fc_time.hour < 6):
                             today_forecasts.append(fc)
-                    except:
+                    except Exception as parse_err:
+                        logger.debug(f"Could not parse forecast timestamp: {fc.get('timestamp')} - {parse_err}")
                         continue
+                
+                logger.info(f"📅 Forecasts for today: {len(today_forecasts)}")
                 
                 if today_forecasts:
                     # Temperaturen für heute
@@ -412,11 +437,14 @@ class NotificationScheduler:
                         forecast_parts.insert(0, weather_de)
                         
                         context['forecast_description'] = ', '.join(forecast_parts)
-                
-                logger.debug(f"Weather forecast added: {context.get('forecast_description')}")
+                        logger.info(f"🌤️ Forecast: {context['forecast_description']}")
+            else:
+                logger.warning("❌ Could not fetch forecast data")
                 
         except Exception as e:
             logger.warning(f"Could not fetch weather forecast: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
 
     def get_status(self) -> dict:
         """Gibt den aktuellen Status zurück"""
