@@ -104,8 +104,59 @@ class VentilationNotifier:
         return None
 
     def _load_config(self) -> dict:
-        """Lade Benachrichtigungs-Konfiguration mit Defaults für fehlende Optionen"""
-        return get_config_section('ventilation_notifications')
+        """Lade Benachrichtigungs-Konfiguration mit Defaults für fehlende Optionen
+        
+        Merged ventilation_notifications mit notifications.events aus dem Frontend.
+        Das Frontend speichert Events in notifications.events (z.B. co2_alert, humidity_alert),
+        während ventilation_notifications eigene Keys verwendet (z.B. co2_high_alert).
+        """
+        # Basis-Config aus ventilation_notifications
+        config = get_config_section('ventilation_notifications')
+        
+        # Lade auch Frontend-Events aus notifications.events
+        config_path = Path('config/config.yaml')
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    full_config = yaml.safe_load(f) or {}
+                    events = full_config.get('notifications', {}).get('events', {})
+                    
+                    # Map Frontend-Events zu ventilation_notifications Keys
+                    if events:
+                        # CO2 Alert
+                        if 'co2_alert' in events:
+                            config['co2_high_alert'] = events['co2_alert'].get('enabled', True)
+                            if events['co2_alert'].get('threshold_ppm'):
+                                config['co2_threshold'] = events['co2_alert']['threshold_ppm']
+                        
+                        # Humidity Alert
+                        if 'humidity_alert' in events:
+                            config['humidity_high_alert'] = events['humidity_alert'].get('enabled', True)
+                        
+                        # Mold Risk / Warning
+                        if 'mold_risk' in events:
+                            config['mold_warning'] = events['mold_risk'].get('enabled', True)
+                        
+                        # Ventilation Complete / Window Closed
+                        if 'ventilation_complete' in events:
+                            config['window_closed_alert'] = events['ventilation_complete'].get('enabled', False)
+                        
+                        # Window Open Long -> verwendet für window_opened_alert
+                        if 'window_open_long' in events:
+                            config['window_opened_alert'] = events['window_open_long'].get('enabled', True)
+                            if events['window_open_long'].get('threshold_minutes'):
+                                config['window_open_threshold_minutes'] = events['window_open_long']['threshold_minutes']
+                        
+                        # Temperature Alert (Neu!)
+                        if 'temperature_alert' in events:
+                            config['temperature_alert'] = events['temperature_alert'].get('enabled', True)
+                            if events['temperature_alert'].get('threshold_deviation'):
+                                config['temperature_threshold_deviation'] = events['temperature_alert']['threshold_deviation']
+                        
+            except Exception as e:
+                logger.debug(f"Could not load frontend events config: {e}")
+        
+        return config
 
     def _get_pushover_credentials(self) -> tuple:
         """Hole Pushover-Credentials"""
@@ -687,6 +738,36 @@ class VentilationNotifier:
                                 f'🪟 Dringend lüften empfohlen.',
                                 priority=1,
                                 notification_key=f'mold_{room}'
+                            )
+            
+            # === Temperaturwarnung (zu große Abweichung) ===
+            if config.get('temperature_alert'):
+                threshold_deviation = config.get('temperature_threshold_deviation', 3)
+                for room, data in room_data.items():
+                    temp = data.get('temp')
+                    if temp:
+                        # Prüfe auf extreme Temperaturen oder große Abweichung vom Komfortbereich
+                        # Komfortbereich: 18-23°C
+                        comfort_min = 18
+                        comfort_max = 23
+                        
+                        if temp < comfort_min - threshold_deviation:
+                            deviation = comfort_min - temp
+                            self._send_notification(
+                                '🥶 Temperaturwarnung!',
+                                f'<b>{room}:</b> Temperatur bei <b>{temp:.1f}°C</b>\n\n'
+                                f'📉 {deviation:.1f}°C unter dem Komfortbereich ({comfort_min}°C).\n\n'
+                                f'🔥 Heizung einschalten oder Fenster schließen empfohlen.',
+                                notification_key=f'temp_low_{room}'
+                            )
+                        elif temp > comfort_max + threshold_deviation:
+                            deviation = temp - comfort_max
+                            self._send_notification(
+                                '🥵 Temperaturwarnung!',
+                                f'<b>{room}:</b> Temperatur bei <b>{temp:.1f}°C</b>\n\n'
+                                f'📈 {deviation:.1f}°C über dem Komfortbereich ({comfort_max}°C).\n\n'
+                                f'🪟 Lüften oder Beschattung empfohlen.',
+                                notification_key=f'temp_high_{room}'
                             )
             
             # === NEU: Warnung bei zu langem Lüften (Energieverschwendung) ===
