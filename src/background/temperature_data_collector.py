@@ -172,6 +172,9 @@ class TemperatureDataCollector:
                 
                 # CO2-Sensoren separat sammeln
                 self._collect_co2_data(devices, platform_name)
+                
+                # PM2.5 Feinstaub-Sensoren sammeln
+                self._collect_pm25_data(devices, platform_name)
                     
             except Exception as e:
                 error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
@@ -331,6 +334,56 @@ class TemperatureDataCollector:
         
         if collected_count > 0:
             logger.info(f"Collected CO2 data from {collected_count} sensor(s)")
+    
+    def _collect_pm25_data(self, devices: list, platform_name: str):
+        """Sammelt PM2.5 Feinstaub-Daten von allen Geräten mit measure_pm25 Capability"""
+        collected_count = 0
+        
+        for device in devices:
+            try:
+                caps = device.get('capabilitiesObj', {})
+                pm25_cap = caps.get('measure_pm25', {})
+                pm25_value = pm25_cap.get('value')
+                
+                if pm25_value is None:
+                    continue
+                
+                device_id = device.get('id', '')
+                device_name = device.get('name', 'Unknown')
+                
+                # Room aus zone holen
+                zone = device.get('zone')
+                if isinstance(zone, dict):
+                    room_name = zone.get('name', 'Unknown')
+                elif isinstance(zone, str):
+                    room_name = zone
+                else:
+                    room_name = 'Unknown'
+                
+                # PM2.5-Daten in sensor_data speichern
+                metadata = {
+                    'device_name': device_name,
+                    'room': room_name,
+                    'platform': platform_name
+                }
+                
+                self.db.insert_sensor_data(
+                    sensor_id=device_id,
+                    sensor_type='pm25',
+                    value=float(pm25_value),
+                    unit='µg/m³',
+                    metadata=metadata
+                )
+                
+                collected_count += 1
+                logger.debug(f"PM2.5 data: {device_name} ({room_name}) - {pm25_value} µg/m³")
+                
+            except Exception as e:
+                error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                logger.error(f"Error collecting PM2.5 from {device.get('name', 'unknown')}: {error_msg}")
+        
+        if collected_count > 0:
+            logger.info(f"Collected PM2.5 data from {collected_count} sensor(s)")
 
 
 def start_temperature_collector(config: dict | None = None):

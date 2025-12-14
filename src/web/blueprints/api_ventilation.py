@@ -42,50 +42,16 @@ def init_ventilation_blueprint(engine, db, config):
             return False
     
     def _sync_bathroom_config(mapping: Dict[str, Any]):
-        """Synchronisiere Badezimmer-Config basierend auf Raum-Mapping"""
-        try:
-            bathroom_config_file = Path('data/luftentfeuchten_config.json')
-            
-            # Finde Badezimmer (Name enthält 'bad' oder 'shower' oder hat dehumidifier)
-            bathroom_room = None
-            for room_id, room_data in mapping.items():
-                name = room_data.get('name', '').lower()
-                # Priorisiere Räume mit explizit zugewiesenem Luftentfeuchter
-                if room_data.get('dehumidifier'):
-                    bathroom_room = room_data
-                    break
-                # Fallback auf Namenserkennung
-                if 'bad' in name or 'shower' in name:
-                    bathroom_room = room_data
-            
-            if not bathroom_room:
-                return
-
-            # Lade existierende Config um Settings zu erhalten
-            current_config = {}
-            if bathroom_config_file.exists():
-                try:
-                    with open(bathroom_config_file, 'r') as f:
-                        current_config = json.load(f)
-                except:
-                    pass
-            
-            # Update Device IDs
-            current_config['humidity_sensor_id'] = bathroom_room.get('humidity')
-            current_config['temperature_sensor_id'] = bathroom_room.get('temperature')
-            current_config['dehumidifier_id'] = bathroom_room.get('dehumidifier')
-            current_config['heater_id'] = bathroom_room.get('heater')
-            current_config['door_sensor_id'] = bathroom_room.get('door_sensor')
-            current_config['motion_sensor_id'] = bathroom_room.get('motion_sensor')
-            current_config['window_sensor_id'] = bathroom_room.get('window_sensor')
-            
-            # Speichern
-            with open(bathroom_config_file, 'w') as f:
-                json.dump(current_config, f, indent=2)
-                logger.info(f"Synced bathroom config from room: {bathroom_room.get('name')}")
-                
-        except Exception as e:
-            logger.error(f"Error syncing bathroom config: {e}")
+        """
+        Synchronisiere Badezimmer-Config basierend auf Raum-Mapping.
+        
+        HINWEIS: Diese Funktion ist veraltet seit Migration zur zentralen 
+        Sensor-Zuordnung in ventilation_sensor_mapping.json.
+        Die Badezimmer-Konfiguration wird jetzt direkt aus der zentralen
+        Mapping-Datei gelesen via get_bathroom_config().
+        """
+        # Kein Schreiben mehr nötig - zentrale Config wird direkt gelesen
+        logger.debug("_sync_bathroom_config: Using central sensor mapping (no sync needed)")
 
     def _get_zones() -> Dict[str, str]:
         """Hole Zonen/Räume aus Homey"""
@@ -559,9 +525,13 @@ def init_ventilation_blueprint(engine, db, config):
         """Speichere Sensor-Zuordnung für alle Räume"""
         try:
             data = request.get_json()
+            logger.debug(f"Received sensor-mapping POST: {data}")
+            
             # Akzeptiere sowohl 'rooms' als auch 'mapping' für Kompatibilität
             mapping = data.get('rooms', data.get('mapping', {}))
             outdoor_sensors = data.get('outdoor_sensors', {'temperature': '', 'humidity': ''})
+            
+            logger.info(f"Saving outdoor_sensors: {outdoor_sensors}")
             
             save_data = {
                 'rooms': mapping,

@@ -320,3 +320,73 @@ class SensorHelper:
         except Exception as e:
             logger.warning(f"Error getting humidity: {e}")
             return None
+
+
+def get_bathroom_config() -> dict:
+    """
+    Lädt die Badezimmer-Konfiguration aus der zentralen Sensor-Zuordnung.
+    Kombiniert Sensor-IDs aus ventilation_sensor_mapping.json mit
+    Einstellungen aus luftentfeuchten_config.json.
+    
+    Returns:
+        dict mit Sensor-IDs und Einstellungen: humidity_sensor_id, temperature_sensor_id, 
+        dehumidifier_id, heater_id, door_sensor_id, motion_sensor_id, window_sensor_id,
+        enabled, humidity_threshold_high, humidity_threshold_low, etc.
+    """
+    import json
+    from pathlib import Path
+    
+    config = {}
+    
+    # 1. Lade Einstellungen aus alter Config (enabled, thresholds, etc.)
+    old_config_file = Path('data/luftentfeuchten_config.json')
+    if old_config_file.exists():
+        try:
+            with open(old_config_file, 'r') as f:
+                config = json.load(f)
+            logger.debug(f"Bathroom settings loaded from legacy file: {len(config)} settings")
+        except Exception as e:
+            logger.warning(f"Error loading legacy bathroom config: {e}")
+    
+    # 2. Überschreibe/ergänze Sensor-IDs aus zentraler Konfiguration
+    mapping_file = Path('data/ventilation_sensor_mapping.json')
+    if mapping_file.exists():
+        try:
+            with open(mapping_file, 'r') as f:
+                mapping_data = json.load(f)
+            
+            # Suche Badezimmer-Konfiguration
+            rooms = mapping_data.get('rooms', {})
+            bathroom_config = rooms.get('badezimmer', {})
+            
+            if bathroom_config:
+                # Überschreibe Sensor-IDs mit zentralen Werten (falls vorhanden)
+                sensor_mapping = {
+                    'humidity_sensor_id': bathroom_config.get('humidity'),
+                    'temperature_sensor_id': bathroom_config.get('temperature'),
+                    'dehumidifier_id': bathroom_config.get('dehumidifier'),
+                    'heater_id': bathroom_config.get('heater'),
+                    'door_sensor_id': bathroom_config.get('door_sensor'),
+                    'motion_sensor_id': bathroom_config.get('motion_sensor'),
+                    'window_sensor_id': bathroom_config.get('window_sensor'),
+                }
+                
+                # Nur nicht-leere Werte übernehmen
+                for key, value in sensor_mapping.items():
+                    if value:
+                        config[key] = value
+                
+                # Auch humidity_threshold_high/low aus zentraler Config übernehmen falls vorhanden
+                if bathroom_config.get('humidity_threshold_high'):
+                    config['humidity_threshold_high'] = bathroom_config['humidity_threshold_high']
+                if bathroom_config.get('humidity_threshold_low'):
+                    config['humidity_threshold_low'] = bathroom_config['humidity_threshold_low']
+                
+                logger.debug(f"Bathroom config merged with central mapping")
+        except Exception as e:
+            logger.warning(f"Error loading central bathroom config: {e}")
+    
+    if not config:
+        logger.warning("No bathroom configuration found")
+    
+    return config

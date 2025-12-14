@@ -123,6 +123,19 @@ def get_all_sensors(engine, include_ignored=False):
                         'current_value': caps['measure_co2'].get('value'),
                         'ignored': ignored
                     })
+                
+                # PM2.5 Feinstaub-Sensor
+                if 'measure_pm25' in caps:
+                    sensors.append({
+                        'device_id': device_id,
+                        'name': friendly_name,
+                        'room': room_name,
+                        'zone_id': zone_id,
+                        'type': 'pm25',
+                        'platform': 'homey',
+                        'current_value': caps['measure_pm25'].get('value'),
+                        'ignored': ignored
+                    })
                     
         except Exception as e:
             logger.error(f"Error getting Homey sensors: {e}")

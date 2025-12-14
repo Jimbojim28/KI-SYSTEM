@@ -463,13 +463,9 @@ class BathroomAnalyzer:
         # Lade Konfiguration falls nicht übergeben
         if config is None:
             try:
-                import json
-                from pathlib import Path
-                config_file = Path('data/luftentfeuchten_config.json')
-                if config_file.exists():
-                    with open(config_file, 'r') as f:
-                        config = json.load(f)
-                else:
+                from src.utils.sensor_helper import get_bathroom_config
+                config = get_bathroom_config()
+                if not config:
                     config = {}
             except Exception:
                 config = {}

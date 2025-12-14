@@ -531,10 +531,26 @@
 .room-value-number.co2-warning { color: #f39c12; }
 .room-value-number.co2-critical { color: #e74c3c; }
 
+/* PM2.5 Feinstaub Farbcodes */
+.room-value-number.pm25 { color: #8e44ad; }
+.room-value-number.pm25-good { color: #27ae60; }
+.room-value-number.pm25-moderate { color: #f39c12; }
+.room-value-number.pm25-warning { color: #e67e22; }
+.room-value-number.pm25-critical { color: #e74c3c; }
+
 .room-values.with-co2 {
     grid-template-columns: 1fr 1fr 1fr;
     gap: 0.3rem;
 }
+
+.room-values.with-extra {
+    grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
+    gap: 0.3rem;
+}
+.room-values.with-extra .room-value {
+    padding: 0.25rem 0.1rem;
+}
+
 .room-values.with-co2 .room-value {
     padding: 0.25rem 0.1rem;
 }
@@ -1816,6 +1832,7 @@ input:checked + .toggle-slider:before {
 // Globale Daten
 let roomsData = {};
 let outdoorConfig = {};
+let outdoorData = {};  // Zentrale Outdoor-Daten
 let allSensors = [];
 let hiddenRooms = [];
 
@@ -1857,54 +1874,38 @@ async function loadOverview() {
     await loadHiddenRooms();
     
     try {
-        const response = await fetch('/api/ventilation/sensors');
+        // Nutze zentrale Rooms-API
+        const response = await fetch('/api/rooms/sensor-data');
         const data = await response.json();
         
-        if (!data.success) {
+        if (!data.rooms) {
             showError('Fehler beim Laden der Sensoren');
             return;
         }
         
-        allSensors = data.sensors;
-        
-        // Gruppiere nach Homey-Räumen (ignoriere 'Unbekannt')
+        // Konvertiere zentrale API-Daten in roomsData-Format
         roomsData = {};
-        allSensors.forEach(sensor => {
-            const room = sensor.room;
-            if (room && room !== 'Unbekannt') {
-                if (!roomsData[room]) {
-                    roomsData[room] = { temp: [], humidity: [], co2: [] };
-                }
-                if (sensor.type === 'temperature' && sensor.current_value !== null && sensor.current_value < 45) {
-                    roomsData[room].temp.push(sensor);
-                } else if (sensor.type === 'humidity' && sensor.current_value !== null) {
-                    roomsData[room].humidity.push(sensor);
-                } else if (sensor.type === 'co2' && sensor.current_value !== null) {
-                    roomsData[room].co2.push(sensor);
-                }
+        data.rooms.forEach(room => {
+            if (room.name && room.name !== 'Unbekannt') {
+                roomsData[room.name] = {
+                    temp: room.temperature !== null ? [{ current_value: room.temperature, device_id: room.id }] : [],
+                    humidity: room.humidity !== null ? [{ current_value: room.humidity, device_id: room.id }] : [],
+                    co2: room.co2 !== null ? [{ current_value: room.co2, device_id: room.id }] : [],
+                    pm25: room.pm25 !== null ? [{ current_value: room.pm25, device_id: room.id }] : [],
+                    // Zusätzliche Daten aus der zentralen API
+                    windows: room.windows || [],
+                    doors: room.doors || [],
+                    heaters: room.heaters || [],
+                    any_window_open: room.any_window_open || false,
+                    any_door_open: room.any_door_open || false,
+                    any_heater_on: room.any_heater_on || false,
+                    icon: room.icon || '🏠'
+                };
             }
         });
         
-        // Suche CO2 Sensoren auch nach Namen
-        allSensors.forEach(sensor => {
-            if (sensor.name && sensor.name.toLowerCase().includes('co2') && sensor.current_value !== null) {
-                const room = sensor.room;
-                if (room && room !== 'Unbekannt' && roomsData[room]) {
-                    // Prüfe ob schon vorhanden
-                    const exists = roomsData[room].co2.some(s => s.device_id === sensor.device_id);
-                    if (!exists && sensor.current_value > 100 && sensor.current_value < 10000) {
-                        roomsData[room].co2.push(sensor);
-                    }
-                }
-            }
-        });
-        
-        // Lade Konfiguration
-        const configResponse = await fetch('/api/ventilation/sensor-mapping');
-        const configData = await configResponse.json();
-        if (configData.success) {
-            outdoorConfig = configData.outdoor_sensors || {};
-        }
+        // Speichere Outdoor-Daten aus zentraler API
+        outdoorData = data.outdoor || {};
         
         displayOutdoorHeader();
         displayRooms();
@@ -1919,39 +1920,11 @@ async function loadOverview() {
 function displayOutdoorHeader() {
     const header = document.getElementById('outdoor-header');
     
-    // Finde Außensensor-Werte
-    let outdoorTemp = null;
-    let outdoorHumidity = null;
+    // Nutze zentrale Outdoor-Daten
+    const outdoorTemp = outdoorData.temperature ?? null;
+    const outdoorHumidity = outdoorData.humidity ?? null;
     
-    // Suche nach konfigurierten Außensensoren
-    if (outdoorConfig.temperature) {
-        const sensor = allSensors.find(s => s.device_id === outdoorConfig.temperature);
-        if (sensor) outdoorTemp = sensor.current_value;
-    }
-    if (outdoorConfig.humidity) {
-        const sensor = allSensors.find(s => s.device_id === outdoorConfig.humidity);
-        if (sensor) outdoorHumidity = sensor.current_value;
-    }
-    
-    // Fallback: Suche nach "Außen" im Namen
-    if (outdoorTemp === null) {
-        const sensor = allSensors.find(s => 
-            s.type === 'temperature' && 
-            (s.name.toLowerCase().includes('außen') || s.name.toLowerCase().includes('outdoor')) &&
-            s.current_value !== null && s.current_value < 40
-        );
-        if (sensor) outdoorTemp = sensor.current_value;
-    }
-    if (outdoorHumidity === null) {
-        const sensor = allSensors.find(s => 
-            s.type === 'humidity' && 
-            (s.name.toLowerCase().includes('außen') || s.name.toLowerCase().includes('outdoor')) &&
-            s.current_value !== null
-        );
-        if (sensor) outdoorHumidity = sensor.current_value;
-    }
-    
-    const roomCount = Object.keys(roomsData).length;
+    const roomCount = Object.keys(roomsData).filter(r => !hiddenRooms.includes(r)).length;
     
     header.innerHTML = `
         <h3>🌤️ Außenbedingungen</h3>
@@ -1990,15 +1963,18 @@ function displayRooms() {
         const tempSensor = room.temp.sort((a, b) => a.current_value - b.current_value)[0];
         const humiditySensor = room.humidity[0];
         const co2Sensor = room.co2?.[0];
+        const pm25Sensor = room.pm25?.[0];
         
         const temp = tempSensor?.current_value;
         const humidity = humiditySensor?.current_value;
         const co2 = co2Sensor?.current_value;
+        const pm25 = pm25Sensor?.current_value;
         
-        // Berechne Status
-        const status = getStatus(temp, humidity, co2);
-        const recommendation = getRecommendation(temp, humidity, co2);
-        const icon = getRoomIcon(roomName);
+        // Berechne Status mit allen Sensoren inkl. PM2.5
+        const status = getStatus(temp, humidity, co2, pm25);
+        const recommendation = getRecommendation(temp, humidity, co2, pm25);
+        // Nutze Icon aus zentraler API falls vorhanden
+        const icon = room.icon || getRoomIcon(roomName);
         
         // CO2 Anzeige
         const co2Html = co2 ? `
@@ -2008,13 +1984,21 @@ function displayRooms() {
             </div>
         ` : '';
         
+        // PM2.5 Anzeige
+        const pm25Html = pm25 !== undefined ? `
+            <div class="room-value pm25-value">
+                <div class="room-value-label">🌫️</div>
+                <div class="room-value-number pm25 ${getPM25Class(pm25)}">${Math.round(pm25)}</div>
+            </div>
+        ` : '';
+        
         return `
             <div class="room-tile ${status.class}" onclick="openRoomModal('${roomName.replace(/'/g, "\\'")}')">
                 <div class="room-tile-header">
                     <span class="room-icon">${icon}</span>
                     <span class="room-name">${roomName}</span>
                 </div>
-                <div class="room-values ${co2 ? 'with-co2' : ''}">
+                <div class="room-values ${co2 || pm25 !== undefined ? 'with-extra' : ''}">
                     <div class="room-value">
                         <div class="room-value-label">🌡️</div>
                         <div class="room-value-number temp">${temp !== undefined ? temp.toFixed(1) + '°' : '--'}</div>
@@ -2024,6 +2008,7 @@ function displayRooms() {
                         <div class="room-value-number humidity">${humidity !== undefined ? Math.round(humidity) + '%' : '--'}</div>
                     </div>
                     ${co2Html}
+                    ${pm25Html}
                 </div>
                 <div class="room-recommendation ${recommendation.class}">
                     ${recommendation.icon} ${recommendation.text}
@@ -2041,6 +2026,14 @@ function getCO2Class(co2) {
     return 'co2-critical';
 }
 
+// PM2.5-Klasse für Farbcodierung (WHO-Grenzwerte)
+function getPM25Class(pm25) {
+    if (pm25 <= 12) return 'pm25-good';      // Gut
+    if (pm25 <= 35) return 'pm25-moderate';  // Moderat
+    if (pm25 <= 55) return 'pm25-warning';   // Ungesund für empfindliche Gruppen
+    return 'pm25-critical';                   // Ungesund
+}
+
 // Ausgeblendete Räume Info anzeigen
 function displayHiddenRooms() {
     const container = document.getElementById('hidden-rooms-info');
@@ -2053,21 +2046,35 @@ function displayHiddenRooms() {
     }
 }
 
-function getStatus(temp, humidity, co2) {
+function getStatus(temp, humidity, co2, pm25) {
+    // Kritisch: CO2 > 1400, Feuchtigkeit > 70%, PM2.5 > 55
     if (co2 > 1400) return { class: 'status-critical' };
     if (humidity > 70) return { class: 'status-critical' };
+    if (pm25 !== undefined && pm25 > 55) return { class: 'status-critical' };
+    // Warnung: CO2 > 1000, Feuchtigkeit > 60%, PM2.5 > 35
     if (co2 > 1000) return { class: 'status-warning' };
+    if (pm25 !== undefined && pm25 > 35) return { class: 'status-warning' };
     if (humidity > 60 || temp > 25 || temp < 18) return { class: 'status-warning' };
     return { class: 'status-good' };
 }
 
-function getRecommendation(temp, humidity, co2) {
+function getRecommendation(temp, humidity, co2, pm25) {
     // CO2 hat höchste Priorität
     if (co2 !== undefined && co2 > 1400) {
         return { class: 'critical', icon: '🔴', text: `CO₂ kritisch (${Math.round(co2)} ppm) - Sofort lüften!` };
     }
+    
+    // PM2.5 - Feinstaub prüfen
+    if (pm25 !== undefined && pm25 > 55) {
+        return { class: 'critical', icon: '🔴', text: `Feinstaub kritisch (${Math.round(pm25)} µg/m³) - Lüften!` };
+    }
+    
     if (co2 !== undefined && co2 > 1000) {
         return { class: 'warning', icon: '🟠', text: `CO₂ erhöht (${Math.round(co2)} ppm) - Lüften empfohlen` };
+    }
+    
+    if (pm25 !== undefined && pm25 > 35) {
+        return { class: 'warning', icon: '🟠', text: `Feinstaub erhöht (${Math.round(pm25)} µg/m³) - Lüften empfohlen` };
     }
     
     if (humidity === undefined) {
@@ -2083,6 +2090,10 @@ function getRecommendation(temp, humidity, co2) {
         return { class: 'warning', icon: '🟡', text: 'Luft zu trocken' };
     }
     
+    // Alles gut - beste Meldung wählen
+    if (pm25 !== undefined && pm25 <= 12) {
+        return { class: 'good', icon: '✅', text: `Sehr gute Luftqualität (PM2.5: ${Math.round(pm25)} µg/m³)` };
+    }
     if (co2 !== undefined && co2 < 600) {
         return { class: 'good', icon: '✅', text: `Sehr gute Luftqualität (${Math.round(co2)} ppm)` };
     }
@@ -2440,7 +2451,7 @@ async function loadRoomHistory(roomName, hours) {
         }
         
         const data = result.data;
-        const hasData = data.temperature.length > 0 || data.humidity.length > 0 || data.co2.length > 0;
+        const hasData = data.temperature.length > 0 || data.humidity.length > 0 || data.co2.length > 0 || data.pm25?.length > 0;
         
         document.getElementById('chart-loading').style.display = 'none';
         
@@ -2502,6 +2513,18 @@ function renderChart(data, hours) {
             fill: true,
             tension: 0.3,
             yAxisID: 'y2'
+        });
+    }
+    
+    if (data.pm25?.length > 0) {
+        datasets.push({
+            label: '🌫️ PM2.5 (µg/m³)',
+            data: data.pm25,
+            borderColor: '#e67e22',
+            backgroundColor: 'rgba(230, 126, 34, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y3'
         });
     }
     
@@ -2584,6 +2607,19 @@ function renderChart(data, hours) {
                     },
                     ticks: { color: '#9b59b6' },
                     grid: { drawOnChartArea: false }
+                },
+                y3: {
+                    type: 'linear',
+                    display: data.pm25?.length > 0,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'PM2.5 (µg/m³)',
+                        color: '#e67e22'
+                    },
+                    ticks: { color: '#e67e22' },
+                    grid: { drawOnChartArea: false },
+                    min: 0
                 }
             }
         }

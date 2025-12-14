@@ -32,7 +32,6 @@ class BathroomOptimizer:
         self.running = False
         self.thread = None
         self.last_run = None
-        self.config_file = Path('data/luftentfeuchten_config.json')
 
     def start(self):
         """Startet den Background-Prozess"""
@@ -92,14 +91,14 @@ class BathroomOptimizer:
     def _run_optimization(self):
         """Führt die Optimierung durch"""
         try:
-            # Prüfe ob Config existiert
-            if not self.config_file.exists():
+            from src.utils.sensor_helper import get_bathroom_config
+            
+            # Lade Config aus zentraler Zuordnung
+            config = get_bathroom_config()
+            
+            if not config:
                 logger.warning("No bathroom config found, skipping optimization")
                 return
-
-            # Lade Config
-            with open(self.config_file, 'r') as f:
-                config = json.load(f)
 
             # Prüfe ob enabled
             if not config.get('enabled', False):

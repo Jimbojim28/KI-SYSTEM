@@ -1202,6 +1202,16 @@ class VentilationNotifier:
                     rooms_data[room_name]['co2'] = co2
 
         # 2. Fallback: Auto-Discovery via Homey Zones (wie in /rooms)
+        # NUR für Räume die KEIN Mapping haben!
+        # Sammle Räume die bereits gemappte Sensoren haben
+        mapped_rooms_lower = set()
+        for room_id, sensors in room_mapping.items():
+            # Raum gilt als "gemappt" wenn mindestens ein Sensor konfiguriert ist
+            if sensors.get('temperature') or sensors.get('humidity') or sensors.get('co2'):
+                room_display_name = room_names.get(room_id, room_id)
+                mapped_rooms_lower.add(room_display_name.lower())
+                mapped_rooms_lower.add(room_id.lower())
+        
         platform = self._platform
         if platform:
             try:
@@ -1234,24 +1244,29 @@ class VentilationNotifier:
                     if not room_name:
                         continue
                     
+                    # WICHTIG: Überspringe Räume die bereits gemappte Sensoren haben!
+                    # Diese sollen NUR die konfigurierten Sensoren nutzen
+                    if room_name.lower() in mapped_rooms_lower:
+                        continue
+                    
                     if room_name not in rooms_data:
                         rooms_data[room_name] = {}
                     
                     caps = device.get('capabilitiesObj', {})
                     
-                    # Temperatur
+                    # Temperatur - NUR wenn kein Mapping existiert
                     if 'measure_temperature' in caps and 'temp' not in rooms_data[room_name]:
                         val = caps['measure_temperature'].get('value')
                         if val is not None and -40 < val < 60:
                             rooms_data[room_name]['temp'] = val
                     
-                    # Luftfeuchtigkeit
+                    # Luftfeuchtigkeit - NUR wenn kein Mapping existiert
                     if 'measure_humidity' in caps and 'humidity' not in rooms_data[room_name]:
                         val = caps['measure_humidity'].get('value')
                         if val is not None and 0 <= val <= 100:
                             rooms_data[room_name]['humidity'] = val
                     
-                    # CO2
+                    # CO2 - NUR wenn kein Mapping existiert
                     if 'measure_co2' in caps and 'co2' not in rooms_data[room_name]:
                         val = caps['measure_co2'].get('value')
                         if val is not None and 200 < val < 10000:

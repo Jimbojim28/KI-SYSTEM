@@ -90,17 +90,20 @@
             <div class="sensor-selects" id="outdoor-sensor-config">
                 <div class="sensor-select-group">
                     <label>🌡️ Außen-Temperatur:</label>
-                    <select id="outdoor-temp-sensor" onchange="saveOutdoorSensors()">
+                    <select id="outdoor-temp-sensor">
                         <option value="">-- Automatisch erkennen --</option>
                     </select>
                 </div>
                 <div class="sensor-select-group">
                     <label>💧 Außen-Feuchtigkeit:</label>
-                    <select id="outdoor-humidity-sensor" onchange="saveOutdoorSensors()">
+                    <select id="outdoor-humidity-sensor">
                         <option value="">-- Automatisch erkennen --</option>
                     </select>
                 </div>
             </div>
+            <button type="button" class="btn-primary" onclick="saveOutdoorSensors()" style="margin-top: 15px;">
+                💾 Außensensoren speichern
+            </button>
         </div>
 
         <div class="settings-section">
@@ -201,6 +204,14 @@
                     <option value="">-- Kein CO₂-Sensor --</option>
                 </select>
                 <small id="edit-co2-preview" class="sensor-preview"></small>
+            </div>
+            
+            <div class="form-group">
+                <label>🌫️ PM2.5 Feinstaub-Sensor:</label>
+                <select id="edit-pm25-sensor">
+                    <option value="">-- Kein PM2.5-Sensor --</option>
+                </select>
+                <small id="edit-pm25-preview" class="sensor-preview"></small>
             </div>
             
             <div class="form-group">
@@ -762,6 +773,10 @@
 .sensor-value.temp .value { color: #e91e63; }
 .sensor-value.humidity .value { color: #2196F3; }
 .sensor-value.co2 .value { color: #FF9800; }
+.sensor-value.pm25 .value { color: #9C27B0; }
+.sensor-value.pm25.good .value { color: #4CAF50; }
+.sensor-value.pm25.moderate .value { color: #FF9800; }
+.sensor-value.pm25.unhealthy .value { color: #f44336; }
 
 .room-status {
     margin-top: 0.8rem;
@@ -1387,6 +1402,8 @@ function switchTab(tab) {
 document.addEventListener('DOMContentLoaded', async () => {
     await loadAllData();
     renderOverview();
+    // Außensensor-Config auch initial laden
+    loadOutdoorSensorConfig();
 });
 
 // Alle Daten laden
@@ -1503,19 +1520,39 @@ async function loadAllData() {
             }
         });
         
-        // Räume aus Sensoren UND Lampen extrahieren
+        // Räume aus Sensoren UND Lampen UND Zonen extrahieren
         const roomSet = new Set();
+        
+        // 1. Räume aus Zonen (Homey Zonen - enthält auch Räume ohne Sensoren)
+        if (roomsData.rooms) {
+            roomsData.rooms.forEach(r => {
+                if (r.name && r.name !== 'Unbekannt') {
+                    roomSet.add(r.name);
+                }
+            });
+        }
+        
+        // 2. Räume aus Sensoren
         allSensors.forEach(s => {
             if (s.room && s.room !== 'Unbekannt') {
                 roomSet.add(s.room);
             }
         });
-        // Auch Räume aus Lampen hinzufügen
+        
+        // 3. Auch Räume aus Lampen hinzufügen
         allLights.forEach(l => {
             if (l.roomName && l.roomName !== 'Unbekannt') {
                 roomSet.add(l.roomName);
             }
         });
+        
+        // 4. Auch versteckte Räume hinzufügen (damit sie in der Sichtbarkeit erscheinen)
+        hiddenRooms.forEach(r => {
+            if (r && r !== 'Unbekannt') {
+                roomSet.add(r);
+            }
+        });
+        
         allRooms = Array.from(roomSet).sort();
         
     } catch (error) {
@@ -1543,7 +1580,7 @@ function renderOverview() {
     grid.innerHTML = visibleRooms.map(room => {
         const roomId = room.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '');
         const config = sensorMapping[roomId] || {};
-        const isConfigured = config.temperature || config.humidity || config.co2;
+        const isConfigured = config.temperature || config.humidity || config.co2 || config.pm25;
         
         // Sensoren für diesen Raum
         const roomSensors = allSensors.filter(s => s.room === room);
@@ -1553,14 +1590,14 @@ function renderOverview() {
         const lightsOn = roomLights.filter(l => l.state === 'on' || l.state === true);
         const hasLights = roomLights.length > 0;
         
-        // Bewegungssensor für diesen Raum
+        // Bewegungssensor für diesen Raum - NUR wenn explizit konfiguriert!
         const motionSensorId = motionSensorMapping[room];
-        const motionSensor = motionSensorId ? allMotionSensors.find(s => s.id === motionSensorId) : 
-                            allMotionSensors.find(s => s.roomName === room);
+        // Nur konfigurierte Sensoren verwenden, kein Auto-Fallback
+        const motionSensor = motionSensorId ? allMotionSensors.find(s => s.id === motionSensorId) : null;
         const hasMotion = !!motionSensor;
         
         // Werte ermitteln (konfiguriert oder automatisch)
-        let temp = null, humidity = null, co2 = null;
+        let temp = null, humidity = null, co2 = null, pm25 = null;
         
         if (config.temperature) {
             const s = allSensors.find(x => x.device_id === config.temperature);
@@ -1584,6 +1621,15 @@ function renderOverview() {
         } else {
             const s = roomSensors.find(x => x.type === 'co2' && x.current_value !== null);
             if (s) co2 = s.current_value;
+        }
+        
+        // PM2.5 - konfiguriert oder automatisch
+        if (config.pm25) {
+            const s = allSensors.find(x => x.device_id === config.pm25);
+            if (s) pm25 = s.current_value;
+        } else {
+            const s = roomSensors.find(x => x.type === 'pm25' && x.current_value !== null);
+            if (s) pm25 = s.current_value;
         }
         
         const icon = getRoomIcon(room);
@@ -1725,6 +1771,12 @@ function renderOverview() {
                         <span class="label">🌬️ CO₂</span>
                         <span class="value">${co2 !== null ? co2 + '' : '--'}</span>
                     </div>
+                    ${pm25 !== null ? `
+                    <div class="sensor-value pm25 ${pm25 <= 12 ? 'good' : pm25 <= 35 ? 'moderate' : 'unhealthy'}">
+                        <span class="label">🌫️ PM2.5</span>
+                        <span class="value">${pm25} µg/m³</span>
+                    </div>
+                    ` : ''}
                 </div>
                 <div class="room-status">
                     <span class="sensor-count">${sensorCount} Sensoren${hasLights ? `, ${roomLights.length} Lampen` : ''}${hasMotion ? ', 🚶' : ''}${hasValves ? ', 🔥' : ''}</span>
@@ -1812,7 +1864,7 @@ function loadOutdoorSensorConfig() {
         });
         
         // Außen-Sensoren zuerst (typische Keywords)
-        const outdoorKeywords = ['außen', 'outdoor', 'aussen', 'draußen', 'garten', 'balkon', 'terrasse'];
+        const outdoorKeywords = ['außen', 'outdoor', 'aussen', 'draußen', 'garten', 'balkon', 'terrasse', 'outside', 'weather', 'wetter', 'extern'];
         const outdoorRooms = Object.keys(byRoom).filter(room => 
             outdoorKeywords.some(kw => room.toLowerCase().includes(kw))
         );
@@ -1860,13 +1912,15 @@ async function saveOutdoorSensors() {
     const tempSensor = document.getElementById('outdoor-temp-sensor').value;
     const humiditySensor = document.getElementById('outdoor-humidity-sensor').value;
     
+    console.log('Speichere Außensensoren:', { temperature: tempSensor, humidity: humiditySensor });
+    
     outdoorSensors = {
         temperature: tempSensor,
         humidity: humiditySensor
     };
     
     try {
-        await fetch('/api/ventilation/sensor-mapping', {
+        const response = await fetch('/api/ventilation/sensor-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1875,8 +1929,16 @@ async function saveOutdoorSensors() {
             })
         });
         
-        showNotification('Außensensoren gespeichert!', 'success');
+        const result = await response.json();
+        console.log('Speicher-Ergebnis:', result);
+        
+        if (result.success) {
+            showNotification('Außensensoren gespeichert!', 'success');
+        } else {
+            showNotification('Fehler: ' + (result.error || 'Unbekannt'), 'error');
+        }
     } catch (error) {
+        console.error('Fehler beim Speichern der Außensensoren:', error);
         showNotification('Fehler beim Speichern', 'error');
     }
 }
@@ -1885,7 +1947,10 @@ async function saveOutdoorSensors() {
 function loadVisibility() {
     const grid = document.getElementById('visibility-grid');
     
-    grid.innerHTML = allRooms.map(room => {
+    // Kombiniere alle Räume + versteckte Räume (damit auch Räume ohne Sensoren erscheinen)
+    const allRoomsWithHidden = [...new Set([...allRooms, ...hiddenRooms])].sort();
+    
+    grid.innerHTML = allRoomsWithHidden.map(room => {
         const isVisible = !hiddenRooms.includes(room);
         
         return `
@@ -1946,6 +2011,7 @@ function openRoomModal(room) {
     const tempSelect = document.getElementById('edit-temp-sensor');
     const humiditySelect = document.getElementById('edit-humidity-sensor');
     const co2Select = document.getElementById('edit-co2-sensor');
+    const pm25Select = document.getElementById('edit-pm25-sensor');
     
     // Sensoren nach Raum gruppieren (Ignorierte ausschließen)
     const tempSensorsThisRoom = allSensors.filter(s => s.type === 'temperature' && s.room === room && !s.ignored);
@@ -1954,6 +2020,8 @@ function openRoomModal(room) {
     const humiditySensorsOther = allSensors.filter(s => s.type === 'humidity' && s.room !== room && !s.ignored);
     const co2SensorsThisRoom = allSensors.filter(s => s.type === 'co2' && s.room === room && !s.ignored);
     const co2SensorsOther = allSensors.filter(s => s.type === 'co2' && s.room !== room && !s.ignored);
+    const pm25SensorsThisRoom = allSensors.filter(s => s.type === 'pm25' && s.room === room && !s.ignored);
+    const pm25SensorsOther = allSensors.filter(s => s.type === 'pm25' && s.room !== room && !s.ignored);
     
     // Hilfsfunktion für gruppierte Optionen
     const buildGroupedOptions = (sensorsThisRoom, sensorsOther, type, configValue, defaultLabel) => {
@@ -1966,6 +2034,7 @@ function openRoomModal(room) {
                 const valueStr = val !== null 
                     ? (type === 'temperature' ? `(${val.toFixed(1)}°C)` 
                        : type === 'humidity' ? `(${Math.round(val)}%)`
+                       : type === 'pm25' ? `(${val} µg/m³)`
                        : `(${val} ppm)`)
                     : '';
                 html += `<option value="${s.device_id}" ${configValue === s.device_id ? 'selected' : ''}>${s.name} ${valueStr}</option>`;
@@ -1980,6 +2049,7 @@ function openRoomModal(room) {
                 const valueStr = val !== null 
                     ? (type === 'temperature' ? `(${val.toFixed(1)}°C)` 
                        : type === 'humidity' ? `(${Math.round(val)}%)`
+                       : type === 'pm25' ? `(${val} µg/m³)`
                        : `(${val} ppm)`)
                     : '';
                 html += `<option value="${s.device_id}" ${configValue === s.device_id ? 'selected' : ''}>${s.name} - ${s.room} ${valueStr}</option>`;
@@ -1993,6 +2063,7 @@ function openRoomModal(room) {
     tempSelect.innerHTML = buildGroupedOptions(tempSensorsThisRoom, tempSensorsOther, 'temperature', config.temperature, '-- Automatisch --');
     humiditySelect.innerHTML = buildGroupedOptions(humiditySensorsThisRoom, humiditySensorsOther, 'humidity', config.humidity, '-- Automatisch --');
     co2Select.innerHTML = buildGroupedOptions(co2SensorsThisRoom, co2SensorsOther, 'co2', config.co2, '-- Kein CO₂ --');
+    pm25Select.innerHTML = buildGroupedOptions(pm25SensorsThisRoom, pm25SensorsOther, 'pm25', config.pm25, '-- Kein PM2.5 --');
     
     // === Neue Geräte-Dropdowns füllen ===
     const dehumidifierSelect = document.getElementById('edit-dehumidifier');
@@ -2194,10 +2265,8 @@ function openRoomModal(room) {
     
     motionSelect.innerHTML = motionHtml;
     
-    // Automatische Vorauswahl: Wenn kein Sensor zugeordnet, aber einer im Raum existiert
-    if (!currentMotionSensor && motionSensorsThisRoom.length > 0) {
-        motionSelect.value = motionSensorsThisRoom[0].id;
-    }
+    // KEINE automatische Vorauswahl mehr - Benutzer muss explizit wählen
+    // Nur die bereits gespeicherte Auswahl wird verwendet
     
     // === Sensor-Liste für Ignore-Funktion ===
     const sensorsListContainer = document.getElementById('room-sensors-list');
@@ -2739,6 +2808,7 @@ async function saveRoomEdit(event) {
     const tempSensor = document.getElementById('edit-temp-sensor').value;
     const humiditySensor = document.getElementById('edit-humidity-sensor').value;
     const co2Sensor = document.getElementById('edit-co2-sensor').value;
+    const pm25Sensor = document.getElementById('edit-pm25-sensor').value;
     const motionSensor = document.getElementById('edit-motion-sensor').value;
     
     // Neue Felder
@@ -2760,6 +2830,7 @@ async function saveRoomEdit(event) {
         temperature: tempSensor,
         humidity: humiditySensor,
         co2: co2Sensor,
+        pm25: pm25Sensor,
         dehumidifier: dehumidifier,
         heater: heater,
         door_sensor: doorSensor,
@@ -2777,13 +2848,18 @@ async function saveRoomEdit(event) {
     
     // An Server senden für ForgottenLightDetector
     try {
-        await fetch('/api/rooms/motion-sensors', {
+        const motionResponse = await fetch('/api/rooms/motion-sensors', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ motion_sensors: motionSensorMapping })
         });
+        if (!motionResponse.ok) {
+            console.error('Failed to save motion sensors:', await motionResponse.text());
+        } else {
+            console.log('Motion sensors saved:', motionSensorMapping);
+        }
     } catch (e) {
-        console.log('Motion sensor API not available, using localStorage only');
+        console.log('Motion sensor API error:', e);
     }
     
     // Fenster-Kalibrierung speichern

@@ -197,6 +197,19 @@ class NotificationScheduler:
             if not platform:
                 return context
             
+            # Lade Sensor-Mapping
+            sensor_mapping = {}
+            mapped_rooms_lower = set()
+            try:
+                mapping_file = Path('data/ventilation_sensor_mapping.json')
+                if mapping_file.exists():
+                    with open(mapping_file, 'r') as f:
+                        mapping_data = json.load(f) or {}
+                        sensor_mapping = mapping_data.get('rooms', {})
+                        mapped_rooms_lower = {name.lower() for name in sensor_mapping.keys()}
+            except Exception as e:
+                logger.debug(f"Could not load sensor mapping: {e}")
+            
             # Hole alle Geräte
             if hasattr(platform, '_device_cache'):
                 platform._refresh_device_cache()
@@ -222,6 +235,44 @@ class NotificationScheduler:
             co2_values = []
             open_windows_count = 0
             
+            # Erstelle Device-ID zu Device Mapping für schnellen Zugriff
+            devices_by_id = {d.get('id'): d for d in devices if isinstance(d, dict) and d.get('id')}
+            
+            # ZUERST: Nutze gemappte Sensoren für Räume mit Mapping
+            for room_key, room_config in sensor_mapping.items():
+                room_display_name = room_config.get('name', room_key.title())
+                
+                # Temperatur aus gemapptem Sensor
+                temp_id = room_config.get('temperature')
+                if temp_id and temp_id in devices_by_id:
+                    temp_device = devices_by_id[temp_id]
+                    caps = temp_device.get('capabilitiesObj', {})
+                    if 'measure_temperature' in caps:
+                        val = caps['measure_temperature'].get('value')
+                        if val is not None and -10 < val < 50:
+                            indoor_temps.append(val)
+                
+                # Feuchtigkeit aus gemapptem Sensor
+                humidity_id = room_config.get('humidity')
+                if humidity_id and humidity_id in devices_by_id:
+                    humidity_device = devices_by_id[humidity_id]
+                    caps = humidity_device.get('capabilitiesObj', {})
+                    if 'measure_humidity' in caps:
+                        val = caps['measure_humidity'].get('value')
+                        if val is not None and 0 <= val <= 100:
+                            humidities.append(val)
+                
+                # CO2 aus gemapptem Sensor
+                co2_id = room_config.get('co2')
+                if co2_id and co2_id in devices_by_id:
+                    co2_device = devices_by_id[co2_id]
+                    caps = co2_device.get('capabilitiesObj', {})
+                    if 'measure_co2' in caps:
+                        val = caps['measure_co2'].get('value')
+                        if val is not None and 200 < val < 10000:
+                            co2_values.append((val, room_display_name))
+            
+            # DANN: Fallback für Geräte in nicht-gemappten Räumen
             for device in devices:
                 if not isinstance(device, dict):
                     continue
@@ -231,7 +282,7 @@ class NotificationScheduler:
                 zone_id = device.get('zone')
                 room_name = zones.get(zone_id, '')
                 
-                # Außentemperatur
+                # Außentemperatur - immer sammeln
                 if any(kw in device_name for kw in ['außen', 'outdoor', 'aussen', 'garten', 'balkon']):
                     if 'measure_temperature' in caps:
                         val = caps['measure_temperature'].get('value')
@@ -239,31 +290,36 @@ class NotificationScheduler:
                             context['outdoor_temp'] = round(val, 1)
                     continue
                 
-                # Innentemperatur
-                if 'measure_temperature' in caps:
-                    val = caps['measure_temperature'].get('value')
-                    if val is not None and -10 < val < 50:
-                        indoor_temps.append(val)
+                # Skip Räume mit Sensor-Mapping - diese wurden oben bereits verarbeitet
+                if room_name.lower() in mapped_rooms_lower:
+                    # Aber: Fenster und Heizung trotzdem prüfen
+                    pass
+                else:
+                    # Innentemperatur - nur für nicht-gemappte Räume
+                    if 'measure_temperature' in caps:
+                        val = caps['measure_temperature'].get('value')
+                        if val is not None and -10 < val < 50:
+                            indoor_temps.append(val)
+                    
+                    # Luftfeuchtigkeit - nur für nicht-gemappte Räume
+                    if 'measure_humidity' in caps:
+                        val = caps['measure_humidity'].get('value')
+                        if val is not None and 0 <= val <= 100:
+                            humidities.append(val)
+                    
+                    # CO2 - nur für nicht-gemappte Räume
+                    if 'measure_co2' in caps:
+                        val = caps['measure_co2'].get('value')
+                        if val is not None and 200 < val < 10000:
+                            co2_values.append((val, room_name or device.get('name', 'Unbekannt')))
                 
-                # Luftfeuchtigkeit
-                if 'measure_humidity' in caps:
-                    val = caps['measure_humidity'].get('value')
-                    if val is not None and 0 <= val <= 100:
-                        humidities.append(val)
-                
-                # CO2
-                if 'measure_co2' in caps:
-                    val = caps['measure_co2'].get('value')
-                    if val is not None and 200 < val < 10000:
-                        co2_values.append((val, room_name or device.get('name', 'Unbekannt')))
-                
-                # Offene Fenster
+                # Offene Fenster - für alle Räume
                 if 'fenster' in device_name or 'window' in device_name:
                     if 'alarm_contact' in caps:
                         if caps['alarm_contact'].get('value'):
                             open_windows_count += 1
                 
-                # Heizung aktiv?
+                # Heizung aktiv? - für alle Räume
                 if 'target_temperature' in caps:
                     target = caps['target_temperature'].get('value')
                     current = caps.get('measure_temperature', {}).get('value')

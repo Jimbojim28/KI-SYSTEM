@@ -3,6 +3,8 @@
 let allHeaters = [];
 let allWindows = [];
 let allRooms = [];
+let roomSensorData = {};  // Zentrale Raum-Sensordaten
+let outdoorData = {};     // Zentrale Außendaten
 let hiddenRooms = [];  // Versteckte Räume aus zentraler /rooms Konfiguration
 let zoneNameMap = {};
 let currentFilter = 'all';
@@ -21,11 +23,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Zuerst versteckte Räume laden (aus zentraler /rooms Konfiguration)
     await loadHiddenRooms();
     
+    // Lade zentrale Sensordaten (inkl. Outdoor)
+    await loadCentralSensorData();
+    
     loadHeaters();
     loadHeatingMode();
     setupEventListeners();
     setupSliders();
-    loadOutdoorTemp();
 
     // Lade Fenster-Daten
     loadWindowData();
@@ -44,6 +48,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadVentilationRecommendations();
     loadShowerPredictions();
 });
+
+// Zentrale Sensordaten laden (für Outdoor-Temperatur und Raumdaten)
+async function loadCentralSensorData() {
+    try {
+        const response = await fetch('/api/rooms/sensor-data');
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Speichere Outdoor-Daten
+            outdoorData = data.outdoor || {};
+            
+            // Speichere Raum-Sensordaten
+            roomSensorData = {};
+            (data.rooms || []).forEach(room => {
+                roomSensorData[room.name] = room;
+            });
+            
+            // Update Außentemperatur-Anzeige sofort
+            updateOutdoorTempDisplay();
+            
+            console.log('Central sensor data loaded:', Object.keys(roomSensorData).length, 'rooms');
+        }
+    } catch (error) {
+        console.error('Error loading central sensor data:', error);
+    }
+}
+
+// Außentemperatur-Anzeige aktualisieren
+function updateOutdoorTempDisplay() {
+    const outdoorTemp = outdoorData.temperature;
+    if (outdoorTemp !== undefined && outdoorTemp !== null) {
+        document.getElementById('outdoor-temp').textContent = outdoorTemp.toFixed(1) + '°C';
+    }
+}
 
 // Versteckte Räume aus zentraler Konfiguration laden
 async function loadHiddenRooms() {
@@ -64,6 +102,7 @@ async function loadHiddenRooms() {
 function setupEventListeners() {
     // Refresh Button
     document.getElementById('refresh-heating')?.addEventListener('click', () => {
+        loadCentralSensorData();  // Aktualisiere zentrale Daten
         loadHeaters();
         loadWindowData();
         loadTemperatureHistory();
@@ -165,23 +204,33 @@ function setupSliders() {
 // Lade alle Heizgeräte
 async function loadHeaters() {
     try {
-        // Lade Geräte und Räume parallel
-        const [devicesData, roomsData] = await Promise.all([
+        // Lade Geräte (für Steuerung) und zentrale Sensordaten parallel
+        const [devicesData, sensorData] = await Promise.all([
             fetchJSON('/api/devices'),
-            fetchJSON('/api/rooms')
+            fetchJSON('/api/rooms/sensor-data')
         ]);
 
         const allDevices = devicesData.devices || [];
-        allRooms = roomsData.rooms || [];
+        
+        // Speichere zentrale Daten
+        outdoorData = sensorData.outdoor || {};
+        roomSensorData = {};
+        (sensorData.rooms || []).forEach(room => {
+            roomSensorData[room.name] = room;
+            // Erstelle auch Zone-ID Mapping
+            if (room.id) {
+                zoneNameMap[room.id] = room.name;
+            }
+        });
+        
+        // Update Außentemperatur
+        updateOutdoorTempDisplay();
 
         console.log('Loaded devices:', allDevices.length);
         console.log('Climate devices:', allDevices.filter(d => d.domain === 'climate'));
 
-        // Erstelle Zone-ID zu Name Mapping
-        zoneNameMap = {};
-        allRooms.forEach(room => {
-            zoneNameMap[room.id] = room.name;
-        });
+        // Erstelle Zone-ID zu Name Mapping aus alten Raumdaten falls nötig
+        allRooms = Object.values(roomSensorData).map(r => ({ id: r.id, name: r.name }));
 
         // Filtere nur Heizgeräte (climate domain)
         allHeaters = allDevices.filter(d => {
@@ -244,18 +293,16 @@ function updateStatistics() {
     document.getElementById('avg-temp').textContent = avgTemp + (avgTemp !== '--' ? '°C' : '');
 }
 
-// Lade Außentemperatur
+// Lade Außentemperatur (nutzt jetzt zentrale Daten)
 async function loadOutdoorTemp() {
-    try {
-        const status = await fetchJSON('/api/status');
-        // API gibt Temperatur unter temperature.outdoor zurück
-        const outdoorTemp = status.temperature?.outdoor;
-        if (outdoorTemp !== undefined && outdoorTemp !== null) {
-            document.getElementById('outdoor-temp').textContent = outdoorTemp.toFixed(1) + '°C';
-        }
-    } catch (error) {
-        console.error('Error loading outdoor temp:', error);
+    // Nutze bereits geladene zentrale Daten
+    if (outdoorData.temperature !== undefined) {
+        updateOutdoorTempDisplay();
+        return;
     }
+    
+    // Fallback: Lade zentrale Daten wenn noch nicht vorhanden
+    await loadCentralSensorData();
 }
 
 // Lade Temperaturverlauf für Chart

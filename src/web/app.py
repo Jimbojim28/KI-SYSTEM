@@ -249,13 +249,12 @@ class WebInterface:
     def _get_mold_prevention_status(self):
         """Hole aktuellen Schimmelprävention-Status"""
         try:
-            # Hole Badezimmer-Daten
-            bathroom_config_path = Path('data/luftentfeuchten_config.json')
-            if not bathroom_config_path.exists():
-                return None
+            from src.utils.sensor_helper import get_bathroom_config
             
-            with open(bathroom_config_path) as f:
-                config = json.load(f)
+            # Hole Badezimmer-Daten aus zentraler Config
+            config = get_bathroom_config()
+            if not config:
+                return None
             
             if not config.get('enabled'):
                 return None
@@ -2823,6 +2822,19 @@ class WebInterface:
 
                 rooms_status = []
 
+                # Lade Sensor-Zuordnung - hat höchste Priorität
+                sensor_mapping = {}
+                mapped_rooms_lower = set()
+                try:
+                    mapping_file = Path('data/ventilation_sensor_mapping.json')
+                    if mapping_file.exists():
+                        with open(mapping_file, 'r') as f:
+                            mapping_data = json.load(f) or {}
+                            sensor_mapping = mapping_data.get('rooms', {})
+                            mapped_rooms_lower = {name.lower() for name in sensor_mapping.keys()}
+                except Exception as e:
+                    logger.debug(f"Could not load sensor mapping: {e}")
+
                 # Versuche Raum-Daten aus Plattform zu holen
                 try:
                     states = self.engine.platform.get_states()
@@ -2841,9 +2853,39 @@ class WebInterface:
                     # Erstelle Mapping: room_id -> room_name
                     room_id_to_name = {room['id']: room['name'] for room in rooms_data.get('rooms', [])}
 
-                    # Gruppiere Sensoren nach Raum - VERBESSERTE VERSION
+                    # Gruppiere Sensoren nach Raum
                     room_sensors = {}
 
+                    # ZUERST: Nutze gemappte Sensoren (höchste Priorität)
+                    for room_key, room_config in sensor_mapping.items():
+                        room_display_name = room_config.get('name', room_key.title())
+                        temp_device_id = room_config.get('temperature')
+                        humidity_device_id = room_config.get('humidity')
+                        
+                        temp_value = None
+                        hum_value = None
+                        
+                        if temp_device_id and temp_device_id in states:
+                            temp_state = states[temp_device_id]
+                            if temp_state:
+                                temp_value = temp_state.get('attributes', {}).get('capabilities', {}).get('measure_temperature', {}).get('value')
+                        
+                        if humidity_device_id and humidity_device_id in states:
+                            hum_state = states[humidity_device_id]
+                            if hum_state:
+                                hum_value = hum_state.get('attributes', {}).get('capabilities', {}).get('measure_humidity', {}).get('value')
+                        
+                        if temp_value is not None or hum_value is not None:
+                            room_sensors[room_display_name] = {
+                                'temperature': temp_value,
+                                'humidity': hum_value,
+                                'temp_sensor_id': temp_device_id,
+                                'humidity_sensor_id': humidity_device_id,
+                                'devices': [],
+                                'from_mapping': True
+                            }
+
+                    # DANN: Auto-Discovery für Räume OHNE Mapping
                     for device_id, state in states.items():
                         if not state:
                             continue
@@ -2919,6 +2961,10 @@ class WebInterface:
                         # 6. Letzter Fallback
                         if not room_name:
                             room_name = "Unbenannter Raum"
+                        
+                        # Skip Räume die bereits über Sensor-Mapping erfasst wurden
+                        if room_name.lower() in mapped_rooms_lower:
+                            continue
 
                         # Initialisiere Raum-Eintrag
                         if room_name not in room_sensors:
@@ -3181,15 +3227,18 @@ class WebInterface:
                 # Hole Raum-Daten (ähnlich wie bei Mold Prevention)
                 if outdoor_temp is not None:
                     try:
-                        # Lade gespeicherte Sensor-Zuordnung
+                        # Lade gespeicherte Sensor-Zuordnung aus JSON
                         sensor_mapping = {}
-                        config_file = Path('config/ventilation_sensors.yaml')
-                        if config_file.exists():
+                        mapping_file = Path('data/ventilation_sensor_mapping.json')
+                        if mapping_file.exists():
                             try:
-                                with open(config_file, 'r') as f:
-                                    sensor_mapping = yaml.safe_load(f) or {}
-                            except:
-                                pass
+                                with open(mapping_file, 'r') as f:
+                                    mapping_data = json.load(f) or {}
+                                    # Konvertiere vom neuen Format {rooms: {raum: {temperature: id}}} 
+                                    # zu {raum: {temperature: id}}
+                                    sensor_mapping = mapping_data.get('rooms', mapping_data)
+                            except Exception as e:
+                                logger.debug(f"Could not load sensor mapping: {e}")
                         
                         states = self.engine.platform.get_states()
                         devices = self.engine.platform.get_all_devices()
@@ -3210,12 +3259,14 @@ class WebInterface:
                                 device_zones[device_id] = zone_id
 
                         room_sensors = {}
+                        mapped_rooms = set()  # Track rooms that have mapping
                         
                         # Wenn Sensor-Zuordnung existiert, verwende sie
                         if sensor_mapping:
-                            for room_name, sensor_ids in sensor_mapping.items():
+                            for room_key, sensor_ids in sensor_mapping.items():
                                 temp_device_id = sensor_ids.get('temperature')
                                 humidity_device_id = sensor_ids.get('humidity')
+                                room_display_name = sensor_ids.get('name', room_key.title())
                                 
                                 if temp_device_id and humidity_device_id:
                                     temp_state = states.get(temp_device_id)
@@ -3226,34 +3277,38 @@ class WebInterface:
                                         humidity_value = humidity_state.get('attributes', {}).get('capabilities', {}).get('measure_humidity', {}).get('value')
                                         
                                         if temp_value is not None and humidity_value is not None:
-                                            room_sensors[room_name] = {
+                                            room_sensors[room_display_name] = {
                                                 'temperature': temp_value,
                                                 'humidity': humidity_value,
                                                 'device_count': 2
                                             }
+                                            mapped_rooms.add(room_display_name.lower())
                         
-                        # Fallback: Automatische Erkennung (wie vorher)
-                        else:
-                            for device_id, state in states.items():
-                                if not state:
-                                    continue
+                        # Fallback: Automatische Erkennung für Räume OHNE Mapping
+                        for device_id, state in states.items():
+                            if not state:
+                                continue
 
-                                attrs = state.get('attributes', {})
-                                
-                                # Versuche Zone-ID aus verschiedenen Quellen zu holen
-                                zone_id = device_zones.get(device_id)  # Zuerst aus Devices-Mapping
-                                if not zone_id:
-                                    zone_id = attrs.get('zone')  # Dann aus State attributes
-                                if not zone_id:
-                                    zone_id = attrs.get('room')  # Alternative: room attribute
-                                if not zone_id:
-                                    continue  # Skip devices ohne Raum-Zuordnung
-                                
-                                # Konvertiere Zone-ID zu lesbarem Raumnamen
-                                room_name = zone_names.get(zone_id, zone_id)
+                            attrs = state.get('attributes', {})
+                            
+                            # Versuche Zone-ID aus verschiedenen Quellen zu holen
+                            zone_id = device_zones.get(device_id)  # Zuerst aus Devices-Mapping
+                            if not zone_id:
+                                zone_id = attrs.get('zone')  # Dann aus State attributes
+                            if not zone_id:
+                                zone_id = attrs.get('room')  # Alternative: room attribute
+                            if not zone_id:
+                                continue  # Skip devices ohne Raum-Zuordnung
+                            
+                            # Konvertiere Zone-ID zu lesbarem Raumnamen
+                            room_name = zone_names.get(zone_id, zone_id)
+                            
+                            # Skip Räume die bereits über Mapping erfasst wurden
+                            if room_name.lower() in mapped_rooms:
+                                continue
 
-                                if room_name not in room_sensors:
-                                    room_sensors[room_name] = {'temperature': None, 'humidity': None, 'device_count': 0}
+                            if room_name not in room_sensors:
+                                room_sensors[room_name] = {'temperature': None, 'humidity': None, 'device_count': 0}
 
                                 room_sensors[room_name]['device_count'] += 1
                                 
@@ -3376,7 +3431,8 @@ class WebInterface:
                 data = {
                     'temperature': [],
                     'humidity': [],
-                    'co2': []
+                    'co2': [],
+                    'pm25': []
                 }
                 
                 # Hole Temperaturdaten aus continuous_measurements 
@@ -3437,6 +3493,33 @@ class WebInterface:
                 except Exception as e:
                     logger.debug(f"No CO2 data for {room_name}: {e}")
                     pass  # CO2-Daten sind optional
+                
+                # Hole PM2.5-Daten aus sensor_data (falls vorhanden)
+                pm25_search_patterns = [
+                    f'%"device_name": "%{base_room_name}%"%',
+                    f'%"room": "%{base_room_name}%"%'
+                ]
+                
+                try:
+                    where_clauses = ' OR '.join(['metadata LIKE ?' for _ in pm25_search_patterns])
+                    query = f"""
+                        SELECT timestamp, value, metadata FROM sensor_data
+                        WHERE sensor_type = 'pm25' 
+                        AND ({where_clauses})
+                        AND datetime(timestamp) >= datetime(?)
+                        ORDER BY timestamp ASC
+                        LIMIT 2000
+                    """
+                    params = pm25_search_patterns + [cutoff_str]
+                    pm25_rows = self.db.execute(query, params)
+                    
+                    if pm25_rows:
+                        for row in pm25_rows:
+                            if row['value'] is not None:
+                                data['pm25'].append({'x': row['timestamp'], 'y': round(row['value'])})
+                except Exception as e:
+                    logger.debug(f"No PM2.5 data for {room_name}: {e}")
+                    pass  # PM2.5-Daten sind optional
                 
                 # Intelligente Aggregation basierend auf Zeitraum
                 # 24h: max 200 Punkte, 48h: max 300 Punkte
@@ -4455,6 +4538,287 @@ class WebInterface:
                 logger.error(f"Error getting room settings: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/rooms/sensor-data', methods=['GET'])
+        def api_rooms_sensor_data():
+            """API: Zentrale Raum-Sensordaten - liefert für jeden Raum alle Sensoren und Geräte"""
+            import json
+            
+            try:
+                # Lade Räume
+                rooms_file = Path('data/rooms.json')
+                if rooms_file.exists():
+                    with open(rooms_file, 'r') as f:
+                        rooms_data = json.load(f)
+                else:
+                    rooms_data = {'rooms': [], 'hidden': []}
+                
+                # Lade Sensor-Mapping
+                mapping_file = Path('data/ventilation_sensor_mapping.json')
+                if mapping_file.exists():
+                    with open(mapping_file, 'r') as f:
+                        mapping_data = json.load(f)
+                else:
+                    mapping_data = {'rooms': {}}
+                
+                room_mapping = mapping_data.get('rooms', {})
+                hidden_rooms = rooms_data.get('hidden', [])
+                motion_sensors_config = rooms_data.get('motion_sensors', {})
+                
+                # Hole alle Geräte von der Plattform
+                all_devices = {}
+                if hasattr(self.engine, 'platform') and self.engine.platform:
+                    devices = self.engine.platform.get_all_devices()
+                    if devices:
+                        if isinstance(devices, dict):
+                            all_devices = devices
+                        else:
+                            all_devices = {d.get('id'): d for d in devices if isinstance(d, dict)}
+                
+                # Baue Ergebnis
+                result = {
+                    'success': True,
+                    'rooms': [],
+                    'outdoor': None
+                }
+                
+                # Outdoor-Sensoren
+                outdoor_sensors = mapping_data.get('outdoor_sensors', {})
+                if outdoor_sensors:
+                    outdoor_data = {}
+                    if self.engine.weather:
+                        weather = self.engine.weather.get_weather_data(self.engine.platform)
+                        if weather:
+                            outdoor_data['temperature'] = weather.get('temperature')
+                            outdoor_data['humidity'] = weather.get('humidity')
+                    if outdoor_data:
+                        result['outdoor'] = outdoor_data
+                
+                # Für jeden Raum
+                for room in rooms_data.get('rooms', []):
+                    room_name = room.get('name', '')
+                    room_id = room.get('id', '')
+                    
+                    # Prüfe ob versteckt
+                    if room_name in hidden_rooms or room_id in hidden_rooms:
+                        continue
+                    
+                    # Suche Mapping (versuche verschiedene Keys)
+                    normalized_name = room_name.lower().replace(' ', '_').replace('(', '_').replace(')', '')
+                    config = (room_mapping.get(room_id) or 
+                              room_mapping.get(normalized_name) or 
+                              room_mapping.get(room_name.lower()) or
+                              room_mapping.get(room_name))
+                    
+                    room_data = {
+                        'id': room_id,
+                        'name': room_name,
+                        'icon': room.get('icon', '🏠'),
+                        # Sensoren
+                        'temperature': None,
+                        'humidity': None,
+                        'co2': None,
+                        'pm25': None,  # Feinstaub PM2.5
+                        # Geräte-Status
+                        'lights': [],
+                        'heaters': [],
+                        'windows': [],
+                        'doors': [],
+                        'motion_sensors': [],
+                        # Aggregierte Werte
+                        'any_light_on': False,
+                        'any_heater_on': False,
+                        'any_window_open': False,
+                        'any_door_open': False,
+                        'motion_detected': False
+                    }
+                    
+                    # Sammle alle Geräte für diesen Raum
+                    room_devices = {dev_id: dev for dev_id, dev in all_devices.items() 
+                                   if dev.get('zone') == room_id}
+                    
+                    # Konfigurierte Sensoren aus Mapping
+                    if config:
+                        temp_id = config.get('temperature')
+                        hum_id = config.get('humidity')
+                        co2_id = config.get('co2')
+                        pm25_id = config.get('pm25')
+                        heater_id = config.get('heater')
+                        window_id = config.get('window_sensor')
+                        door_id = config.get('door_sensor')
+                        motion_id = config.get('motion_sensor')
+                        
+                        # Temperatur
+                        if temp_id and temp_id in all_devices:
+                            caps = all_devices[temp_id].get('capabilitiesObj', {})
+                            if 'measure_temperature' in caps:
+                                val = caps['measure_temperature'].get('value')
+                                if val is not None and -10 <= val <= 50:
+                                    room_data['temperature'] = val
+                        
+                        # Feuchtigkeit
+                        if hum_id and hum_id in all_devices:
+                            caps = all_devices[hum_id].get('capabilitiesObj', {})
+                            if 'measure_humidity' in caps:
+                                val = caps['measure_humidity'].get('value')
+                                if val is not None and 0 <= val <= 100:
+                                    room_data['humidity'] = val
+                        
+                        # CO2
+                        if co2_id and co2_id in all_devices:
+                            caps = all_devices[co2_id].get('capabilitiesObj', {})
+                            if 'measure_co2' in caps:
+                                val = caps['measure_co2'].get('value')
+                                if val is not None:
+                                    room_data['co2'] = val
+                        
+                        # PM2.5 Feinstaub
+                        if pm25_id and pm25_id in all_devices:
+                            caps = all_devices[pm25_id].get('capabilitiesObj', {})
+                            if 'measure_pm25' in caps:
+                                val = caps['measure_pm25'].get('value')
+                                if val is not None:
+                                    room_data['pm25'] = val
+                        
+                        # Heizung
+                        if heater_id and heater_id in all_devices:
+                            device = all_devices[heater_id]
+                            caps = device.get('capabilitiesObj', {})
+                            heater_info = {
+                                'id': heater_id,
+                                'name': device.get('name', 'Heizung'),
+                                'on': caps.get('onoff', {}).get('value', False),
+                                'target_temp': caps.get('target_temperature', {}).get('value'),
+                                'current_temp': caps.get('measure_temperature', {}).get('value')
+                            }
+                            room_data['heaters'].append(heater_info)
+                            if heater_info['on']:
+                                room_data['any_heater_on'] = True
+                    
+                    # Bewegungsmelder aus zentraler Config
+                    motion_sensor_id = motion_sensors_config.get(room_name)
+                    if motion_sensor_id and motion_sensor_id in all_devices:
+                        device = all_devices[motion_sensor_id]
+                        caps = device.get('capabilitiesObj', {})
+                        motion_info = {
+                            'id': motion_sensor_id,
+                            'name': device.get('name', 'Bewegung'),
+                            'motion': caps.get('alarm_motion', {}).get('value', False)
+                        }
+                        room_data['motion_sensors'].append(motion_info)
+                        if motion_info['motion']:
+                            room_data['motion_detected'] = True
+                    
+                    # Durchsuche alle Geräte im Raum
+                    for device_id, device in room_devices.items():
+                        caps = device.get('capabilitiesObj', {})
+                        device_class = device.get('class', '')
+                        device_name = device.get('name', '')
+                        
+                        # Temperatur (falls noch nicht gesetzt)
+                        if room_data['temperature'] is None and 'measure_temperature' in caps:
+                            val = caps['measure_temperature'].get('value')
+                            if val is not None and -10 <= val <= 50:
+                                room_data['temperature'] = val
+                        
+                        # Feuchtigkeit (falls noch nicht gesetzt)
+                        if room_data['humidity'] is None and 'measure_humidity' in caps:
+                            val = caps['measure_humidity'].get('value')
+                            if val is not None and 0 <= val <= 100:
+                                room_data['humidity'] = val
+                        
+                        # CO2 (falls noch nicht gesetzt)
+                        if room_data['co2'] is None and 'measure_co2' in caps:
+                            val = caps['measure_co2'].get('value')
+                            if val is not None:
+                                room_data['co2'] = val
+                        
+                        # PM2.5 Feinstaub (falls noch nicht gesetzt)
+                        if room_data['pm25'] is None and 'measure_pm25' in caps:
+                            val = caps['measure_pm25'].get('value')
+                            if val is not None:
+                                room_data['pm25'] = val
+                        
+                        # Lichter
+                        if device_class == 'light' or 'onoff' in caps and 'dim' in caps:
+                            is_on = caps.get('onoff', {}).get('value', False)
+                            brightness = caps.get('dim', {}).get('value')
+                            light_info = {
+                                'id': device_id,
+                                'name': device_name,
+                                'on': is_on,
+                                'brightness': int(brightness * 100) if brightness is not None else None
+                            }
+                            room_data['lights'].append(light_info)
+                            if is_on:
+                                room_data['any_light_on'] = True
+                        
+                        # Heizungen (Thermostate)
+                        if device_class in ['thermostat', 'heater'] or 'target_temperature' in caps:
+                            if device_id not in [h['id'] for h in room_data['heaters']]:
+                                is_on = caps.get('onoff', {}).get('value', True)
+                                heater_info = {
+                                    'id': device_id,
+                                    'name': device_name,
+                                    'on': is_on,
+                                    'target_temp': caps.get('target_temperature', {}).get('value'),
+                                    'current_temp': caps.get('measure_temperature', {}).get('value')
+                                }
+                                room_data['heaters'].append(heater_info)
+                                if is_on:
+                                    room_data['any_heater_on'] = True
+                        
+                        # Fenster-Sensoren
+                        if 'windowcoverings_tilt_set' in caps or 'alarm_contact' in caps:
+                            tilt = caps.get('windowcoverings_tilt_set', {}).get('value')
+                            contact = caps.get('alarm_contact', {}).get('value', False)
+                            is_open = contact or (tilt is not None and tilt > 0.05)
+                            window_info = {
+                                'id': device_id,
+                                'name': device_name,
+                                'open': is_open,
+                                'tilt': int(tilt * 100) if tilt is not None else None,
+                                'contact_alarm': contact
+                            }
+                            room_data['windows'].append(window_info)
+                            if is_open:
+                                room_data['any_window_open'] = True
+                        
+                        # Tür-Sensoren
+                        if device_class == 'doorbell' or ('alarm_contact' in caps and 'door' in device_name.lower()):
+                            contact = caps.get('alarm_contact', {}).get('value', False)
+                            door_info = {
+                                'id': device_id,
+                                'name': device_name,
+                                'open': contact
+                            }
+                            room_data['doors'].append(door_info)
+                            if contact:
+                                room_data['any_door_open'] = True
+                        
+                        # Bewegungsmelder
+                        if 'alarm_motion' in caps:
+                            if device_id not in [m['id'] for m in room_data['motion_sensors']]:
+                                motion = caps.get('alarm_motion', {}).get('value', False)
+                                motion_info = {
+                                    'id': device_id,
+                                    'name': device_name,
+                                    'motion': motion
+                                }
+                                room_data['motion_sensors'].append(motion_info)
+                                if motion:
+                                    room_data['motion_detected'] = True
+                    
+                    # Raum hinzufügen (auch ohne Sensordaten, damit alle Räume sichtbar sind)
+                    result['rooms'].append(room_data)
+                
+                return jsonify(result)
+                
+            except Exception as e:
+                logger.error(f"Error getting room sensor data: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/rooms/window-calibration', methods=['GET', 'POST'])
         def api_window_calibration():
             """API: Fenster-Kalibrierung pro Raum - definiert wann ein Fenster als geschlossen gilt"""
@@ -5007,14 +5371,12 @@ class WebInterface:
             """API: Badezimmer-Konfiguration verwalten"""
             import json
             from pathlib import Path
-
-            config_file = Path('data/luftentfeuchten_config.json')
+            from src.utils.sensor_helper import get_bathroom_config
 
             if request.method == 'GET':
-                # Lade Konfiguration
-                if config_file.exists():
-                    with open(config_file, 'r') as f:
-                        config = json.load(f)
+                # Lade Konfiguration aus zentraler Mapping-Datei
+                config = get_bathroom_config()
+                if config:
                     return jsonify({'config': config})
                 else:
                     return jsonify({'config': {'enabled': False}})
@@ -5086,17 +5448,17 @@ class WebInterface:
             try:
                 import json
                 import time
-                from pathlib import Path
                 from src.decision_engine.bathroom_automation import BathroomAutomation
+                from src.utils.sensor_helper import get_bathroom_config
 
                 # Cache für 3 Sekunden
                 now = time.time()
                 if bathroom_status_cache['data'] and (now - bathroom_status_cache['timestamp']) < 3:
                     return jsonify(bathroom_status_cache['data'])
 
-                config_file = Path('data/luftentfeuchten_config.json')
+                config = get_bathroom_config()
 
-                if not config_file.exists():
+                if not config:
                     result = {
                         'status': {
                             'enabled': False,
@@ -5110,25 +5472,8 @@ class WebInterface:
                     bathroom_status_cache['timestamp'] = now
                     return jsonify(result)
 
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-
-                if not config.get('enabled', False):
-                    result = {
-                        'status': {
-                            'enabled': False,
-                            'shower_detected': False,
-                            'dehumidifier_running': False,
-                            'current_humidity': None,
-                            'current_temperature': None
-                        }
-                    }
-                    bathroom_status_cache['data'] = result
-                    bathroom_status_cache['timestamp'] = now
-                    return jsonify(result)
-
-                # Verwende die Automation-Instanz vom BathroomDataCollector wenn verfügbar
-                # (diese hat den korrekten State inkl. humidity_below_threshold_since)
+                # Erstelle Bathroom-Instanz auch wenn nicht enabled 
+                # (damit Sensordaten angezeigt werden können)
                 bathroom = None
                 if self.bathroom_collector and self.bathroom_collector.automation:
                     bathroom = self.bathroom_collector.automation
@@ -5145,6 +5490,9 @@ class WebInterface:
                     bathroom = bathroom_instance_cache['instance']
                 
                 status = bathroom.get_status(self.engine.platform)
+                
+                # Stelle sicher, dass enabled korrekt gesetzt ist
+                status['enabled'] = config.get('enabled', False)
 
                 result = {'status': status}
                 bathroom_status_cache['data'] = result
@@ -5160,17 +5508,13 @@ class WebInterface:
         def api_bathroom_test():
             """API: Badezimmer-Automatisierung testen"""
             try:
-                import json
-                from pathlib import Path
                 from src.decision_engine.bathroom_automation import BathroomAutomation
+                from src.utils.sensor_helper import get_bathroom_config
 
-                config_file = Path('data/luftentfeuchten_config.json')
+                config = get_bathroom_config()
 
-                if not config_file.exists():
+                if not config:
                     return jsonify({'error': 'No configuration found'}), 400
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 # Initialisiere und teste
                 bathroom = BathroomAutomation(config)
@@ -5193,17 +5537,13 @@ class WebInterface:
         def api_bathroom_analytics():
             """API: Badezimmer Analytics und Statistiken"""
             try:
-                import json
-                from pathlib import Path
                 from src.decision_engine.bathroom_automation import BathroomAutomation
+                from src.utils.sensor_helper import get_bathroom_config
 
-                config_file = Path('data/luftentfeuchten_config.json')
+                config = get_bathroom_config()
 
-                if not config_file.exists():
+                if not config:
                     return jsonify({'error': 'No configuration found'}), 400
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 # Initialisiere mit Learning enabled
                 bathroom = BathroomAutomation(config, enable_learning=True)
@@ -5225,22 +5565,19 @@ class WebInterface:
                 import json
                 import threading
                 import time
-                from pathlib import Path
+                from src.utils.sensor_helper import get_bathroom_config
 
                 data = request.json
                 device_type = data.get('device_type', 'dehumidifier')  # dehumidifier, heater
                 duration = min(int(data.get('duration', 30)), 60)  # Max 60 Sekunden
 
-                # Lade Config
-                config_file = Path('data/luftentfeuchten_config.json')
-                if not config_file.exists():
+                # Lade Config aus zentraler Zuordnung
+                config = get_bathroom_config()
+                if not config:
                     return jsonify({
                         'success': False,
                         'error': 'Keine Konfiguration gefunden. Bitte zuerst Geräte konfigurieren.'
                     }), 400
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 # Bestimme Device-ID
                 if device_type == 'dehumidifier':
@@ -5372,14 +5709,12 @@ class WebInterface:
                 import json
                 from pathlib import Path
                 from src.decision_engine.bathroom_automation import BathroomAutomation
+                from src.utils.sensor_helper import get_bathroom_config
 
-                config_file = Path('data/luftentfeuchten_config.json')
+                config = get_bathroom_config()
 
-                if not config_file.exists():
+                if not config:
                     return jsonify({'error': 'No configuration found'}), 400
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 # Initialisiere mit Learning enabled
                 bathroom = BathroomAutomation(config, enable_learning=True)
@@ -5394,14 +5729,20 @@ class WebInterface:
                 )
 
                 if result and result.get('success'):
-                    # Update config mit neuen Werten
-                    config['humidity_threshold_high'] = result['new_values']['humidity_high']
-                    config['humidity_threshold_low'] = result['new_values']['humidity_low']
-
-                    with open(config_file, 'w') as f:
-                        json.dump(config, f, indent=2)
-
-                    logger.info("✨ Configuration updated with optimized values")
+                    # Update config mit neuen Werten in zentraler Mapping-Datei
+                    mapping_file = Path('data/ventilation_sensor_mapping.json')
+                    if mapping_file.exists():
+                        with open(mapping_file, 'r') as f:
+                            mapping_data = json.load(f)
+                        
+                        if 'rooms' in mapping_data and 'badezimmer' in mapping_data['rooms']:
+                            mapping_data['rooms']['badezimmer']['humidity_threshold_high'] = result['new_values']['humidity_high']
+                            mapping_data['rooms']['badezimmer']['humidity_threshold_low'] = result['new_values']['humidity_low']
+                            
+                            with open(mapping_file, 'w') as f:
+                                json.dump(mapping_data, f, indent=2)
+                            
+                            logger.info("✨ Configuration updated with optimized values in central mapping")
 
                 return jsonify(result if result else {'success': False, 'reason': 'Optimization failed'})
 
@@ -5413,16 +5754,12 @@ class WebInterface:
         def api_bathroom_live_status():
             """API: Live-Status aller konfigurierten Badezimmer-Sensoren und Aktoren"""
             try:
-                import json
-                from pathlib import Path
-
-                config_file = Path('data/luftentfeuchten_config.json')
-
-                if not config_file.exists():
+                from src.utils.sensor_helper import get_bathroom_config
+                
+                config = get_bathroom_config()
+                
+                if not config:
                     return jsonify({'error': 'No configuration found', 'devices': {}}), 200
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 devices_status = {}
 
@@ -5563,16 +5900,12 @@ class WebInterface:
                 device_type = data.get('device_type')  # 'dehumidifier' or 'heater'
                 action = data.get('action')  # 'on', 'off', 'temp_up', 'temp_down'
 
-                import json
-                from pathlib import Path
+                from src.utils.sensor_helper import get_bathroom_config
+                
+                config = get_bathroom_config()
 
-                config_file = Path('data/luftentfeuchten_config.json')
-
-                if not config_file.exists():
+                if not config:
                     return jsonify({'error': 'No configuration found'}), 400
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 success = False
                 message = ""
@@ -5687,22 +6020,19 @@ class WebInterface:
         def api_bathroom_energy_stats():
             """API: Energie & Kosten-Statistiken"""
             try:
-                import json
-                from pathlib import Path
+                from src.utils.sensor_helper import get_bathroom_config
 
                 # Hole Parameter aus Query oder Config
                 days_back = int(request.args.get('days', 30))
 
-                # Lade Config für Geräte-Leistungen
-                config_file = Path('data/luftentfeuchten_config.json')
+                # Lade Config für Geräte-Leistungen aus zentraler Zuordnung
+                config = get_bathroom_config()
                 dehumidifier_wattage = 400.0  # Default
                 energy_price = 0.30  # Default EUR/kWh
 
-                if config_file.exists():
-                    with open(config_file, 'r') as f:
-                        config = json.load(f)
-                        dehumidifier_wattage = config.get('dehumidifier_wattage', 400.0)
-                        energy_price = config.get('energy_price_per_kwh', 0.30)
+                if config:
+                    dehumidifier_wattage = config.get('dehumidifier_wattage', 400.0)
+                    energy_price = config.get('energy_price_per_kwh', 0.30)
 
                 # Berechne Statistiken (nur Luftentfeuchter, keine Heizung)
                 stats = self.db.get_bathroom_energy_stats(
@@ -5749,16 +6079,12 @@ class WebInterface:
             """API: Live-Preview - Was würde das System jetzt tun?"""
             try:
                 from src.decision_engine.bathroom_automation import BathroomAutomation
-                import json
-                from pathlib import Path
+                from src.utils.sensor_helper import get_bathroom_config
 
-                # Lade Config
-                config_file = Path('data/luftentfeuchten_config.json')
-                if not config_file.exists():
+                # Lade Config aus zentraler Zuordnung
+                config = get_bathroom_config()
+                if not config:
                     return jsonify({'error': 'No configuration found'}), 400
-
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
 
                 # Initialisiere Automation (ohne Speichern)
                 bathroom = BathroomAutomation(config, enable_learning=False)

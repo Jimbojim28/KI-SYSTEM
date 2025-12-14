@@ -46,19 +46,19 @@ class BathroomDataCollector:
         self._load_config()
 
     def _load_config(self):
-        """Lädt die Badezimmer-Konfiguration"""
+        """Lädt die Badezimmer-Konfiguration aus zentraler Sensor-Zuordnung"""
         try:
-            config_file = Path('data/luftentfeuchten_config.json')
-            if config_file.exists():
-                with open(config_file, 'r') as f:
-                    self.config = json.load(f)
-
+            from src.utils.sensor_helper import get_bathroom_config
+            
+            self.config = get_bathroom_config()
+            
+            if self.config:
                 config_hash = hash(json.dumps(self.config, sort_keys=True))
                 if config_hash != self._config_hash:
                     self._config_hash = config_hash
                     self._initialize_automation()
 
-                logger.debug("Bathroom config loaded for data collector")
+                logger.debug("Bathroom config loaded from central mapping for data collector")
             else:
                 logger.warning("No bathroom config found - data collector will wait for configuration")
 

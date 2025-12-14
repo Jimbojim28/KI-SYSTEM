@@ -7,15 +7,26 @@
       "temperature": "a968d981-0e7a-428b-9000-20163d493b1b"
     },
     "badezimmer": {
-      "name": "Badezimmer",
-      "temperature": "40cf21f8-e419-410d-ac7b-28f11de88ba8",
-      "humidity": "40cf21f8-e419-410d-ac7b-28f11de88ba8",
       "co2": "",
       "dehumidifier": "fc3d7dcc-bbc9-45b3-bcf8-2e9fd39d7470",
-      "heater": "78aba55b-98ed-4838-bbff-47527a46d69b",
       "door_sensor": "f35f92a1-fc3a-456e-8d0d-67ddb6118a55",
-      "window_sensor": "cbb061dc-bb29-4ceb-8acd-b234e21b5004",
-      "motion_sensor": "77d4986b-8a6a-4ff6-a064-3ac518c288b4"
+      "heater": "78aba55b-98ed-4838-bbff-47527a46d69b",
+      "humidity": "40cf21f8-e419-410d-ac7b-28f11de88ba8",
+      "motion_sensor": "77d4986b-8a6a-4ff6-a064-3ac518c288b4",
+      "name": "Badezimmer",
+      "temperature": "40cf21f8-e419-410d-ac7b-28f11de88ba8",
+      "window_sensor": "cbb061dc-bb29-4ceb-8acd-b234e21b5004"
+    },
+    "flur": {
+      "co2": "",
+      "dehumidifier": "",
+      "door_sensor": "8e49c6fb-2b27-454c-b1a4-65610a0719c5",
+      "heater": "c56599e4-3314-4195-b15d-22ee37685a7b",
+      "humidity": "c56599e4-3314-4195-b15d-22ee37685a7b",
+      "motion_sensor": "7baeba60-7439-4421-8f8d-641663c69712",
+      "name": "Flur",
+      "temperature": "c56599e4-3314-4195-b15d-22ee37685a7b",
+      "window_sensor": ""
     },
     "k\u00fcche": {
       "co2": "",
@@ -34,26 +45,32 @@
       "door_sensor": "",
       "heater": "6d76d14e-79f1-4401-bb57-8841213a44d8",
       "humidity": "b52f16c5-159d-4394-89e1-129026e5cc45",
-      "motion_sensor": "",
+      "motion_sensor": "af878e77-29b7-4336-848a-2c9c9cc9c847",
       "name": "Wohnzimmer",
       "temperature": "b52f16c5-159d-4394-89e1-129026e5cc45",
-      "window_sensor": ""
+      "window_sensor": "135d6321-590d-4071-88c8-44985927f3aa",
+      "window_sensors": [
+        "135d6321-590d-4071-88c8-44985927f3aa",
+        "e48a9b22-24f7-4f73-9016-3b53944e9d04"
+      ]
     },
-    "flur": {
-      "name": "Flur",
-      "temperature": "c56599e4-3314-4195-b15d-22ee37685a7b",
-      "humidity": "c56599e4-3314-4195-b15d-22ee37685a7b",
+    "schlafzimmer_doppelbett": {
+      "name": "Schlafzimmer (Doppelbett)",
+      "temperature": "",
+      "humidity": "",
       "co2": "",
+      "pm25": "",
       "dehumidifier": "",
-      "heater": "c56599e4-3314-4195-b15d-22ee37685a7b",
-      "door_sensor": "8e49c6fb-2b27-454c-b1a4-65610a0719c5",
+      "heater": "",
+      "door_sensor": "",
+      "window_sensors": [],
       "window_sensor": "",
-      "motion_sensor": "7baeba60-7439-4421-8f8d-641663c69712"
+      "motion_sensor": ""
     }
   },
   "outdoor_sensors": {
-    "humidity": "",
-    "temperature": ""
+    "humidity": "sensor.outdoor_humidity",
+    "temperature": "sensor.outdoor_temperature"
   },
-  "updated_at": "2025-12-13T20:41:32.990957"
+  "updated_at": "2025-12-14T21:08:49.677109"
 }
