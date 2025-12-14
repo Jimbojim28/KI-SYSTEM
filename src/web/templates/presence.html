@@ -670,7 +670,7 @@ function renderTrackingStats(data, period) {
     container.innerHTML = html;
 }
 
-// Anwesenheits-Historie laden
+// Anwesenheits-Historie laden (zeigt Raum-Statistiken)
 async function loadPresenceHistory() {
     const container = document.getElementById('presence-history-container');
     
@@ -678,31 +678,73 @@ async function loadPresenceHistory() {
         const response = await fetch('/api/presence/tracking?type=daily');
         const data = await response.json();
         
-        if (!data.success || !data.events || data.events.length === 0) {
+        if (!data.success || !data.stats || Object.keys(data.stats).length === 0) {
             container.innerHTML = `
                 <div style="text-align: center; padding: 20px; color: #6b7280;">
-                    <p>Keine Bewegungsereignisse für heute.</p>
+                    <p>Keine Tracking-Daten für heute.</p>
                 </div>
             `;
             return;
         }
         
-        const events = data.events.slice(0, 20); // Letzte 20 Events
+        // Sammle alle Raum-Wechsel aus den Statistiken
+        const roomChanges = [];
+        const now = new Date();
+        
+        for (const [entityId, stats] of Object.entries(data.stats)) {
+            const name = stats.name || entityId;
+            const rooms = stats.room_times || {};
+            
+            // Zeige aktuellen Top-Raum als "aktiv"
+            if (stats.top_room) {
+                roomChanges.push({
+                    time: now.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}),
+                    type: 'current',
+                    description: `${name} ist im ${stats.top_room}`,
+                    minutes: stats.top_room_minutes
+                });
+            }
+            
+            // Zeige alle besuchten Räume
+            for (const [room, minutes] of Object.entries(rooms)) {
+                if (room !== stats.top_room && room !== 'not_home' && minutes > 1) {
+                    roomChanges.push({
+                        time: '',
+                        type: 'visited',
+                        description: `${name} war im ${room}`,
+                        minutes: minutes
+                    });
+                }
+            }
+        }
+        
+        // Sortiere nach Minuten (absteigend)
+        roomChanges.sort((a, b) => (b.minutes || 0) - (a.minutes || 0));
+        
+        if (roomChanges.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 20px; color: #6b7280;">
+                    <p>Keine Raum-Wechsel heute aufgezeichnet.</p>
+                </div>
+            `;
+            return;
+        }
         
         container.innerHTML = `
             <div class="presence-timeline">
-                ${events.map(e => `
+                ${roomChanges.slice(0, 20).map(e => `
                     <div class="timeline-entry ${e.type || ''}">
                         <span class="timeline-time">${e.time || ''}</span>
-                        <span class="timeline-icon">${e.type === 'arrived' ? '🏠' : e.type === 'left' ? '🚗' : '📍'}</span>
-                        <span class="timeline-text">${escapeHtml(e.description || e.message || '')}</span>
+                        <span class="timeline-icon">${e.type === 'current' ? '📍' : '🚶'}</span>
+                        <span class="timeline-text">${escapeHtml(e.description)}</span>
+                        ${e.minutes ? `<span style="color: #6b7280; font-size: 12px; margin-left: 8px;">(${formatMinutes(e.minutes)})</span>` : ''}
                     </div>
                 `).join('')}
             </div>
         `;
         
     } catch (error) {
-        container.innerHTML = `<p style="color: #6b7280;">Verlauf nicht verfügbar</p>`;
+        container.innerHTML = `<p style="color: #6b7280;">Verlauf nicht verfügbar: ${error.message}</p>`;
     }
 }
 
