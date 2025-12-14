@@ -319,9 +319,15 @@ class NotificationScheduler:
         try:
             weather_collector = WeatherCollector()
             
+            # Prüfe ob API-Key konfiguriert ist
+            if not weather_collector.api_key or weather_collector.api_key == 'YOUR_OPENWEATHERMAP_API_KEY':
+                logger.info("⚠️ OpenWeatherMap API-Key nicht konfiguriert - keine Wettervorhersage")
+                return
+            
             # Aktuelle Wetterdaten
             current_weather = weather_collector.get_openweathermap_data()
             if current_weather:
+                logger.debug(f"Current weather: {current_weather}")
                 # Wetter-Beschreibung von der API nutzen (statt nur Temperatur-basiert)
                 if current_weather.get('weather_description'):
                     context['weather'] = current_weather['weather_description']
@@ -436,6 +442,13 @@ class NotificationScheduler:
         
         try:
             context = self._collect_morning_data()
+            
+            # Debug: Zeige gesammelte Daten
+            logger.info(f"📊 Morning data collected: indoor={context.get('avg_indoor_temp')}°C, "
+                       f"outdoor={context.get('outdoor_temp')}°C, "
+                       f"forecast={context.get('forecast_description')}, "
+                       f"rain={context.get('rain_probability')}%")
+            
             service = self._get_notification_service()
             style = config.get('chatgpt_style', 'freundlich')
             
