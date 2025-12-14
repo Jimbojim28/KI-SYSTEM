@@ -1044,9 +1044,9 @@ class VentilationNotifier:
                         }
                 
                 # 2. Heizkörper-Ventil (valve_position > 0%)
-                if 'valve_position' in caps or 'windowcoverings_set' in caps:
-                    valve_cap = 'valve_position' if 'valve_position' in caps else 'windowcoverings_set'
-                    valve_pos = caps[valve_cap].get('value', 0)
+                # WICHTIG: NUR valve_position prüfen, NICHT windowcoverings_set (das sind Rollläden!)
+                if 'valve_position' in caps:
+                    valve_pos = caps['valve_position'].get('value', 0)
                     
                     # Ventil ist offen wenn Position > 10%
                     if valve_pos and valve_pos > 0.1:  # > 10%
