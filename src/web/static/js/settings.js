@@ -32,6 +32,8 @@ function initTabs() {
                 loadVersion();
             } else if (targetTab === 'notifications') {
                 loadNotificationConfig();
+                loadPresenceLeaveConfig();
+                checkPresenceLeaveStatus();
             } else if (targetTab === 'ha-devices') {
                 loadHAEntities();
                 loadHAConnectionStatus();
@@ -2251,6 +2253,13 @@ function initNotificationsTab() {
     
     // Save Notifications Button
     document.getElementById('save-notifications')?.addEventListener('click', saveNotificationConfig);
+    
+    // Presence Leave Notification Buttons
+    document.getElementById('test-presence-leave')?.addEventListener('click', testPresenceLeaveNotification);
+    document.getElementById('check-presence-leave-status')?.addEventListener('click', checkPresenceLeaveStatus);
+    
+    // Lade Presence Leave Config
+    loadPresenceLeaveConfig();
 }
 
 async function testMorningSummary() {
@@ -2532,6 +2541,9 @@ async function saveNotificationConfig() {
         const data = await response.json();
         
         if (data.success) {
+            // Auch Presence Leave Config speichern
+            await savePresenceLeaveConfig();
+            
             resultEl.textContent = '✅ Konfiguration gespeichert!';
             resultEl.className = 'action-result success';
             
@@ -3165,6 +3177,139 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+
+// ===== PRESENCE LEAVE NOTIFICATION FUNCTIONS =====
+
+async function loadPresenceLeaveConfig() {
+    try {
+        const response = await fetch('/api/automations/presence-leave-notifier/status');
+        const data = await response.json();
+        
+        if (data.success && data.status) {
+            const status = data.status;
+            
+            // Lade auch Config
+            const configResponse = await fetch('/api/automations/presence-leave-config');
+            const configData = await configResponse.json();
+            
+            if (configData.success && configData.config) {
+                const config = configData.config;
+                
+                document.getElementById('presence-leave-enabled').checked = config.enabled !== false;
+                document.getElementById('presence-leave-windows').checked = config.notify_windows !== false;
+                document.getElementById('presence-leave-lights').checked = config.notify_lights !== false;
+                document.getElementById('presence-leave-chatgpt').checked = config.use_chatgpt !== false;
+                document.getElementById('presence-leave-cooldown').value = config.cooldown_minutes || 5;
+            }
+            
+            // Zeige Status
+            const statusEl = document.getElementById('presence-leave-status');
+            if (status.running) {
+                statusEl.innerHTML = `✅ Notifier aktiv | Zuletzt: ${status.last_anyone_home ? 'Anwesend' : 'Abwesend'}`;
+                statusEl.style.background = '#d1fae5';
+                statusEl.style.color = '#065f46';
+                statusEl.style.display = 'block';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading presence leave config:', error);
+    }
+}
+
+async function testPresenceLeaveNotification() {
+    const statusEl = document.getElementById('presence-leave-status');
+    statusEl.innerHTML = '⏳ Sende Test-Benachrichtigung...';
+    statusEl.style.background = '#e0f2fe';
+    statusEl.style.color = '#0369a1';
+    statusEl.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/automations/presence-leave-notifier/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            statusEl.innerHTML = '✅ Test-Benachrichtigung gesendet! Prüfe dein Smartphone.';
+            statusEl.style.background = '#d1fae5';
+            statusEl.style.color = '#065f46';
+        } else {
+            statusEl.innerHTML = `❌ Fehler: ${data.error || data.message}`;
+            statusEl.style.background = '#fee2e2';
+            statusEl.style.color = '#991b1b';
+        }
+    } catch (error) {
+        statusEl.innerHTML = `❌ Fehler: ${error.message}`;
+        statusEl.style.background = '#fee2e2';
+        statusEl.style.color = '#991b1b';
+    }
+}
+
+async function checkPresenceLeaveStatus() {
+    const statusEl = document.getElementById('presence-leave-status');
+    statusEl.innerHTML = '⏳ Prüfe Status...';
+    statusEl.style.background = '#e0f2fe';
+    statusEl.style.color = '#0369a1';
+    statusEl.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/automations/presence-leave-notifier/status');
+        const data = await response.json();
+        
+        if (data.success && data.status) {
+            const status = data.status;
+            const lastNotif = status.last_notification ? new Date(status.last_notification).toLocaleString('de-DE') : 'Nie';
+            
+            statusEl.innerHTML = `
+                <div style="display: grid; gap: 8px;">
+                    <div><strong>Status:</strong> ${status.running ? '✅ Aktiv' : '❌ Inaktiv'}</div>
+                    <div><strong>Aktiviert:</strong> ${status.enabled ? 'Ja' : 'Nein'}</div>
+                    <div><strong>Aktuell zuhause:</strong> ${status.last_anyone_home ? 'Ja' : 'Nein'}</div>
+                    <div><strong>Letzte Benachrichtigung:</strong> ${lastNotif}</div>
+                    <div><strong>Prüfintervall:</strong> ${status.check_interval}s</div>
+                    <div><strong>Cooldown:</strong> ${status.cooldown_minutes} Min.</div>
+                </div>
+            `;
+            statusEl.style.background = '#f0fdf4';
+            statusEl.style.color = '#166534';
+        } else {
+            statusEl.innerHTML = `❌ ${data.error || 'Notifier nicht verfügbar'}`;
+            statusEl.style.background = '#fee2e2';
+            statusEl.style.color = '#991b1b';
+        }
+    } catch (error) {
+        statusEl.innerHTML = `❌ Fehler: ${error.message}`;
+        statusEl.style.background = '#fee2e2';
+        statusEl.style.color = '#991b1b';
+    }
+}
+
+async function savePresenceLeaveConfig() {
+    const config = {
+        enabled: document.getElementById('presence-leave-enabled').checked,
+        notify_windows: document.getElementById('presence-leave-windows').checked,
+        notify_lights: document.getElementById('presence-leave-lights').checked,
+        use_chatgpt: document.getElementById('presence-leave-chatgpt').checked,
+        cooldown_minutes: parseInt(document.getElementById('presence-leave-cooldown').value) || 5
+    };
+    
+    try {
+        const response = await fetch('/api/automations/presence-leave-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await response.json();
+        return data.success;
+    } catch (error) {
+        console.error('Error saving presence leave config:', error);
+        return false;
+    }
 }
 
 // Initialisiere beim Laden

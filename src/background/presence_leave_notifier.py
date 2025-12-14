@@ -270,12 +270,107 @@ class PresenceLeaveNotifier:
                 message_parts.append("✅ <b>Alle Lichter aus</b>")
         
         # Status-Zusammenfassung
-        if not lights_on and not open_windows:
+        all_ok = not lights_on and not open_windows
+        if all_ok:
             message_parts.append("\n✨ <b>Alles in Ordnung!</b>")
+        
+        # ChatGPT Kommentar hinzufügen wenn aktiviert
+        if self.config.get('use_chatgpt', True):
+            chatgpt_comment = self._get_chatgpt_comment(lights_on, open_windows, tilted_windows, all_ok)
+            if chatgpt_comment:
+                message_parts.append(f"\n💬 <i>{chatgpt_comment}</i>")
         
         message = '\n\n'.join(message_parts)
         
         return title, message
+    
+    def _get_chatgpt_comment(self, lights_on: list, open_windows: list, tilted_windows: list, all_ok: bool) -> Optional[str]:
+        """Generiert einen kurzen ChatGPT-Kommentar basierend auf dem Status"""
+        try:
+            # Hole OpenAI Config
+            config_path = Path('config/config.yaml')
+            if not config_path.exists():
+                return None
+            
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+            
+            notifications = full_config.get('notifications', {})
+            openai_config = notifications.get('openai', {})
+            
+            if not openai_config.get('enabled'):
+                return None
+            
+            api_key = openai_config.get('api_key', '')
+            if not api_key or api_key == '***':
+                return None
+            
+            model = openai_config.get('model', 'gpt-4o-mini')
+            style = notifications.get('chatgpt_style', 'freundlich')
+            max_length = notifications.get('max_text_length', 100)
+            custom_prompt = notifications.get('custom_prompt', '')
+            
+            # Baue Kontext
+            context_parts = []
+            if all_ok:
+                context_parts.append("Alles ist in Ordnung - alle Fenster zu und Lichter aus.")
+            else:
+                if lights_on:
+                    context_parts.append(f"{len(lights_on)} Licht(er) noch an: {', '.join([l['name'] for l in lights_on[:3]])}")
+                if open_windows:
+                    context_parts.append(f"{len(open_windows)} Fenster offen: {', '.join([w['name'] for w in open_windows[:3]])}")
+                if tilted_windows:
+                    context_parts.append(f"{len(tilted_windows)} Fenster gekippt: {', '.join([w['name'] for w in tilted_windows[:3]])}")
+            
+            context = ' '.join(context_parts)
+            
+            # Baue Prompt
+            style_hints = {
+                'freundlich': 'Sei freundlich und warm.',
+                'kurz': 'Sei sehr kurz und direkt.',
+                'technisch': 'Sei sachlich und präzise.',
+                'witzig': 'Sei humorvoll und locker.'
+            }
+            
+            prompt = f"""Du bist ein Smart Home Assistent. Der Benutzer hat gerade das Haus verlassen.
+Status: {context}
+
+Schreibe einen SEHR kurzen Kommentar (max {max_length} Zeichen). 
+{style_hints.get(style, '')}
+{custom_prompt}
+
+Antworte NUR mit dem Kommentar, keine Anführungszeichen, kein "Hier ist..." etc."""
+
+            # API Call
+            response = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json'
+                },
+                json={
+                    'model': model,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'max_tokens': 100,
+                    'temperature': 0.7
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                comment = data['choices'][0]['message']['content'].strip()
+                # Kürze auf max_length
+                if len(comment) > max_length:
+                    comment = comment[:max_length-3] + '...'
+                return comment
+            else:
+                logger.debug(f"ChatGPT API error: {response.text}")
+                
+        except Exception as e:
+            logger.debug(f"Error getting ChatGPT comment: {e}")
+        
+        return None
     
     def _send_notification(self, title: str, message: str) -> bool:
         """Sendet Pushover-Benachrichtigung"""

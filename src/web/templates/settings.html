@@ -1026,6 +1026,59 @@
             </form>
         </div>
 
+        <!-- Abwesenheits-Benachrichtigung (Presence Leave) -->
+        <div class="card settings-card">
+            <h3>🚪 Abwesenheits-Benachrichtigung</h3>
+            <p class="card-description">
+                Erhalte eine Benachrichtigung wenn die letzte Person das Haus verlässt - mit Status von Fenstern und Lichtern.
+            </p>
+            <form class="settings-form">
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                        <input type="checkbox" id="presence-leave-enabled" checked>
+                        📲 Benachrichtigung beim Verlassen aktivieren
+                    </label>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                            <input type="checkbox" id="presence-leave-windows" checked>
+                            🪟 Fenster-Status anzeigen
+                        </label>
+                        <small style="display: block; margin-left: 28px; color: #666;">Offene und gekippte Fenster auflisten</small>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                            <input type="checkbox" id="presence-leave-lights" checked>
+                            💡 Lichter-Status anzeigen
+                        </label>
+                        <small style="display: block; margin-left: 28px; color: #666;">Eingeschaltete Lichter auflisten</small>
+                    </div>
+                    <div class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                            <input type="checkbox" id="presence-leave-chatgpt" checked>
+                            🤖 ChatGPT-Kommentar hinzufügen
+                        </label>
+                        <small style="display: block; margin-left: 28px; color: #666;">Kurzer, freundlicher Text basierend auf Status</small>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label style="font-size: 1rem; display: flex; align-items: center; gap: 10px;">
+                        Cooldown: 
+                        <input type="number" id="presence-leave-cooldown" value="5" min="1" max="60" 
+                               style="width: 120px; padding: 12px 16px; font-size: 1.1rem; border: 1px solid #d1d5db; border-radius: 8px;">
+                        Minuten
+                    </label>
+                    <small style="display: block; margin-top: 5px; color: #666;">Verhindert mehrfache Benachrichtigungen bei kurzer Abwesenheit</small>
+                </div>
+                <div id="presence-leave-status" style="margin-top: 15px; padding: 10px; border-radius: 6px; display: none;"></div>
+            </form>
+            <div class="action-buttons" style="margin-top: 15px; display: flex; gap: 10px;">
+                <button class="btn btn-secondary" id="test-presence-leave">🧪 Test-Benachrichtigung senden</button>
+                <button class="btn btn-secondary" id="check-presence-leave-status">📊 Status prüfen</button>
+            </div>
+        </div>
+
         <!-- Test & Speichern -->
         <div class="card settings-card">
             <h3>🧪 Testen & Speichern</h3>

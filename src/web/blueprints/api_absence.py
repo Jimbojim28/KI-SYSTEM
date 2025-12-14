@@ -399,6 +399,91 @@ def init_absence_blueprint(engine, db, config):
             logger.error(f"Error triggering absence check: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
+    @absence_bp.route('/presence-leave-config', methods=['GET'])
+    def get_presence_leave_config():
+        """Hole Presence Leave Notification Konfiguration"""
+        try:
+            config_path = Path('config/config.yaml')
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    full_config = yaml.safe_load(f) or {}
+                    leave_config = full_config.get('presence_leave_notification', {})
+                    
+                    return jsonify({
+                        'success': True,
+                        'config': {
+                            'enabled': leave_config.get('enabled', True),
+                            'notify_windows': leave_config.get('notify_windows', True),
+                            'notify_lights': leave_config.get('notify_lights', True),
+                            'use_chatgpt': leave_config.get('use_chatgpt', True),
+                            'cooldown_minutes': leave_config.get('cooldown_minutes', 5),
+                            'check_interval': leave_config.get('check_interval', 30)
+                        }
+                    })
+            
+            return jsonify({
+                'success': True,
+                'config': {
+                    'enabled': True,
+                    'notify_windows': True,
+                    'notify_lights': True,
+                    'use_chatgpt': True,
+                    'cooldown_minutes': 5,
+                    'check_interval': 30
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting presence leave config: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @absence_bp.route('/presence-leave-config', methods=['POST'])
+    def save_presence_leave_config():
+        """Speichere Presence Leave Notification Konfiguration"""
+        try:
+            data = request.get_json()
+            
+            config_path = Path('config/config.yaml')
+            
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    full_config = yaml.safe_load(f) or {}
+            else:
+                full_config = {}
+            
+            # Update config
+            full_config['presence_leave_notification'] = {
+                'enabled': data.get('enabled', True),
+                'notify_windows': data.get('notify_windows', True),
+                'notify_lights': data.get('notify_lights', True),
+                'use_chatgpt': data.get('use_chatgpt', True),
+                'cooldown_minutes': data.get('cooldown_minutes', 5),
+                'check_interval': data.get('check_interval', 30)
+            }
+            
+            # Speichern
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, 'w') as f:
+                yaml.dump(full_config, f, default_flow_style=False, allow_unicode=True)
+            
+            # Update Notifier wenn vorhanden
+            try:
+                from src.background.presence_leave_notifier import get_presence_leave_notifier
+                notifier = get_presence_leave_notifier()
+                if notifier:
+                    notifier.config = full_config['presence_leave_notification']
+            except:
+                pass
+            
+            return jsonify({
+                'success': True,
+                'message': 'Konfiguration gespeichert'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error saving presence leave config: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
     @absence_bp.route('/presence-leave-notifier/status', methods=['GET'])
     def get_presence_leave_status():
         """Hole Status des Presence Leave Notifiers"""
