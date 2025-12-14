@@ -130,7 +130,15 @@ class ChristmasLightsController:
         return self.config.copy()
     
     def get_device_state(self, device_id: str) -> Optional[bool]:
-        """Öffentliche Methode: Gibt den aktuellen Status eines Geräts zurück"""
+        """Öffentliche Methode: Gibt den aktuellen Status eines Geräts zurück.
+        Fragt zuerst den echten Status von Homey ab, dann Fallback auf Cache."""
+        # Versuche echten Status von Homey zu holen
+        real_state = self._get_device_state(device_id)
+        if real_state is not None:
+            # Update cache mit echtem Status
+            self._device_states[device_id] = real_state
+            return real_state
+        # Fallback auf Cache
         return self._device_states.get(device_id)
     
     def get_all_device_states(self) -> Dict[str, bool]:
@@ -424,14 +432,26 @@ class ChristmasLightsController:
             return self._device_states.get(device_id)
             
         try:
-            # Versuche Status direkt abzufragen
-            if hasattr(self.platform, 'get_state'):
-                state = self.platform.get_state(device_id)
-                if state:
-                    # Prüfe onoff capability
-                    caps = state.get('attributes', {}).get('capabilities', {})
-                    if 'onoff' in caps:
-                        return caps['onoff'].get('value')
+            # Hole alle Geräte-Status
+            all_states = self.platform.get_states() or {}
+            
+            # get_states kann Dict oder Liste sein
+            if isinstance(all_states, dict):
+                device = all_states.get(device_id, {})
+            else:
+                device = next((d for d in all_states if d.get('id') == device_id), None)
+            
+            if device:
+                # Prüfe capabilitiesObj (Homey-Struktur)
+                caps_obj = device.get('capabilitiesObj', {})
+                if 'onoff' in caps_obj:
+                    return caps_obj['onoff'].get('value', False)
+                
+                # Fallback: attributes.capabilities
+                attrs = device.get('attributes', {})
+                caps = attrs.get('capabilities', {})
+                if isinstance(caps, dict) and 'onoff' in caps:
+                    return caps['onoff'].get('value', False)
             
             # Fallback auf Cache
             return self._device_states.get(device_id)

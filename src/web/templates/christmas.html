@@ -730,11 +730,15 @@ async function loadChristmasDevices() {
     container.innerHTML = '<p class="loading">🔄 Lade Geräte...</p>';
     
     try {
-        const response = await fetch('/api/christmas/devices');
+        // Cache-Buster hinzufügen für frische Daten
+        const response = await fetch('/api/christmas/devices?t=' + Date.now());
         const data = await response.json();
         const devices = data.devices || [];
         const christmasZoneId = data.christmas_zone_id;
         const christmasZoneDevices = data.christmas_zone_devices || [];
+        
+        // Debug: Status in Console loggen
+        console.log('🎄 Geräte geladen:', devices.map(d => `${d.name}: ${d.is_on ? 'AN' : 'AUS'}`));
         
         // Speichere alle Geräte für späteren Zugriff
         allChristmasDevices = devices;
