@@ -209,9 +209,30 @@ class ChristmasLightsController:
             return
         
         self.running = True
+        
+        # Initialisiere Gerätezustände beim Start, um Benachrichtigungs-Spam zu vermeiden
+        self._initialize_device_states()
+        
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         logger.info("Christmas Lights Controller started")
+    
+    def _initialize_device_states(self):
+        """Initialisiert die Gerätezustände von der Plattform"""
+        devices = self.config.get('devices', [])
+        if not devices or not self.platform:
+            return
+        
+        try:
+            all_states = self.platform.get_states() or {}
+            for device_id in devices:
+                state = self._get_device_state(device_id)
+                if state is not None:
+                    self._device_states[device_id] = state
+                    device_label = self._get_device_label(device_id)
+                    logger.debug(f"🎄 Initialized {device_label}: {'ON' if state else 'OFF'}")
+        except Exception as e:
+            logger.warning(f"Could not initialize device states: {e}")
     
     def stop(self):
         """Stoppt den Background-Thread"""
@@ -313,8 +334,8 @@ class ChristmasLightsController:
                 # Über Mitternacht: z.B. 16:00 - 00:30
                 should_be_on = current_time >= on_time or current_time <= off_time
             
-            # Log die Entscheidung
-            device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
+            # Hole den Gerätenamen (aus Plattform oder Config)
+            device_label = self._get_device_label(device_id)
             
             # Prüfe individuelle Anwesenheitssteuerung für dieses Gerät
             device_has_presence_control = device_id in presence_devices
@@ -326,19 +347,24 @@ class ChristmasLightsController:
                 logger.debug(f"🎄 {device_label}: on={on_time}, off={off_time}, now={current_time}, should_be_on={should_be_on}")
             
             # Track state changes for notifications
+            # was_on kann None (unbekannt), True oder False sein
             was_on = self._device_states.get(device_id)
             
             if should_be_on:
                 any_on = True
                 # Schalte dieses Gerät ein (falls nicht schon an)
                 self._turn_device_on(device_id)
-                if was_on != True:
+                # Nur benachrichtigen wenn Status sich wirklich ändert (was_on war explizit False)
+                # Bei None (unbekannt) keine Benachrichtigung - vermeidet Spam beim Start
+                if was_on is False:
                     turned_on_count += 1
                     turned_on_names.append(device_label)
             else:
                 # Schalte dieses Gerät aus (falls nicht schon aus)
                 self._turn_device_off(device_id)
-                if was_on != False:
+                # Nur benachrichtigen wenn Status sich wirklich ändert (was_on war explizit True)
+                # Bei None (unbekannt) keine Benachrichtigung - vermeidet Spam beim Start
+                if was_on is True:
                     turned_off_count += 1
                     turned_off_names.append(device_label)
         
@@ -462,6 +488,40 @@ class ChristmasLightsController:
             logger.debug(f"Error getting device state for {device_id}: {e}")
             return self._device_states.get(device_id)
 
+    def _get_device_label(self, device_id: str) -> str:
+        """Ermittelt den Namen eines Geräts - priorisiert user-definierte Labels"""
+        # 1. Prüfe ob ein benutzerdefinierter Name konfiguriert ist
+        user_label = self.config.get('device_labels', {}).get(device_id)
+        if user_label:
+            return user_label
+        
+        # 2. Versuche den Namen von der Plattform zu holen
+        if self.platform:
+            try:
+                all_states = self.platform.get_states() or {}
+                
+                if isinstance(all_states, dict):
+                    device = all_states.get(device_id, {})
+                else:
+                    device = next((d for d in all_states if d.get('id') == device_id), None)
+                
+                if device:
+                    # Homey verwendet 'name' direkt
+                    name = device.get('name')
+                    if name:
+                        return name
+                    
+                    # Home Assistant hat oft friendly_name in attributes
+                    attrs = device.get('attributes', {})
+                    friendly_name = attrs.get('friendly_name')
+                    if friendly_name:
+                        return friendly_name
+            except Exception as e:
+                logger.debug(f"Error getting device name for {device_id}: {e}")
+        
+        # 3. Fallback: gekürzte Device-ID (etwas länger für bessere Lesbarkeit)
+        return device_id[:12] if len(device_id) > 12 else device_id
+
     def _turn_device_on(self, device_id: str):
         """Schaltet ein einzelnes Gerät ein (nur wenn nicht schon an)"""
         # Prüfe echten Status
@@ -476,7 +536,7 @@ class ChristmasLightsController:
             if self.platform:
                 self.platform.turn_on(device_id)
                 self._device_states[device_id] = True
-                device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
+                device_label = self._get_device_label(device_id)
                 logger.info(f"🎄 Christmas ON: {device_label}")
         except Exception as e:
             logger.error(f"Error turning on christmas device {device_id}: {e}")
@@ -495,7 +555,7 @@ class ChristmasLightsController:
             if self.platform:
                 self.platform.turn_off(device_id)
                 self._device_states[device_id] = False
-                device_label = self.config.get('device_labels', {}).get(device_id, device_id[:8])
+                device_label = self._get_device_label(device_id)
                 logger.info(f"🎄 Christmas OFF: {device_label}")
         except Exception as e:
             logger.error(f"Error turning off christmas device {device_id}: {e}")
