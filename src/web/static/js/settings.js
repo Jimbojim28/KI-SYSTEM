@@ -2325,6 +2325,7 @@ async function loadNotificationConfig() {
                 
                 document.getElementById('event-temperature').checked = config.events.temperature_alert?.enabled ?? true;
                 document.getElementById('event-temp-deviation').value = config.events.temperature_alert?.threshold_deviation || 3;
+                document.getElementById('event-temp-excluded-rooms').value = (config.events.temperature_alert?.excluded_rooms || ['Heim', 'Garage', 'Keller', 'Dachboden', 'Abstellraum']).join(', ');
                 
                 document.getElementById('event-humidity').checked = config.events.humidity_alert?.enabled ?? true;
                 
@@ -2510,7 +2511,11 @@ async function saveNotificationConfig() {
                 },
                 temperature_alert: {
                     enabled: document.getElementById('event-temperature').checked,
-                    threshold_deviation: parseFloat(document.getElementById('event-temp-deviation').value)
+                    threshold_deviation: parseFloat(document.getElementById('event-temp-deviation').value),
+                    excluded_rooms: document.getElementById('event-temp-excluded-rooms').value
+                        .split(',')
+                        .map(r => r.trim())
+                        .filter(r => r.length > 0)
                 },
                 humidity_alert: {
                     enabled: document.getElementById('event-humidity').checked

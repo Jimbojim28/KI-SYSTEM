@@ -152,6 +152,9 @@ class VentilationNotifier:
                             config['temperature_alert'] = events['temperature_alert'].get('enabled', True)
                             if events['temperature_alert'].get('threshold_deviation'):
                                 config['temperature_threshold_deviation'] = events['temperature_alert']['threshold_deviation']
+                            # Ausgeschlossene Räume für Temperaturwarnungen
+                            if events['temperature_alert'].get('excluded_rooms'):
+                                config['temperature_excluded_rooms'] = events['temperature_alert']['excluded_rooms']
                         
             except Exception as e:
                 logger.debug(f"Could not load frontend events config: {e}")
@@ -743,8 +746,19 @@ class VentilationNotifier:
             # === Temperaturwarnung (zu große Abweichung) ===
             if config.get('temperature_alert'):
                 threshold_deviation = config.get('temperature_threshold_deviation', 3)
-                # Liste von Räumen die nicht überwacht werden sollen (z.B. Außenbereich, Nebenräume)
-                excluded_rooms = ['heim', 'home', 'outside', 'außen', 'draußen', 'aussen', 'garage', 'keller', 'dachboden', 'abstellraum']
+                
+                # Liste von ausgeschlossenen Räumen aus Einstellungen laden
+                # Fallback auf Standard-Liste wenn nicht konfiguriert
+                default_excluded = ['heim', 'home', 'outside', 'außen', 'draußen', 'aussen', 'garage', 'keller', 'dachboden', 'abstellraum']
+                configured_excluded = config.get('temperature_excluded_rooms', [])
+                
+                # Wenn konfigurierte Liste vorhanden, diese verwenden (lowercase)
+                if configured_excluded:
+                    excluded_rooms = [r.lower().strip() for r in configured_excluded if r.strip()]
+                else:
+                    excluded_rooms = default_excluded
+                
+                logger.debug(f"Temperature alert excluded rooms: {excluded_rooms}")
                 
                 # Lade auch Räume mit deaktivierten Sensoren aus dem Mapping
                 mapping = self._load_sensor_mapping()
