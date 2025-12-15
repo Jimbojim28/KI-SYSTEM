@@ -579,7 +579,11 @@ class ChristmasLightsController:
                 # Dadurch werden ALLE Geräte nicht vom Scheduler ausgeschaltet
                 now = get_local_time()
                 off_time = self._get_device_off_time(now, {})
+                
+                # Erstelle timezone-aware datetime für Override
                 override_until = datetime.combine(now.date(), off_time)
+                if TIMEZONE:
+                    override_until = override_until.replace(tzinfo=TIMEZONE)
                 
                 # Falls Ausschaltzeit schon vorbei ist
                 if override_until <= now:
@@ -589,6 +593,8 @@ class ChristmasLightsController:
                         override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
                     else:
                         override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
+                    if TIMEZONE:
+                        override_until = override_until.replace(tzinfo=TIMEZONE)
                 
                 self._manual_override_until = override_until
                 self._manual_override_keep_on = True
@@ -719,9 +725,13 @@ class ChristmasLightsController:
             off_time = self._get_device_off_time(now, {})
             # Override bis zur Ausschaltzeit + 1 Minute (damit der nächste Zyklus normal startet)
             override_until = datetime.combine(now.date(), off_time) + timedelta(minutes=1)
+            if TIMEZONE:
+                override_until = override_until.replace(tzinfo=TIMEZONE)
             # Falls Ausschaltzeit schon vorbei ist, Override bis morgen früh
             if override_until <= now:
                 override_until = datetime.combine(now.date() + timedelta(days=1), datetime.strptime('06:00', '%H:%M').time())
+                if TIMEZONE:
+                    override_until = override_until.replace(tzinfo=TIMEZONE)
             self._manual_override_until = override_until
             self._manual_override_keep_on = False  # Lichter sollen AUS bleiben
             logger.info(f"🎄 Manual OFF override set until {override_until.strftime('%H:%M')}")
@@ -737,6 +747,8 @@ class ChristmasLightsController:
             now = get_local_time()
             off_time = self._get_device_off_time(now, {})
             override_until = datetime.combine(now.date(), off_time)
+            if TIMEZONE:
+                override_until = override_until.replace(tzinfo=TIMEZONE)
             
             # Falls Ausschaltzeit schon vorbei ist (z.B. nach 23:00), bis morgen
             if override_until <= now:
@@ -748,6 +760,8 @@ class ChristmasLightsController:
                 else:
                     # Reguläre Ausschaltzeit morgen
                     override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
+                if TIMEZONE:
+                    override_until = override_until.replace(tzinfo=TIMEZONE)
             
             self._manual_override_until = override_until
             self._manual_override_keep_on = True  # Lichter sollen AN bleiben
