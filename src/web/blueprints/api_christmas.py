@@ -184,7 +184,7 @@ def test_christmas_lights():
 
 @christmas_bp.route('/toggle-device', methods=['POST'])
 def toggle_single_device():
-    """Schaltet ein einzelnes Gerät ein oder aus"""
+    """Schaltet ein einzelnes Gerät ein oder aus (mit Manual Override bei AN)"""
     try:
         data = request.get_json() or {}
         device_id = data.get('device_id')
@@ -196,20 +196,34 @@ def toggle_single_device():
                 'error': 'device_id required'
             }), 400
         
-        if _engine and _engine.platform:
+        # Bevorzugt den Controller verwenden (setzt auch Manual Override)
+        if _christmas_controller:
+            success = _christmas_controller.toggle_single_device_manual(device_id, turn_on)
+            if success:
+                return jsonify({
+                    'success': True,
+                    'device_id': device_id,
+                    'turned_on': turn_on,
+                    'manual_override': turn_on  # Override nur bei AN
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to toggle device'
+                }), 500
+        
+        # Fallback: Direkt über Platform (kein Override)
+        elif _engine and _engine.platform:
             if turn_on:
                 _engine.platform.turn_on(device_id)
             else:
                 _engine.platform.turn_off(device_id)
             
-            # Update den Controller-Status damit die UI den richtigen Status zeigt
-            if _christmas_controller:
-                _christmas_controller._device_states[device_id] = turn_on
-            
             return jsonify({
                 'success': True,
                 'device_id': device_id,
-                'turned_on': turn_on
+                'turned_on': turn_on,
+                'manual_override': False
             })
         else:
             return jsonify({
