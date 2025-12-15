@@ -743,14 +743,30 @@ class VentilationNotifier:
             # === Temperaturwarnung (zu große Abweichung) ===
             if config.get('temperature_alert'):
                 threshold_deviation = config.get('temperature_threshold_deviation', 3)
-                # Liste von Räumen die nicht überwacht werden sollen (z.B. Außenbereich)
-                excluded_rooms = ['heim', 'home', 'outside', 'außen', 'draußen', 'aussen']
+                # Liste von Räumen die nicht überwacht werden sollen (z.B. Außenbereich, Nebenräume)
+                excluded_rooms = ['heim', 'home', 'outside', 'außen', 'draußen', 'aussen', 'garage', 'keller', 'dachboden', 'abstellraum']
+                
+                # Lade auch Räume mit deaktivierten Sensoren aus dem Mapping
+                mapping = self._load_sensor_mapping()
+                room_mapping = mapping.get('rooms', {})
+                disabled_rooms = set()
+                for room_id, sensors in room_mapping.items():
+                    temp_sensor = sensors.get('temperature', '')
+                    if temp_sensor == 'none':
+                        disabled_rooms.add(room_id.lower())
+                        # Auch den Display-Namen hinzufügen
+                        disabled_rooms.add(room_id.lower().replace('_', ' '))
                 
                 for room, data in room_data.items():
                     # Überspringe Räume die keine echten Wohnräume sind
                     room_lower = room.lower()
                     if any(excl in room_lower for excl in excluded_rooms):
                         logger.debug(f"Skipping temperature alert for '{room}' (excluded room)")
+                        continue
+                    
+                    # Überspringe Räume mit explizit deaktivierten Temperatursensoren
+                    if room_lower in disabled_rooms or room_lower.replace(' ', '_') in disabled_rooms:
+                        logger.debug(f"Skipping temperature alert for '{room}' (sensor disabled)")
                         continue
                     
                     temp = data.get('temp')
