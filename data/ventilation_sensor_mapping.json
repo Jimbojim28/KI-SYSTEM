@@ -28,7 +28,19 @@
       "temperature": "c56599e4-3314-4195-b15d-22ee37685a7b",
       "window_sensor": ""
     },
-    "k\u00fcche": {
+    "garage": {
+      "name": "Garage",
+      "temperature": "none",
+      "humidity": "none",
+      "co2": "",
+      "pm25": "",
+      "dehumidifier": "",
+      "heater": "",
+      "door_sensor": "",
+      "window_sensor": "",
+      "motion_sensor": ""
+    },
+    "küche": {
       "co2": "",
       "dehumidifier": "",
       "door_sensor": "",

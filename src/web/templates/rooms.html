@@ -172,6 +172,7 @@
                 <label>Temperatursensor:</label>
                 <select id="edit-temp-sensor">
                     <option value="">-- Automatisch --</option>
+                    <option value="none">❌ Kein Sensor (keine Benachrichtigungen)</option>
                 </select>
                 <small id="edit-temp-preview" class="sensor-preview"></small>
             </div>
@@ -180,6 +181,7 @@
                 <label>Feuchtigkeitssensor:</label>
                 <select id="edit-humidity-sensor">
                     <option value="">-- Automatisch --</option>
+                    <option value="none">❌ Kein Sensor (keine Benachrichtigungen)</option>
                 </select>
                 <small id="edit-humidity-preview" class="sensor-preview"></small>
             </div>
@@ -2067,6 +2069,10 @@ function openRoomModal(room) {
     
     tempSelect.innerHTML = buildGroupedOptions(tempSensorsThisRoom, tempSensorsOther, 'temperature', config.temperature, '-- Automatisch --', true);
     humiditySelect.innerHTML = buildGroupedOptions(humiditySensorsThisRoom, humiditySensorsOther, 'humidity', config.humidity, '-- Automatisch --', true);
+    
+    // Debug: Zeige gespeicherte Werte
+    console.log(`Room ${room} (${roomId}): temp=${config.temperature}, humidity=${config.humidity}`);
+    
     co2Select.innerHTML = buildGroupedOptions(co2SensorsThisRoom, co2SensorsOther, 'co2', config.co2, '-- Kein CO₂ --');
     pm25Select.innerHTML = buildGroupedOptions(pm25SensorsThisRoom, pm25SensorsOther, 'pm25', config.pm25, '-- Kein PM2.5 --');
     
