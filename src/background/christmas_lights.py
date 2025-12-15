@@ -89,6 +89,9 @@ class ChristmasLightsController:
         self._manual_override_until: Optional[datetime] = None
         self._manual_override_keep_on: bool = False  # True = AN halten, False = AUS halten
         
+        # Geräte-spezifische Overrides: {device_id: {'until': datetime, 'keep_on': bool}}
+        self._device_overrides: Dict[str, dict] = {}
+        
         # Notification cooldown (verhindert Spam)
         self._last_notification_time: Optional[datetime] = None
         
@@ -317,6 +320,31 @@ class ChristmasLightsController:
         turned_off_names = []
         
         for device_id in devices:
+            # Prüfe zuerst geräte-spezifischen Override
+            device_override = self._device_overrides.get(device_id)
+            if device_override:
+                if now < device_override['until']:
+                    # Override aktiv für dieses Gerät
+                    device_label = self._get_device_label(device_id)
+                    if device_override['keep_on']:
+                        # Gerät soll AN bleiben
+                        if self._device_states.get(device_id) != True:
+                            self._turn_device_on(device_id)
+                        logger.debug(f"🎄 {device_label}: Manual ON override until {device_override['until'].strftime('%H:%M')}")
+                    else:
+                        # Gerät soll AUS bleiben
+                        if self._device_states.get(device_id) != False:
+                            self._turn_device_off(device_id)
+                        logger.debug(f"🎄 {device_label}: Manual OFF override until {device_override['until'].strftime('%H:%M')}")
+                    if device_override['keep_on']:
+                        any_on = True
+                    continue  # Nächstes Gerät, dieses wird nicht vom Scheduler beeinflusst
+                else:
+                    # Override abgelaufen - entfernen
+                    device_label = self._get_device_label(device_id)
+                    logger.info(f"🎄 Device override expired for {device_label}")
+                    del self._device_overrides[device_id]
+            
             # Hole individuelle Zeitplan oder Standard
             schedule = device_schedules.get(device_id, {})
             
@@ -561,53 +589,61 @@ class ChristmasLightsController:
             logger.error(f"Error turning off christmas device {device_id}: {e}")
     
     def toggle_single_device_manual(self, device_id: str, turn_on: bool) -> bool:
-        """Schaltet ein einzelnes Gerät manuell und setzt den Override
+        """Schaltet ein einzelnes Gerät manuell mit geräte-spezifischem Override
         
-        Wenn manuell eingeschaltet: Override bis zur nächsten Ausschaltzeit
-        Wenn manuell ausgeschaltet: Kein Override (einzelnes Gerät bleibt aus, Rest läuft normal)
+        Setzt einen Override nur für dieses eine Gerät bis zur Ausschaltzeit.
+        Andere Geräte werden vom Scheduler normal behandelt.
         """
         if not self.platform:
             logger.warning("Cannot toggle device - platform not available")
             return False
         
         try:
+            device_label = self._get_device_label(device_id)
+            now = get_local_time()
+            
             if turn_on:
                 self.platform.turn_on(device_id)
                 self._device_states[device_id] = True
                 
-                # Manual ON Override setzen bis zur Ausschaltzeit
-                # Dadurch werden ALLE Geräte nicht vom Scheduler ausgeschaltet
-                now = get_local_time()
-                off_time = self._get_device_off_time(now, {})
-                
-                # Erstelle timezone-aware datetime für Override
+                # Geräte-spezifischen Override setzen bis zur Ausschaltzeit
+                off_time = self._get_device_off_time(now, self.config.get('device_schedules', {}).get(device_id, {}))
                 override_until = datetime.combine(now.date(), off_time)
                 if TIMEZONE:
                     override_until = override_until.replace(tzinfo=TIMEZONE)
                 
                 # Falls Ausschaltzeit schon vorbei ist
                 if override_until <= now:
-                    off_time_str = self.config.get('off_time', '23:00')
-                    off_hour = int(off_time_str.split(':')[0])
-                    if off_hour < 12:  # Nach Mitternacht
-                        override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
-                    else:
-                        override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
+                    override_until = datetime.combine(now.date() + timedelta(days=1), off_time)
                     if TIMEZONE:
                         override_until = override_until.replace(tzinfo=TIMEZONE)
                 
-                self._manual_override_until = override_until
-                self._manual_override_keep_on = True
-                self.lights_on = True
-                
-                device_label = self._get_device_label(device_id)
+                self._device_overrides[device_id] = {
+                    'until': override_until,
+                    'keep_on': True
+                }
                 logger.info(f"🎄 Manual ON: {device_label} (override until {override_until.strftime('%H:%M')})")
             else:
                 self.platform.turn_off(device_id)
                 self._device_states[device_id] = False
                 
-                device_label = self._get_device_label(device_id)
-                logger.info(f"🎄 Manual OFF: {device_label} (no override - single device)")
+                # Geräte-spezifischen Override setzen bis zur nächsten Einschaltzeit
+                on_time = self._get_device_on_time(now, self.config.get('device_schedules', {}).get(device_id, {}))
+                override_until = datetime.combine(now.date(), on_time)
+                if TIMEZONE:
+                    override_until = override_until.replace(tzinfo=TIMEZONE)
+                
+                # Falls Einschaltzeit schon vorbei ist, morgen
+                if override_until <= now:
+                    override_until = datetime.combine(now.date() + timedelta(days=1), on_time)
+                    if TIMEZONE:
+                        override_until = override_until.replace(tzinfo=TIMEZONE)
+                
+                self._device_overrides[device_id] = {
+                    'until': override_until,
+                    'keep_on': False
+                }
+                logger.info(f"🎄 Manual OFF: {device_label} (override until {override_until.strftime('%H:%M')})")
             
             return True
         except Exception as e:
