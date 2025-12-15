@@ -743,7 +743,16 @@ class VentilationNotifier:
             # === Temperaturwarnung (zu große Abweichung) ===
             if config.get('temperature_alert'):
                 threshold_deviation = config.get('temperature_threshold_deviation', 3)
+                # Liste von Räumen die nicht überwacht werden sollen (z.B. Außenbereich)
+                excluded_rooms = ['heim', 'home', 'outside', 'außen', 'draußen', 'aussen']
+                
                 for room, data in room_data.items():
+                    # Überspringe Räume die keine echten Wohnräume sind
+                    room_lower = room.lower()
+                    if any(excl in room_lower for excl in excluded_rooms):
+                        logger.debug(f"Skipping temperature alert for '{room}' (excluded room)")
+                        continue
+                    
                     temp = data.get('temp')
                     if temp:
                         # Prüfe auf extreme Temperaturen oder große Abweichung vom Komfortbereich
