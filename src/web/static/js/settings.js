@@ -2322,6 +2322,7 @@ async function loadNotificationConfig() {
             if (config.events) {
                 document.getElementById('event-window-open').checked = config.events.window_open_long?.enabled ?? true;
                 document.getElementById('event-window-threshold').value = config.events.window_open_long?.threshold_minutes || 15;
+                document.getElementById('event-window-tilted-quiet-skip').checked = config.events.window_open_long?.tilted_quiet_hours_skip ?? true;
                 
                 document.getElementById('event-temperature').checked = config.events.temperature_alert?.enabled ?? true;
                 document.getElementById('event-temp-deviation').value = config.events.temperature_alert?.threshold_deviation || 3;
@@ -2507,7 +2508,8 @@ async function saveNotificationConfig() {
             events: {
                 window_open_long: {
                     enabled: document.getElementById('event-window-open').checked,
-                    threshold_minutes: parseInt(document.getElementById('event-window-threshold').value)
+                    threshold_minutes: parseInt(document.getElementById('event-window-threshold').value),
+                    tilted_quiet_hours_skip: document.getElementById('event-window-tilted-quiet-skip').checked
                 },
                 temperature_alert: {
                     enabled: document.getElementById('event-temperature').checked,

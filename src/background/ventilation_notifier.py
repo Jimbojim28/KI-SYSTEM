@@ -146,6 +146,8 @@ class VentilationNotifier:
                             config['window_opened_alert'] = events['window_open_long'].get('enabled', True)
                             if events['window_open_long'].get('threshold_minutes'):
                                 config['window_open_threshold_minutes'] = events['window_open_long']['threshold_minutes']
+                            # Gekippte Fenster während Ruhezeit ignorieren
+                            config['tilted_quiet_hours_skip'] = events['window_open_long'].get('tilted_quiet_hours_skip', True)
                         
                         # Temperature Alert (Neu!)
                         if 'temperature_alert' in events:
@@ -155,6 +157,11 @@ class VentilationNotifier:
                             # Ausgeschlossene Räume für Temperaturwarnungen
                             if events['temperature_alert'].get('excluded_rooms'):
                                 config['temperature_excluded_rooms'] = events['temperature_alert']['excluded_rooms']
+                    
+                    # Lade Ruhezeiten
+                    notifications = full_config.get('notifications', {})
+                    config['quiet_hours_start'] = notifications.get('quiet_hours_start', '22:00')
+                    config['quiet_hours_end'] = notifications.get('quiet_hours_end', '07:00')
                         
             except Exception as e:
                 logger.debug(f"Could not load frontend events config: {e}")
@@ -184,6 +191,34 @@ class VentilationNotifier:
                 
                 return api_key, user_key
         return '', ''
+
+    def _is_quiet_hours(self, config: dict) -> bool:
+        """Prüft ob aktuell Ruhezeit ist (z.B. nachts)"""
+        try:
+            quiet_start_str = config.get('quiet_hours_start', '22:00')
+            quiet_end_str = config.get('quiet_hours_end', '07:00')
+            
+            now = datetime.now()
+            current_time = now.time()
+            
+            # Parse Start und Ende
+            start_parts = quiet_start_str.split(':')
+            end_parts = quiet_end_str.split(':')
+            
+            quiet_start = datetime.strptime(quiet_start_str, '%H:%M').time()
+            quiet_end = datetime.strptime(quiet_end_str, '%H:%M').time()
+            
+            # Prüfe ob Ruhezeit über Mitternacht geht (z.B. 22:00 - 07:00)
+            if quiet_start > quiet_end:
+                # Ruhezeit über Mitternacht: 22:00 - 07:00
+                return current_time >= quiet_start or current_time <= quiet_end
+            else:
+                # Ruhezeit innerhalb eines Tages: z.B. 14:00 - 16:00
+                return quiet_start <= current_time <= quiet_end
+                
+        except Exception as e:
+            logger.debug(f"Error checking quiet hours: {e}")
+            return False
 
     def _send_notification(self, title: str, message: str, priority: int = 0, 
                           notification_key: Optional[str] = None) -> bool:
@@ -344,6 +379,12 @@ class VentilationNotifier:
                     room_name = window.get('room', 'Unbekannt')
                     room_climate = room_data.get(room_name, {})
                     window_state = window.get('state', 'open')
+                    
+                    # Prüfe ob gekippte Fenster während Ruhezeit ignoriert werden sollen
+                    if window_state == 'tilted' and config.get('tilted_quiet_hours_skip', True):
+                        if self._is_quiet_hours(config):
+                            logger.info(f"Skipping notification for tilted window '{window.get('name')}' during quiet hours")
+                            continue
                     
                     # Berechne empfohlene Lüftungsdauer
                     duration = self._calculate_ventilation_duration(
@@ -813,8 +854,14 @@ class VentilationNotifier:
             if config.get('long_ventilation_warning', True) and outdoor_temp is not None:
                 for window in open_windows:
                     device_id = window['device_id']
+                    window_state = window.get('state', 'open')
                     window_info = self._open_windows.get(device_id, {})
                     opened_at = window_info.get('opened_at')
+                    
+                    # Prüfe ob gekippte Fenster während Ruhezeit ignoriert werden sollen
+                    if window_state == 'tilted' and config.get('tilted_quiet_hours_skip', True):
+                        if self._is_quiet_hours(config):
+                            continue
                     
                     if opened_at:
                         minutes_open = (datetime.now() - opened_at).total_seconds() / 60
