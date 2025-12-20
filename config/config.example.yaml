@@ -57,6 +57,24 @@ data_collection:
     - binary_sensor.bedroom_window
     - binary_sensor.kitchen_window
 
+# Background Data Collectors - Konfigurierbare API-Abfrageintervalle
+collectors:
+  heating:
+    enabled: true
+    interval: 120  # Sekunden (2 Minuten)
+  lighting:
+    enabled: true
+    interval: 180  # Sekunden (3 Minuten)
+  windows:
+    enabled: true
+    interval: 90  # Sekunden (1.5 Minuten) - wichtig für Sicherheit
+  temperature:
+    enabled: true
+    interval: 120  # Sekunden (2 Minuten)
+  bathroom:
+    enabled: false
+    interval: 60  # Sekunden (1 Minute) - wenn aktiviert
+
 database:
   path: data/ki_system.db
   retention_days: 90
