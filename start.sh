@@ -139,7 +139,8 @@ start_webapp() {
     echo $! > "$PID_FILE"
 
     # Warte länger damit Server starten kann (App braucht Zeit für Initialisierung)
-    sleep 10
+    # Mit allen Collectors benötigt der Server ~15 Sekunden zum Start
+    sleep 15
 
     # Prüfe ob erfolgreich gestartet
     if check_port $PORT; then
