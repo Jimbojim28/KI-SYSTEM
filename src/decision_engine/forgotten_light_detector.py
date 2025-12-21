@@ -1214,6 +1214,10 @@ def get_forgotten_light_detector(config: dict = None, test_mode: bool = True) ->
     global _detector_instance
     if _detector_instance is None:
         _detector_instance = ForgottenLightDetector(config=config, test_mode=test_mode)
+        return _detector_instance
+
+    # Allow toggling test_mode on existing singleton instances.
+    _detector_instance.test_mode = bool(test_mode)
     return _detector_instance
 
 
