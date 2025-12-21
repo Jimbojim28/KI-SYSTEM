@@ -432,18 +432,6 @@ class ChristmasLightsController:
     
     def _get_device_on_time(self, now: datetime, schedule: dict):
         """Berechnet Einschaltzeit für ein Gerät (mit Sonnenuntergang-Option und speziellen Tagen)"""
-        # Individuelle Zeit hat Vorrang
-        if schedule.get('on_time'):
-            try:
-                t_str = schedule['on_time']
-                if len(t_str) == 5: # HH:MM
-                    return datetime.strptime(t_str, '%H:%M').time()
-                elif len(t_str) == 8: # HH:MM:SS
-                    return datetime.strptime(t_str, '%H:%M:%S').time()
-            except ValueError:
-                logger.warning(f"Invalid on_time format: {schedule.get('on_time')}")
-                pass
-
         # Prüfe spezielle Tage (Heiligabend hat Priorität vor Adventssonntagen)
         special_days_config = self.config.get('special_days', {})
 
@@ -474,6 +462,18 @@ class ChristmasLightsController:
                 except ValueError:
                     logger.warning(f"Invalid advent_sundays on_time format: {t_str}")
 
+        # Individuelle Zeit hat Vorrang vor globaler Zeit, aber nicht vor speziellen Tagen
+        if schedule.get('on_time'):
+            try:
+                t_str = schedule['on_time']
+                if len(t_str) == 5: # HH:MM
+                    return datetime.strptime(t_str, '%H:%M').time()
+                elif len(t_str) == 8: # HH:MM:SS
+                    return datetime.strptime(t_str, '%H:%M:%S').time()
+            except ValueError:
+                logger.warning(f"Invalid on_time format: {schedule.get('on_time')}")
+                pass
+
         # Fallback: globale Einstellung
         if self.config['use_sunset'] and ASTRAL_AVAILABLE:
             try:
@@ -498,18 +498,6 @@ class ChristmasLightsController:
     
     def _get_device_off_time(self, now: datetime, schedule: dict):
         """Berechnet Ausschaltzeit für ein Gerät (mit Wochenend-Verlängerung und speziellen Tagen)"""
-        # Individuelle Zeit hat Vorrang
-        if schedule.get('off_time'):
-            try:
-                t_str = schedule['off_time']
-                if len(t_str) == 5:
-                    return datetime.strptime(t_str, '%H:%M').time()
-                elif len(t_str) == 8:
-                    return datetime.strptime(t_str, '%H:%M:%S').time()
-            except ValueError:
-                logger.warning(f"Invalid off_time format: {schedule.get('off_time')}")
-                pass
-
         # Prüfe spezielle Tage (Heiligabend hat Priorität vor Adventssonntagen)
         special_days_config = self.config.get('special_days', {})
 
@@ -539,6 +527,18 @@ class ChristmasLightsController:
                         return datetime.strptime(t_str, '%H:%M:%S').time()
                 except ValueError:
                     logger.warning(f"Invalid advent_sundays off_time format: {t_str}")
+
+        # Individuelle Zeit hat Vorrang vor globaler Zeit, aber nicht vor speziellen Tagen
+        if schedule.get('off_time'):
+            try:
+                t_str = schedule['off_time']
+                if len(t_str) == 5:
+                    return datetime.strptime(t_str, '%H:%M').time()
+                elif len(t_str) == 8:
+                    return datetime.strptime(t_str, '%H:%M:%S').time()
+            except ValueError:
+                logger.warning(f"Invalid off_time format: {schedule.get('off_time')}")
+                pass
 
         # Fallback: globale Einstellung
         base_time = self.config['off_time']
