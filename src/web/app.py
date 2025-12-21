@@ -88,87 +88,37 @@ class WebInterface:
         # Initialisiere Database
         self.db = Database()
 
-        # Initialisiere Background Data Collector
+        # Background Data Collector - TEMPORARILY DISABLED
         self.background_collector = None
-        if self.engine and self.engine.platform:
-            try:
-                self.background_collector = BackgroundDataCollector(
-                    platform=self.engine.platform,
-                    database=self.db,
-                    interval_seconds=300  # 5 Minuten
-                )
-                logger.info("Background Data Collector initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize Background Collector: {e}")
+        logger.info("Background Data Collector temporarily disabled")
 
-        # Initialisiere Bathroom Optimizer (läuft täglich um 3:00 Uhr)
+        # Bathroom Optimizer - TEMPORARILY DISABLED
         self.bathroom_optimizer = None
-        try:
-            self.bathroom_optimizer = BathroomOptimizer(
-                interval_hours=24,
-                run_at_hour=3  # 3:00 Uhr morgens
-            )
-            logger.info("Bathroom Optimizer initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize Bathroom Optimizer: {e}")
+        logger.info("Bathroom Optimizer temporarily disabled")
 
-        # Initialisiere ML Auto-Trainer (läuft täglich um 2:00 Uhr)
+        # ML Auto-Trainer - TEMPORARILY DISABLED
         self.ml_auto_trainer = None
-        try:
-            self.ml_auto_trainer = MLAutoTrainer(
-                run_at_hour=2  # 2:00 Uhr morgens (vor Bathroom Optimizer)
-            )
-            logger.info("ML Auto-Trainer initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize ML Auto-Trainer: {e}")
+        logger.info("ML Auto-Trainer temporarily disabled")
 
-        # Initialisiere Bathroom Data Collector (sammelt alle 60 Sekunden)
+        # Bathroom Data Collector - TEMPORARILY DISABLED
         self.bathroom_collector = None
-        try:
-            self.bathroom_collector = BathroomDataCollector(
-                engine=self.engine,
-                interval_seconds=60  # Alle 60 Sekunden
-            )
-            logger.info("Bathroom Data Collector initialized (60s interval)")
-        except Exception as e:
-            logger.error(f"Failed to initialize Bathroom Data Collector: {e}")
+        logger.info("Bathroom Data Collector temporarily disabled")
 
-        # Initialisiere Heating Data Collector (sammelt alle 15 Minuten)
+        # Heating Data Collector - TEMPORARILY DISABLED
         self.heating_collector = None
-        try:
-            self.heating_collector = HeatingDataCollector(
-                engine=self.engine,
-                interval_seconds=900  # Alle 15 Minuten
-            )
-            logger.info("Heating Data Collector initialized (15min interval)")
-        except Exception as e:
-            logger.error(f"Failed to initialize Heating Data Collector: {e}")
+        logger.info("Heating Data Collector temporarily disabled")
 
         # Window Data Collector - TEMPORARILY DISABLED due to initialization hang
         self.window_collector = None
         logger.info("Window Data Collector temporarily disabled")
 
-        # Lighting Data Collector für ML Training (60s interval)
+        # Lighting Data Collector - TEMPORARILY DISABLED
         self.lighting_collector = None
-        try:
-            self.lighting_collector = LightingDataCollector(
-                db=self.db,
-                config=self.config
-            )
-            logger.info("Lighting Data Collector initialized (ML Training)")
-        except Exception as e:
-            logger.error(f"Failed to initialize Lighting Data Collector: {e}")
+        logger.info("Lighting Data Collector temporarily disabled")
 
-        # Temperature Data Collector für ML Training (5min interval)
+        # Temperature Data Collector - TEMPORARILY DISABLED
         self.temperature_collector = None
-        try:
-            self.temperature_collector = TemperatureDataCollector(
-                db=self.db,
-                config=self.config
-            )
-            logger.info("Temperature Data Collector initialized (ML Training)")
-        except Exception as e:
-            logger.error(f"Failed to initialize Temperature Data Collector: {e}")
+        logger.info("Temperature Data Collector temporarily disabled")
 
         # Initialisiere Database Maintenance Job (läuft täglich um 5:00 Uhr)
         self.db_maintenance = None
