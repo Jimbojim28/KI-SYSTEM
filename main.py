@@ -367,15 +367,19 @@ Konfiguration:
         print(f"Error loading config: {e}")
         return 1
 
-    # Initialisiere Engine
-    try:
-        engine = DecisionEngine(args.config)
-    except Exception as e:
-        logger.error(f"Failed to initialize engine: {e}")
-        return 1
-
     # Führe Befehl aus
     try:
+        # Web command doesn't need DecisionEngine (creates its own in WebInterface)
+        if args.command == 'web':
+            return cmd_web(args)
+
+        # Initialize Engine for all other commands
+        try:
+            engine = DecisionEngine(args.config)
+        except Exception as e:
+            logger.error(f"Failed to initialize engine: {e}")
+            return 1
+
         if args.command == 'test':
             return cmd_test(engine)
         elif args.command == 'run':
@@ -387,8 +391,6 @@ Konfiguration:
             return cmd_status(engine)
         elif args.command == 'train':
             return cmd_train(engine)
-        elif args.command == 'web':
-            return cmd_web(args)
         else:
             parser.print_help()
             return 1
