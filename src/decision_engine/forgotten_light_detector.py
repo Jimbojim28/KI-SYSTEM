@@ -1209,19 +1209,23 @@ class ForgottenLightDetector:
 _detector_instance = None
 
 
-def get_forgotten_light_detector(config: dict = None, test_mode: bool = True) -> ForgottenLightDetector:
+def get_forgotten_light_detector(config: dict = None, test_mode: Optional[bool] = None) -> ForgottenLightDetector:
     """Gibt globale Detektor-Instanz zurück"""
     global _detector_instance
     if _detector_instance is None:
-        _detector_instance = ForgottenLightDetector(config=config, test_mode=test_mode)
+        _detector_instance = ForgottenLightDetector(
+            config=config,
+            test_mode=True if test_mode is None else test_mode,
+        )
         return _detector_instance
 
     # Allow toggling test_mode on existing singleton instances.
-    _detector_instance.test_mode = bool(test_mode)
+    if test_mode is not None:
+        _detector_instance.test_mode = bool(test_mode)
     return _detector_instance
 
 
-def start_forgotten_light_detector(config: dict = None, test_mode: bool = True) -> ForgottenLightDetector:
+def start_forgotten_light_detector(config: dict = None, test_mode: Optional[bool] = None) -> ForgottenLightDetector:
     """Startet den Detektor"""
     detector = get_forgotten_light_detector(config=config, test_mode=test_mode)
     detector.start()
