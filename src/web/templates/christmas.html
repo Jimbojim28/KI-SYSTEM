@@ -96,6 +96,60 @@
         </div>
     </div>
 
+    <!-- Spezielle Tage -->
+    <div class="card" style="margin-top: 20px;">
+        <h3>✨ Spezielle Tage</h3>
+        <p style="margin: 10px 0; color: #6b7280;">
+            Definiere besondere Zeiten für Adventssonntage und Heiligabend.
+        </p>
+
+        <div class="grid-2">
+            <!-- Adventssonntage -->
+            <div style="padding: 15px; background: #fef3c7; border-radius: 12px; border: 2px solid #f59e0b;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h4 style="margin: 0; color: #92400e;">🕯️ Adventssonntage</h4>
+                    <label class="switch" title="Spezielle Zeiten für alle 4 Adventssonntage aktivieren">
+                        <input type="checkbox" id="christmas-advent-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label style="font-size: 13px; color: #92400e;">Einschalten um:</label>
+                    <input type="time" id="christmas-advent-on-time" value="09:00" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label style="font-size: 13px; color: #92400e;">Ausschalten um:</label>
+                    <input type="time" id="christmas-advent-off-time" value="23:30" class="form-control">
+                </div>
+                <p style="margin-top: 10px; font-size: 12px; color: #92400e; font-style: italic;">
+                    Gilt für 1., 2., 3. und 4. Advent
+                </p>
+            </div>
+
+            <!-- Heiligabend -->
+            <div style="padding: 15px; background: #fef2f2; border-radius: 12px; border: 2px solid #dc2626;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h4 style="margin: 0; color: #991b1b;">🎅 Heiligabend (24.12)</h4>
+                    <label class="switch" title="Spezielle Zeiten für Heiligabend aktivieren">
+                        <input type="checkbox" id="christmas-eve-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label style="font-size: 13px; color: #991b1b;">Einschalten um:</label>
+                    <input type="time" id="christmas-eve-on-time" value="09:00" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label style="font-size: 13px; color: #991b1b;">Ausschalten um:</label>
+                    <input type="time" id="christmas-eve-off-time" value="01:00" class="form-control">
+                </div>
+                <p style="margin-top: 10px; font-size: 12px; color: #991b1b; font-style: italic;">
+                    Besondere Zeiten nur am 24. Dezember
+                </p>
+            </div>
+        </div>
+    </div>
+
     <!-- Geräte-Auswahl -->
     <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
@@ -601,7 +655,19 @@ let christmasConfig = {
     presence_only: false,
     weekend_extended: false,
     random_delay: true,
-    notifications_enabled: true
+    notifications_enabled: true,
+    special_days: {
+        advent_sundays: {
+            enabled: false,
+            on_time: '09:00',
+            off_time: '23:30'
+        },
+        christmas_eve: {
+            enabled: false,
+            on_time: '09:00',
+            off_time: '01:00'
+        }
+    }
 };
 
 // Alle Geräte (für Status)
@@ -706,7 +772,7 @@ function applyConfigToUI() {
         'christmas-weekend-extended': christmasConfig.weekend_extended,
         'christmas-random-delay': christmasConfig.random_delay
     };
-    
+
     for (const [id, value] of Object.entries(elements)) {
         const el = document.getElementById(id);
         if (el) {
@@ -717,7 +783,29 @@ function applyConfigToUI() {
             }
         }
     }
-    
+
+    // Spezielle Tage anwenden
+    if (christmasConfig.special_days) {
+        const adventConfig = christmasConfig.special_days.advent_sundays || {};
+        const eveConfig = christmasConfig.special_days.christmas_eve || {};
+
+        // Adventssonntage
+        const adventEnabled = document.getElementById('christmas-advent-enabled');
+        const adventOnTime = document.getElementById('christmas-advent-on-time');
+        const adventOffTime = document.getElementById('christmas-advent-off-time');
+        if (adventEnabled) adventEnabled.checked = adventConfig.enabled || false;
+        if (adventOnTime) adventOnTime.value = adventConfig.on_time || '09:00';
+        if (adventOffTime) adventOffTime.value = adventConfig.off_time || '23:30';
+
+        // Heiligabend
+        const eveEnabled = document.getElementById('christmas-eve-enabled');
+        const eveOnTime = document.getElementById('christmas-eve-on-time');
+        const eveOffTime = document.getElementById('christmas-eve-off-time');
+        if (eveEnabled) eveEnabled.checked = eveConfig.enabled || false;
+        if (eveOnTime) eveOnTime.value = eveConfig.on_time || '09:00';
+        if (eveOffTime) eveOffTime.value = eveConfig.off_time || '01:00';
+    }
+
     // Enable-Status Text aktualisieren
     updateEnableStatusText(christmasConfig.enabled);
 }
@@ -1071,14 +1159,28 @@ async function saveChristmasConfig() {
     christmasConfig.presence_only = document.getElementById('christmas-presence-only')?.checked || false;
     christmasConfig.weekend_extended = document.getElementById('christmas-weekend-extended')?.checked || false;
     christmasConfig.random_delay = document.getElementById('christmas-random-delay')?.checked || true;
-    
+
+    // Spezielle Tage
+    christmasConfig.special_days = {
+        advent_sundays: {
+            enabled: document.getElementById('christmas-advent-enabled')?.checked || false,
+            on_time: document.getElementById('christmas-advent-on-time')?.value || '09:00',
+            off_time: document.getElementById('christmas-advent-off-time')?.value || '23:30'
+        },
+        christmas_eve: {
+            enabled: document.getElementById('christmas-eve-enabled')?.checked || false,
+            on_time: document.getElementById('christmas-eve-on-time')?.value || '09:00',
+            off_time: document.getElementById('christmas-eve-off-time')?.value || '01:00'
+        }
+    };
+
     try {
         const response = await fetch('/api/christmas/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(christmasConfig)
         });
-        
+
         if (response.ok) {
             showNotification('🎄 Konfiguration gespeichert!', 'success');
             updateChristmasStatus();

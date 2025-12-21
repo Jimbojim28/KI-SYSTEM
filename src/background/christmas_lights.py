@@ -76,7 +76,20 @@ class ChristmasLightsController:
             'presence_only': False,
             'weekend_extended': False,
             'random_delay': True,
-            'notifications_enabled': True  # Push-Benachrichtigungen
+            'notifications_enabled': True,  # Push-Benachrichtigungen
+            # Spezielle Zeiten für Adventssonntage und Heiligabend
+            'special_days': {
+                'advent_sundays': {
+                    'enabled': False,
+                    'on_time': '09:00',
+                    'off_time': '23:30'
+                },
+                'christmas_eve': {
+                    'enabled': False,
+                    'on_time': '09:00',
+                    'off_time': '01:00'
+                }
+            }
         }
         
         # Location für Sonnenuntergang (Berlin als Default)
@@ -418,7 +431,7 @@ class ChristmasLightsController:
         self.lights_on = any_on
     
     def _get_device_on_time(self, now: datetime, schedule: dict):
-        """Berechnet Einschaltzeit für ein Gerät (mit Sonnenuntergang-Option)"""
+        """Berechnet Einschaltzeit für ein Gerät (mit Sonnenuntergang-Option und speziellen Tagen)"""
         # Individuelle Zeit hat Vorrang
         if schedule.get('on_time'):
             try:
@@ -430,7 +443,37 @@ class ChristmasLightsController:
             except ValueError:
                 logger.warning(f"Invalid on_time format: {schedule.get('on_time')}")
                 pass
-        
+
+        # Prüfe spezielle Tage (Heiligabend hat Priorität vor Adventssonntagen)
+        special_days_config = self.config.get('special_days', {})
+
+        if self._is_christmas_eve(now):
+            christmas_eve_config = special_days_config.get('christmas_eve', {})
+            if christmas_eve_config.get('enabled', False):
+                try:
+                    t_str = christmas_eve_config.get('on_time', '09:00')
+                    logger.debug(f"🎄 Heiligabend erkannt - verwende spezielle Zeit: {t_str}")
+                    if len(t_str) == 5:
+                        return datetime.strptime(t_str, '%H:%M').time()
+                    elif len(t_str) == 8:
+                        return datetime.strptime(t_str, '%H:%M:%S').time()
+                except ValueError:
+                    logger.warning(f"Invalid christmas_eve on_time format: {t_str}")
+
+        advent_sunday = self._is_advent_sunday(now)
+        if advent_sunday > 0:
+            advent_config = special_days_config.get('advent_sundays', {})
+            if advent_config.get('enabled', False):
+                try:
+                    t_str = advent_config.get('on_time', '09:00')
+                    logger.debug(f"🎄 {advent_sunday}. Advent erkannt - verwende spezielle Zeit: {t_str}")
+                    if len(t_str) == 5:
+                        return datetime.strptime(t_str, '%H:%M').time()
+                    elif len(t_str) == 8:
+                        return datetime.strptime(t_str, '%H:%M:%S').time()
+                except ValueError:
+                    logger.warning(f"Invalid advent_sundays on_time format: {t_str}")
+
         # Fallback: globale Einstellung
         if self.config['use_sunset'] and ASTRAL_AVAILABLE:
             try:
@@ -441,7 +484,7 @@ class ChristmasLightsController:
                 return sunset_dt.time()
             except Exception as e:
                 logger.debug(f"Could not calculate sunset: {e}")
-        
+
         # Fallback: konfigurierte Zeit
         try:
             t_str = self.config['on_time']
@@ -454,7 +497,7 @@ class ChristmasLightsController:
             return datetime.strptime('16:00', '%H:%M').time()
     
     def _get_device_off_time(self, now: datetime, schedule: dict):
-        """Berechnet Ausschaltzeit für ein Gerät (mit Wochenend-Verlängerung)"""
+        """Berechnet Ausschaltzeit für ein Gerät (mit Wochenend-Verlängerung und speziellen Tagen)"""
         # Individuelle Zeit hat Vorrang
         if schedule.get('off_time'):
             try:
@@ -466,14 +509,44 @@ class ChristmasLightsController:
             except ValueError:
                 logger.warning(f"Invalid off_time format: {schedule.get('off_time')}")
                 pass
-        
+
+        # Prüfe spezielle Tage (Heiligabend hat Priorität vor Adventssonntagen)
+        special_days_config = self.config.get('special_days', {})
+
+        if self._is_christmas_eve(now):
+            christmas_eve_config = special_days_config.get('christmas_eve', {})
+            if christmas_eve_config.get('enabled', False):
+                try:
+                    t_str = christmas_eve_config.get('off_time', '01:00')
+                    logger.debug(f"🎄 Heiligabend erkannt - verwende spezielle Ausschaltzeit: {t_str}")
+                    if len(t_str) == 5:
+                        return datetime.strptime(t_str, '%H:%M').time()
+                    elif len(t_str) == 8:
+                        return datetime.strptime(t_str, '%H:%M:%S').time()
+                except ValueError:
+                    logger.warning(f"Invalid christmas_eve off_time format: {t_str}")
+
+        advent_sunday = self._is_advent_sunday(now)
+        if advent_sunday > 0:
+            advent_config = special_days_config.get('advent_sundays', {})
+            if advent_config.get('enabled', False):
+                try:
+                    t_str = advent_config.get('off_time', '23:30')
+                    logger.debug(f"🎄 {advent_sunday}. Advent erkannt - verwende spezielle Ausschaltzeit: {t_str}")
+                    if len(t_str) == 5:
+                        return datetime.strptime(t_str, '%H:%M').time()
+                    elif len(t_str) == 8:
+                        return datetime.strptime(t_str, '%H:%M:%S').time()
+                except ValueError:
+                    logger.warning(f"Invalid advent_sundays off_time format: {t_str}")
+
         # Fallback: globale Einstellung
         base_time = self.config['off_time']
-        
+
         # Wochenend-Verlängerung
         if self.config['weekend_extended'] and now.weekday() >= 4:  # Fr, Sa, So
             base_time = '00:00'  # Bis Mitternacht
-        
+
         try:
             if len(base_time) == 5:
                 return datetime.strptime(base_time, '%H:%M').time()
@@ -669,15 +742,60 @@ class ChristmasLightsController:
         self._last_action_time = get_local_time()
         logger.info(f"🎄 Christmas lights OFF ({affected} devices) - {reason}")
     
+    def _is_advent_sunday(self, now: datetime) -> int:
+        """Prüft ob heute ein Adventssonntag ist und gibt die Nummer zurück (1-4), sonst 0"""
+        # Advent = 4 Sonntage vor Weihnachten (25.12)
+        # 4. Advent = letzter Sonntag vor dem 25.12
+        # 1. Advent = 4 Wochen vor dem 4. Advent
+
+        if now.weekday() != 6:  # 6 = Sonntag
+            return 0
+
+        year = now.year
+        christmas = datetime(year, 12, 25, tzinfo=now.tzinfo)
+
+        # Finde den 4. Advent (letzter Sonntag vor Weihnachten)
+        days_until_christmas = (christmas - now).days
+        christmas_weekday = christmas.weekday()
+
+        # Berechne wie viele Tage von Weihnachten zurück zum letzten Sonntag
+        if christmas_weekday == 6:  # Weihnachten ist Sonntag
+            fourth_advent = christmas - timedelta(days=7)
+        else:
+            days_back = (christmas_weekday + 1) % 7
+            fourth_advent = christmas - timedelta(days=days_back)
+
+        # Berechne die anderen Adventssonntage
+        third_advent = fourth_advent - timedelta(days=7)
+        second_advent = fourth_advent - timedelta(days=14)
+        first_advent = fourth_advent - timedelta(days=21)
+
+        # Prüfe ob heute einer der Adventssonntage ist
+        today_date = now.date()
+        if today_date == fourth_advent.date():
+            return 4
+        elif today_date == third_advent.date():
+            return 3
+        elif today_date == second_advent.date():
+            return 2
+        elif today_date == first_advent.date():
+            return 1
+
+        return 0
+
+    def _is_christmas_eve(self, now: datetime) -> bool:
+        """Prüft ob heute Heiligabend (24.12) ist"""
+        return now.month == 12 and now.day == 24
+
     def _is_within_date_range(self, now: datetime) -> bool:
         """Prüft ob aktuelles Datum im Weihnachtszeitraum liegt"""
         start_str = self.config.get('start_date', '')
         end_str = self.config.get('end_date', '')
-        
+
         if not start_str or not end_str:
             # Kein Datumslimit gesetzt -> immer aktiv
             return True
-        
+
         try:
             start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
