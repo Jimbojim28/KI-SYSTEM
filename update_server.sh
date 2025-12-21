@@ -30,43 +30,17 @@ else
 fi
 echo ""
 
-# 4. Stoppe laufende Web-App
-echo "🛑 Schritt 4: Stoppe laufende Web-App (Port 8080)..."
-PID=$(lsof -ti:8080 2>/dev/null || echo "")
-if [ -n "$PID" ]; then
-    echo "   Stoppe Prozess $PID..."
-    kill $PID
-    sleep 3
-    echo "✅ Web-App gestoppt"
-else
-    echo "   ℹ️  Keine laufende Web-App gefunden"
-fi
-echo ""
-
-# 5. Aktiviere Virtual Environment und starte Web-App neu
-echo "🚀 Schritt 5: Starte Web-App neu..."
-source venv/bin/activate
-
-# Starte Web-App im Hintergrund
-nohup python3 main.py web --host 0.0.0.0 --port 8080 > logs/web_app.log 2>&1 &
-
-# Warte kurz
-sleep 5
-echo ""
-
-# 6. Prüfe ob Web-App läuft
-echo "✅ Schritt 6: Prüfe ob Web-App läuft..."
-if lsof -ti:8080 > /dev/null 2>&1; then
-    echo "✅ Web-App läuft auf Port 8080"
-else
+# 4. Starte Web-App neu (nutzt start.sh für stabile Startlogik)
+echo "🚀 Schritt 4: Starte Web-App neu..."
+./start.sh --restart --port=8080 || {
     echo "❌ Web-App läuft NICHT!"
-    echo "   Prüfe logs/web_app.log für Fehler"
+    echo "   Prüfe logs/webapp.log für Fehler"
     exit 1
-fi
+}
 echo ""
 
-# 7. Teste API-Endpunkt
-echo "🧪 Schritt 7: Teste Bathroom API..."
+# 5. Teste API-Endpunkt
+echo "🧪 Schritt 5: Teste Bathroom API..."
 sleep 3
 RESPONSE=$(curl -s http://localhost:8080/api/luftentfeuchten/status)
 

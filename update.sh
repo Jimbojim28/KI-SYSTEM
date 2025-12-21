@@ -144,9 +144,17 @@ fi
 # Update Dependencies
 echo ""
 echo "📦 Aktualisiere Python-Pakete..."
+set +e
 pip install --upgrade pip -q
+PIP_STATUS=$?
 pip install -r requirements.txt -q
-echo "✓ Dependencies aktualisiert"
+REQ_STATUS=$?
+set -e
+if [ $PIP_STATUS -ne 0 ] || [ $REQ_STATUS -ne 0 ]; then
+    echo "⚠️  Abhängigkeits-Update fehlgeschlagen, fahre mit Neustart fort."
+else
+    echo "✓ Dependencies aktualisiert"
+fi
 
 # Neue Version anzeigen
 echo ""
@@ -250,24 +258,12 @@ else
     kill $(lsof -ti:$CURRENT_PORT) 2>/dev/null || true
     sleep 3
 
-    # Starte neu im Hintergrund auf dem gleichen Port
+    # Starte neu mit dem gleichen Port (nutzt start.sh für stabile Startlogik)
     echo "🚀 Starte System neu auf Port $CURRENT_PORT..."
-    
-    # Aktiviere venv falls vorhanden
-    if [ -d "venv" ]; then
-        source venv/bin/activate
-    fi
-    
-    nohup python main.py web --host 0.0.0.0 --port $CURRENT_PORT > logs/update.log 2>&1 &
-    sleep 5
-
-    # Prüfe ob Server läuft
-    if lsof -i :$CURRENT_PORT >/dev/null 2>&1; then
-        echo "✓ System erfolgreich auf Port $CURRENT_PORT gestartet!"
-    else
+    ./start.sh --restart --port=$CURRENT_PORT || {
         echo "⚠️  System konnte nicht automatisch gestartet werden."
-        echo "Bitte manuell starten mit: python main.py web --port $CURRENT_PORT"
-    fi
+        echo "Bitte manuell starten mit: ./start.sh --port=$CURRENT_PORT"
+    }
 fi
 
 echo ""
