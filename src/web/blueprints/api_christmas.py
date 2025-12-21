@@ -95,7 +95,19 @@ def save_christmas_config():
             'presence_only': data.get('presence_only', False),
             'weekend_extended': data.get('weekend_extended', False),
             'random_delay': data.get('random_delay', True),
-            'notifications_enabled': data.get('notifications_enabled', True)  # Push-Benachrichtigungen
+            'notifications_enabled': data.get('notifications_enabled', True),  # Push-Benachrichtigungen
+            'special_days': data.get('special_days', {
+                'advent_sundays': {
+                    'enabled': False,
+                    'on_time': '09:00',
+                    'off_time': '23:30'
+                },
+                'christmas_eve': {
+                    'enabled': False,
+                    'on_time': '09:00',
+                    'off_time': '01:00'
+                }
+            })
         }
         
         if _christmas_controller:
