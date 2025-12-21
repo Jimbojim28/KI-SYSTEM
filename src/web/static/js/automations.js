@@ -45,7 +45,19 @@ let christmasConfig = {
     devices: [],
     presence_only: false,
     weekend_extended: false,
-    random_delay: true
+    random_delay: true,
+    special_days: {
+        advent_sundays: {
+            enabled: false,
+            on_time: '09:00',
+            off_time: '23:30'
+        },
+        christmas_eve: {
+            enabled: false,
+            on_time: '09:00',
+            off_time: '01:00'
+        }
+    }
 };
 
 // Lade alle Geräte
@@ -470,6 +482,25 @@ function applyChristmasConfigToUI() {
             }
         }
     }
+
+    if (christmasConfig.special_days) {
+        const adventConfig = christmasConfig.special_days.advent_sundays || {};
+        const eveConfig = christmasConfig.special_days.christmas_eve || {};
+
+        const adventEnabled = document.getElementById('christmas-advent-enabled');
+        const adventOnTime = document.getElementById('christmas-advent-on-time');
+        const adventOffTime = document.getElementById('christmas-advent-off-time');
+        if (adventEnabled) adventEnabled.checked = adventConfig.enabled || false;
+        if (adventOnTime) adventOnTime.value = adventConfig.on_time || '09:00';
+        if (adventOffTime) adventOffTime.value = adventConfig.off_time || '23:30';
+
+        const eveEnabled = document.getElementById('christmas-eve-enabled');
+        const eveOnTime = document.getElementById('christmas-eve-on-time');
+        const eveOffTime = document.getElementById('christmas-eve-off-time');
+        if (eveEnabled) eveEnabled.checked = eveConfig.enabled || false;
+        if (eveOnTime) eveOnTime.value = eveConfig.on_time || '09:00';
+        if (eveOffTime) eveOffTime.value = eveConfig.off_time || '01:00';
+    }
 }
 
 async function loadChristmasDevices() {
@@ -589,6 +620,19 @@ async function saveChristmasConfig() {
     christmasConfig.presence_only = document.getElementById('christmas-presence-only')?.checked || false;
     christmasConfig.weekend_extended = document.getElementById('christmas-weekend-extended')?.checked || false;
     christmasConfig.random_delay = document.getElementById('christmas-random-delay')?.checked || true;
+
+    christmasConfig.special_days = {
+        advent_sundays: {
+            enabled: document.getElementById('christmas-advent-enabled')?.checked || false,
+            on_time: document.getElementById('christmas-advent-on-time')?.value || '09:00',
+            off_time: document.getElementById('christmas-advent-off-time')?.value || '23:30'
+        },
+        christmas_eve: {
+            enabled: document.getElementById('christmas-eve-enabled')?.checked || false,
+            on_time: document.getElementById('christmas-eve-on-time')?.value || '09:00',
+            off_time: document.getElementById('christmas-eve-off-time')?.value || '01:00'
+        }
+    };
     
     try {
         const response = await fetch('/api/christmas/config', {

@@ -263,6 +263,57 @@
             </div>
         </div>
 
+        <!-- Spezielle Tage -->
+        <div class="card">
+            <h3>✨ Spezielle Tage</h3>
+            <p class="subtitle">Gilt nur an Adventssonntagen bzw. am 24.12</p>
+            <div class="christmas-schedule">
+                <div class="schedule-row" style="align-items: center; justify-content: space-between;">
+                    <div>
+                        <strong>🎄 Adventssonntage</strong>
+                        <div class="subtitle">Gilt an allen 4 Adventssonntagen</div>
+                    </div>
+                    <label class="switch" title="Spezielle Zeiten für alle 4 Adventssonntage aktivieren">
+                        <input type="checkbox" id="christmas-advent-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="schedule-row" style="margin-top: 10px;">
+                    <div class="form-group">
+                        <label>🌅 Einschalten um:</label>
+                        <input type="time" id="christmas-advent-on-time" value="09:00">
+                    </div>
+                    <div class="form-group" style="margin-left: 20px;">
+                        <label>🌙 Ausschalten um:</label>
+                        <input type="time" id="christmas-advent-off-time" value="23:30">
+                    </div>
+                </div>
+
+                <hr style="margin: 20px 0; opacity: 0.2;">
+
+                <div class="schedule-row" style="align-items: center; justify-content: space-between;">
+                    <div>
+                        <strong>🎅 Heiligabend (24.12)</strong>
+                        <div class="subtitle">Spezielle Zeiten nur am 24.12</div>
+                    </div>
+                    <label class="switch" title="Spezielle Zeiten für Heiligabend aktivieren">
+                        <input type="checkbox" id="christmas-eve-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="schedule-row" style="margin-top: 10px;">
+                    <div class="form-group">
+                        <label>🌅 Einschalten um:</label>
+                        <input type="time" id="christmas-eve-on-time" value="09:00">
+                    </div>
+                    <div class="form-group" style="margin-left: 20px;">
+                        <label>🌙 Ausschalten um:</label>
+                        <input type="time" id="christmas-eve-off-time" value="01:00">
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Geräte-Auswahl -->
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
