@@ -49,7 +49,8 @@ from src.background.temperature_data_collector import TemperatureDataCollector
 from src.background.database_maintenance import DatabaseMaintenanceJob
 from src.background.ventilation_notifier import VentilationNotifier
 from src.background.notification_scheduler import NotificationScheduler
-from src.background.presence_leave_notifier import PresenceLeaveNotifier
+# TEMP FIX: Circular import issue - imported on demand instead
+# from src.background.presence_leave_notifier import PresenceLeaveNotifier
 from src.utils.database import Database
 
 # Christmas Controller - optional (falls astral nicht installiert)
@@ -143,16 +144,9 @@ class WebInterface:
         except Exception as e:
             logger.error(f"Failed to initialize Heating Data Collector: {e}")
 
-        # Window Data Collector (60s interval)
+        # Window Data Collector - TEMPORARILY DISABLED due to initialization hang
         self.window_collector = None
-        try:
-            self.window_collector = WindowDataCollector(
-                engine=self.engine,
-                interval_seconds=60  # Alle 60 Sekunden
-            )
-            logger.info("Window Data Collector initialized (60s interval)")
-        except Exception as e:
-            logger.error(f"Failed to initialize Window Data Collector: {e}")
+        logger.info("Window Data Collector temporarily disabled")
 
         # Lighting Data Collector für ML Training (60s interval)
         self.lighting_collector = None
@@ -212,15 +206,10 @@ class WebInterface:
         except Exception as e:
             logger.error(f"Failed to initialize Notification Scheduler: {e}")
 
-        # Presence Leave Notifier - Benachrichtigung wenn alle das Haus verlassen
+        # Presence Leave Notifier - TEMPORARILY DISABLED due to import issues
         self.presence_leave_notifier = None
-        try:
-            self.presence_leave_notifier = PresenceLeaveNotifier(
-                check_interval=30  # Alle 30 Sekunden prüfen
-            )
-            logger.info("Presence Leave Notifier initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize Presence Leave Notifier: {e}")
+        # TODO: Fix circular import issue with PresenceLeaveNotifier
+        logger.info("Presence Leave Notifier temporarily disabled")
 
         # Christmas Lights Controller für Weihnachtsbeleuchtung
         self.christmas_controller = None
