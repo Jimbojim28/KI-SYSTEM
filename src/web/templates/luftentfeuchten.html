@@ -570,7 +570,49 @@
         <!-- Tab Content: Erweitert -->
         <div class="tab-content" id="tab-advanced">
             <div class="form-section">
-                <h4>Energie-Berechnung</h4>
+                <h4>🔧 Sensor-Einstellungen</h4>
+                <p style="color: #6b7280; font-size: 0.9em; margin-bottom: 15px;">
+                    Passen Sie an, wie Tür- und Fenstersensoren interpretiert werden.
+                </p>
+
+                <div style="background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 15px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: start; gap: 12px;">
+                        <span style="font-size: 1.3em;">ℹ️</span>
+                        <div style="flex: 1; font-size: 0.9em; color: #1e40af;">
+                            <strong>Sensor-Logik:</strong><br>
+                            Manche Sensoren melden "true" wenn offen, andere wenn geschlossen.
+                            Aktivieren Sie die Invertierung, wenn Ihr Sensor die umgekehrte Logik hat.
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; gap: 15px; margin-bottom: 25px;">
+                    <label class="toggle-label" style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                        <input type="checkbox" id="invert-door-sensor" class="toggle-checkbox">
+                        <span class="toggle-switch"></span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1f2937;">🚪 Tür-Sensor invertieren</div>
+                            <div style="font-size: 0.85em; color: #6b7280; margin-top: 2px;">
+                                Standard: alarm_contact=true → Offen | Invertiert: alarm_contact=true → Geschlossen
+                            </div>
+                        </div>
+                    </label>
+
+                    <label class="toggle-label" style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                        <input type="checkbox" id="invert-window-sensor" class="toggle-checkbox">
+                        <span class="toggle-switch"></span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1f2937;">🪟 Fenster-Sensor invertieren</div>
+                            <div style="font-size: 0.85em; color: #6b7280; margin-top: 2px;">
+                                Standard: alarm_contact=true → Offen | Invertiert: alarm_contact=true → Geschlossen
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;">
+
+                <h4>💡 Energie-Berechnung</h4>
                 <p style="color: #6b7280; font-size: 0.9em; margin-bottom: 15px;">
                     Diese Werte werden für die Energie- und Kostenberechnung des Luftentfeuchters verwendet.
                 </p>

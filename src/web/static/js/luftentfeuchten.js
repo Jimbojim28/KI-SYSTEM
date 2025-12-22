@@ -120,6 +120,13 @@ async function loadConfig() {
                 setupHeatingBoostToggle(); // Trigger toggle logic
             }
 
+            // Sensor-Invertierung (Tab: Erweitert)
+            const invertDoorSensor = document.getElementById('invert-door-sensor');
+            const invertWindowSensor = document.getElementById('invert-window-sensor');
+
+            if (invertDoorSensor) invertDoorSensor.checked = config.invert_door_sensor || false;
+            if (invertWindowSensor) invertWindowSensor.checked = config.invert_window_sensor || false;
+
             // Energie-Werte (Tab: Erweitert)
             const dehumWattage = document.getElementById('dehumidifier-wattage');
             const energyPrice = document.getElementById('energy-price');
@@ -159,6 +166,9 @@ async function saveConfig() {
             heating_boost_enabled: document.getElementById('heating-boost-enabled').checked,
             heating_boost_delta: parseFloat(document.getElementById('heating-boost-delta').value),
             frost_protection_temperature: parseFloat(document.getElementById('frost-protection-temp').value),
+            // Sensor-Invertierung
+            invert_door_sensor: document.getElementById('invert-door-sensor') ? document.getElementById('invert-door-sensor').checked : false,
+            invert_window_sensor: document.getElementById('invert-window-sensor') ? document.getElementById('invert-window-sensor').checked : false,
             // Energie-Werte (nur Luftentfeuchter, keine Heizung bei Zentralheizung)
             dehumidifier_wattage: parseFloat(document.getElementById('dehumidifier-wattage').value),
             energy_price_per_kwh: parseFloat(document.getElementById('energy-price').value)
