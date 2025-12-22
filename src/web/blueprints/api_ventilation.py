@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 from datetime import datetime, timedelta
 from typing import Dict, Any
+import time
 
 from .validators import validate_request, Validators, FieldValidator
 
@@ -19,6 +20,48 @@ def init_ventilation_blueprint(engine, db, config):
     """Initialisiert den Blueprint mit Engine, Database und Config Referenzen"""
     
     sensor_mapping_file = Path('data/ventilation_sensor_mapping.json')
+    CACHE_TTL_SECONDS = 15
+    homey_cache = {'ts': 0, 'devices': None, 'map': {}}
+    ha_cache = {'ts': 0, 'devices': None}
+
+    def _get_homey_devices_map() -> Dict[str, dict]:
+        """Lädt Homey-Geräte mit kurzem Cache und liefert Map nach ID"""
+        now = time.time()
+        if homey_cache['devices'] is not None and (now - homey_cache['ts'] < CACHE_TTL_SECONDS):
+            return homey_cache['map']
+
+        devices = []
+        if engine and engine.platform:
+            try:
+                devices = engine.platform.get_all_devices() or []
+            except Exception as e:
+                logger.debug(f"Error getting Homey devices: {e}")
+
+        device_map = {}
+        for dev in devices:
+            dev_id = dev.get('id')
+            if dev_id:
+                device_map[dev_id] = dev
+
+        homey_cache.update({'ts': now, 'devices': devices, 'map': device_map})
+        return device_map
+
+    def _get_ha_devices():
+        """Lädt Home-Assistant-Geräte mit kurzem Cache"""
+        now = time.time()
+        if ha_cache['devices'] is not None and (now - ha_cache['ts'] < CACHE_TTL_SECONDS):
+            return ha_cache['devices']
+
+        ha_devices = None
+        if engine and hasattr(engine, 'platforms') and 'homeassistant' in engine.platforms:
+            try:
+                ha_platform = engine.platforms['homeassistant']
+                ha_devices = ha_platform.get_all_devices()
+            except Exception as e:
+                logger.debug(f"Error getting HA devices: {e}")
+
+        ha_cache.update({'ts': now, 'devices': ha_devices})
+        return ha_devices
     
     def _load_sensor_mapping() -> Dict[str, Any]:
         """Lade Sensor-Mapping aus Datei"""
@@ -124,35 +167,31 @@ def init_ventilation_blueprint(engine, db, config):
         return summary
     
     def _get_sensor_value(entity_id: str) -> float | None:
-        """Hole den aktuellen Wert eines Sensors"""
+        """Hole den aktuellen Wert eines Sensors (mit kurzem Cache)"""
         if not entity_id:
             return None
             
         try:
             if entity_id.startswith('homey:'):
-                # Homey Sensor: homey:device_id:capability
                 parts = entity_id.split(':')
                 if len(parts) >= 3:
                     device_id = parts[1]
                     capability = f'measure_{parts[2]}'
-                    
-                    if engine and engine.platform:
-                        devices = engine.platform.get_all_devices()
-                        if devices and device_id in devices:
-                            caps_obj = devices[device_id].get('capabilitiesObj', {})
-                            if capability in caps_obj:
-                                return caps_obj[capability].get('value')
+
+                    devices_map = _get_homey_devices_map()
+                    device = devices_map.get(device_id)
+                    if device:
+                        caps_obj = device.get('capabilitiesObj', {})
+                        if capability in caps_obj:
+                            return caps_obj[capability].get('value')
             else:
-                # Home Assistant Sensor
-                if engine and hasattr(engine, 'platforms') and 'homeassistant' in engine.platforms:
-                    ha_platform = engine.platforms['homeassistant']
-                    ha_devices = ha_platform.get_all_devices()
-                    if ha_devices and entity_id in ha_devices:
-                        state = ha_devices[entity_id].get('state')
-                        try:
-                            return float(state)
-                        except (ValueError, TypeError):
-                            return None
+                ha_devices = _get_ha_devices()
+                if ha_devices and entity_id in ha_devices:
+                    state = ha_devices[entity_id].get('state')
+                    try:
+                        return float(state)
+                    except (ValueError, TypeError):
+                        return None
         except Exception as e:
             logger.debug(f"Error getting sensor value for {entity_id}: {e}")
         return None
@@ -292,22 +331,13 @@ def init_ventilation_blueprint(engine, db, config):
         try:
             sensors = []
             zones = _get_zones()
-            
-            # DEBUG: Log engine state
-            import sys
-            logger.warning(f"DEBUG get_sensors: engine={engine}, platform={engine.platform if engine else 'NO ENGINE'}")
-            sys.stdout.write(f"DEBUG get_sensors: engine={engine}\n")
-            sys.stdout.flush()
-            
+
             # Homey Sensoren
             if engine and engine.platform:
                 try:
-                    devices = engine.platform.get_all_devices()
-                    print(f"DEBUG: Got {len(devices) if devices else 0} devices from Homey, type={type(devices)}")
-                    logger.info(f"Got {len(devices) if devices else 0} devices from Homey")
-                    
-                    # get_all_devices returns a List, not a Dict!
-                    if devices and isinstance(devices, list):
+                    devices_map = _get_homey_devices_map()
+                    devices = list(devices_map.values())
+                    if devices:
                         co2_found = 0
                         for device in devices:
                             device_id = device.get('id', '')
@@ -355,8 +385,6 @@ def init_ventilation_blueprint(engine, db, config):
                             if 'measure_co2' in cap_names:
                                 co2_found += 1
                                 co2_value = capabilitiesObj.get('measure_co2', {}).get('value')
-                                print(f"DEBUG: Found CO2 sensor: {device_name} = {co2_value} ppm")
-                                logger.info(f"Found CO2 sensor: {device_name} = {co2_value} ppm")
                                 sensors.append({
                                     'device_id': device_id,
                                     'name': device_name,
@@ -388,18 +416,13 @@ def init_ventilation_blueprint(engine, db, config):
                                     'type': 'contact',
                                     'current_value': contact_value
                                 })
-
-                        print(f"DEBUG: Total CO2 sensors found: {co2_found}")
-                        logger.info(f"Total CO2 sensors found: {co2_found}")
                 except Exception as e:
-                    print(f"DEBUG ERROR: {e}")
                     logger.error(f"Error getting Homey sensors: {e}")
             
             # Home Assistant Sensoren
             if engine and hasattr(engine, 'platforms') and 'homeassistant' in engine.platforms:
                 try:
-                    ha_platform = engine.platforms['homeassistant']
-                    ha_devices = ha_platform.get_all_devices()
+                    ha_devices = _get_ha_devices()
                     
                     if ha_devices:
                         for entity_id, entity in ha_devices.items():

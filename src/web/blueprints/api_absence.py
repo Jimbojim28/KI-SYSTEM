@@ -82,108 +82,112 @@ def init_absence_blueprint(engine, db, config):
                 rooms_data = json.load(f)
                 return rooms_data.get('device_types', {})
         return {}
+
+    def _get_homey_collector():
+        """Erstellt einmalig einen Homey Collector"""
+        try:
+            from src.data_collector.homey_collector import HomeyCollector
+        except Exception as e:
+            logger.error(f"Error importing HomeyCollector: {e}")
+            return None
+
+        homey_url, homey_token = _get_homey_config()
+        if homey_url and homey_token:
+            try:
+                return HomeyCollector(homey_url, homey_token)
+            except Exception as e:
+                logger.error(f"Error creating HomeyCollector: {e}")
+        else:
+            logger.warning("Homey config not found for absence checks")
+        return None
     
-    def _get_all_lights() -> list:
+    def _get_all_lights(collector=None, devices=None, device_types=None) -> list:
         """Hole alle Lichter und deren Status (berücksichtigt device_types Ausschlüsse)"""
         lights = []
         
         try:
-            from src.data_collector.homey_collector import HomeyCollector
-            
-            homey_url, homey_token = _get_homey_config()
-            device_types = _get_device_types()
-            
-            if homey_url and homey_token:
-                collector = HomeyCollector(homey_url, homey_token)
-                devices = collector.get_all_devices()
+            device_types = device_types if device_types is not None else _get_device_types()
+            collector = collector or _get_homey_collector()
+            devices = devices if devices is not None else (collector.get_all_devices() if collector else [])
                 
-                for device in devices:
-                    device_id = device.get('id', '')
-                    device_class = device.get('class', '').lower()
-                    caps = device.get('capabilities', [])
+            for device in devices or []:
+                device_id = device.get('id', '')
+                device_class = device.get('class', '').lower()
+                caps = device.get('capabilities', [])
+                
+                # Prüfe ob Gerät in device_types als "device" markiert ist (= ausschließen)
+                configured_type = device_types.get(device_id)
+                if configured_type == 'device':
+                    # Explizit als "kein Licht" markiert - überspringen
+                    continue
+                
+                # Prüfe ob es ein Licht ist (class=light oder hat dim capability)
+                # oder explizit als "light" konfiguriert
+                is_light = (
+                    configured_type == 'light' or
+                    device_class == 'light' or 
+                    ('onoff' in caps and 'dim' in caps)
+                )
+                
+                if is_light:
+                    cap_values = device.get('capabilitiesObj', {})
+                    is_on = cap_values.get('onoff', {}).get('value', False)
                     
-                    # Prüfe ob Gerät in device_types als "device" markiert ist (= ausschließen)
-                    configured_type = device_types.get(device_id)
-                    if configured_type == 'device':
-                        # Explizit als "kein Licht" markiert - überspringen
-                        continue
+                    zone = device.get('zone', {})
+                    room_name = zone.get('name', '') if isinstance(zone, dict) else ''
                     
-                    # Prüfe ob es ein Licht ist (class=light oder hat dim capability)
-                    # oder explizit als "light" konfiguriert
-                    is_light = (
-                        configured_type == 'light' or
-                        device_class == 'light' or 
-                        ('onoff' in caps and 'dim' in caps)
-                    )
-                    
-                    if is_light:
-                        cap_values = device.get('capabilitiesObj', {})
-                        is_on = cap_values.get('onoff', {}).get('value', False)
-                        
-                        zone = device.get('zone', {})
-                        room_name = zone.get('name', '') if isinstance(zone, dict) else ''
-                        
-                        lights.append({
-                            'id': device_id,
-                            'name': device.get('name', 'Unbekannt'),
-                            'on': is_on,
-                            'room': room_name
-                        })
-            else:
-                logger.warning("Homey config not found for absence lights check")
+                    lights.append({
+                        'id': device_id,
+                        'name': device.get('name', 'Unbekannt'),
+                        'on': is_on,
+                        'room': room_name
+                    })
                         
         except Exception as e:
             logger.error(f"Error getting lights: {e}")
         
         return lights
     
-    def _get_all_windows() -> list:
+    def _get_all_windows(collector=None, devices=None) -> list:
         """Hole alle Fenster und deren Status"""
         windows = []
         
         try:
-            from src.data_collector.homey_collector import HomeyCollector
-            
-            homey_url, homey_token = _get_homey_config()
-            
-            if homey_url and homey_token:
-                collector = HomeyCollector(homey_url, homey_token)
-                devices = collector.get_all_devices()
+            collector = collector or _get_homey_collector()
+            devices = devices if devices is not None else (collector.get_all_devices() if collector else [])
                 
-                for device in devices:
-                    caps = device.get('capabilities', [])
+            for device in devices or []:
+                caps = device.get('capabilities', [])
+                
+                # Prüfe ob es ein Fenster/Kontaktsensor ist
+                if 'alarm_contact' in caps:
+                    cap_values = device.get('capabilitiesObj', {})
+                    contact_open = cap_values.get('alarm_contact', {}).get('value', False)
+                    tilt_angle = cap_values.get('measure_tilt', {}).get('value')
                     
-                    # Prüfe ob es ein Fenster/Kontaktsensor ist
-                    if 'alarm_contact' in caps:
-                        cap_values = device.get('capabilitiesObj', {})
-                        contact_open = cap_values.get('alarm_contact', {}).get('value', False)
-                        tilt_angle = cap_values.get('measure_tilt', {}).get('value')
-                        
-                        # Bestimme Fensterstatus
-                        if not contact_open:
-                            state = 'closed'
-                        else:
-                            # Kontakt offen - prüfe Winkel
-                            if tilt_angle is not None:
-                                if 5 <= tilt_angle <= 45:
-                                    state = 'tilted'
-                                else:
-                                    state = 'open'
+                    # Bestimme Fensterstatus
+                    if not contact_open:
+                        state = 'closed'
+                    else:
+                        # Kontakt offen - prüfe Winkel
+                        if tilt_angle is not None:
+                            if 5 <= tilt_angle <= 45:
+                                state = 'tilted'
                             else:
                                 state = 'open'
-                        
-                        zone = device.get('zone', {})
-                        room_name = zone.get('name', '') if isinstance(zone, dict) else ''
-                        
-                        windows.append({
-                            'id': device.get('id', ''),
-                            'name': device.get('name', 'Unbekannt'),
-                            'state': state,
-                            'tilt_angle': tilt_angle,
-                            'room': room_name
-                        })
-            else:
-                logger.warning("Homey config not found for absence windows check")
+                        else:
+                            state = 'open'
+                    
+                    zone = device.get('zone', {})
+                    room_name = zone.get('name', '') if isinstance(zone, dict) else ''
+                    
+                    windows.append({
+                        'id': device.get('id', ''),
+                        'name': device.get('name', 'Unbekannt'),
+                        'state': state,
+                        'tilt_angle': tilt_angle,
+                        'room': room_name
+                    })
                         
         except Exception as e:
             logger.error(f"Error getting windows: {e}")
@@ -312,8 +316,11 @@ def init_absence_blueprint(engine, db, config):
     def get_absence_status():
         """Hole aktuellen Status für Abwesenheits-Preview"""
         try:
-            lights = _get_all_lights()
-            windows = _get_all_windows()
+            collector = _get_homey_collector()
+            devices = collector.get_all_devices() if collector else []
+            device_types = _get_device_types()
+            lights = _get_all_lights(collector=collector, devices=devices, device_types=device_types)
+            windows = _get_all_windows(collector=collector, devices=devices)
             
             return jsonify({
                 'success': True,
@@ -338,9 +345,11 @@ def init_absence_blueprint(engine, db, config):
                     'error': 'Pushover-Credentials nicht konfiguriert. Bitte API-Token und User-Key eingeben.'
                 }), 400
             
-            # Hole aktuellen Status
-            lights = _get_all_lights()
-            windows = _get_all_windows()
+            collector = _get_homey_collector()
+            devices = collector.get_all_devices() if collector else []
+            device_types = _get_device_types()
+            lights = _get_all_lights(collector=collector, devices=devices, device_types=device_types)
+            windows = _get_all_windows(collector=collector, devices=devices)
             
             # Erstelle Nachricht
             title, message = _build_absence_message(lights, windows)
@@ -380,9 +389,11 @@ def init_absence_blueprint(engine, db, config):
                     'error': 'Pushover-Credentials nicht konfiguriert'
                 }), 400
             
-            # Hole aktuellen Status
-            lights = _get_all_lights()
-            windows = _get_all_windows()
+            collector = _get_homey_collector()
+            devices = collector.get_all_devices() if collector else []
+            device_types = _get_device_types()
+            lights = _get_all_lights(collector=collector, devices=devices, device_types=device_types)
+            windows = _get_all_windows(collector=collector, devices=devices)
             
             # Erstelle und sende Nachricht
             title, message = _build_absence_message(lights, windows)
