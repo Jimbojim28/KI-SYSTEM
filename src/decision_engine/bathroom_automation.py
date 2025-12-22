@@ -670,8 +670,13 @@ class BathroomAutomation:
                 logger.info(f"Loaded learned humidity_high: {learned_high}%")
 
             if learned_low:
-                self.humidity_low = learned_low
-                logger.info(f"Loaded learned humidity_low: {learned_low}%")
+                # Sicherheitsgrenze: Luftentfeuchter darf nicht unter 50% weiterlaufen
+                if learned_low < 50.0:
+                    logger.warning(f"Learned humidity_low={learned_low}% is too low! Limiting to 50% (safety)")
+                    self.humidity_low = 50.0
+                else:
+                    self.humidity_low = learned_low
+                logger.info(f"Loaded learned humidity_low: {self.humidity_low}%")
 
             if learned_delay:
                 self.dehumidifier_delay_minutes = learned_delay
