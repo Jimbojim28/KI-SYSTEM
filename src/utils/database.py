@@ -2819,3 +2819,143 @@ class Database:
     def __del__(self):
         """Destructor - schließt Verbindung"""
         self.close()
+
+    def optimize(self, enable_auto_vacuum: bool = True) -> Dict[str, Any]:
+        """
+        Optimiert die Datenbank für bessere Performance
+        
+        Args:
+            enable_auto_vacuum: Auto-Vacuum aktivieren (empfohlen)
+            
+        Returns:
+            Dict mit Optimierungs-Statistiken
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        stats = {
+            'start_time': datetime.now(),
+            'size_before_mb': 0,
+            'size_after_mb': 0,
+            'operations': []
+        }
+        
+        try:
+            # Größe vor Optimierung
+            size_before = self.db_path.stat().st_size
+            stats['size_before_mb'] = round(size_before / 1024 / 1024, 2)
+            logger.info(f"Database size before optimization: {stats['size_before_mb']} MB")
+            
+            # 1. Optimiere Cache für bessere Performance
+            logger.info("Optimizing cache settings...")
+            cursor.execute("PRAGMA cache_size = 10000")  # ~40MB Cache
+            stats['operations'].append('Cache size increased to 10000 pages (~40MB)')
+            
+            # 2. Journal Mode auf WAL für bessere Concurrent Performance
+            cursor.execute("PRAGMA journal_mode")
+            current_mode = cursor.fetchone()[0]
+            if current_mode != 'wal':
+                logger.info("Switching to WAL mode...")
+                cursor.execute("PRAGMA journal_mode=WAL")
+                stats['operations'].append('Journal mode set to WAL (Write-Ahead Logging)')
+            
+            # 3. Auto-Vacuum aktivieren (verhindert Fragmentierung)
+            if enable_auto_vacuum:
+                cursor.execute("PRAGMA auto_vacuum")
+                current_autovac = cursor.fetchone()[0]
+                if current_autovac == 0:
+                    logger.info("Enabling auto-vacuum (requires VACUUM)...")
+                    cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                    stats['operations'].append('Auto-vacuum enabled (INCREMENTAL)')
+            
+            # 4. VACUUM - Komprimiert Datenbank und entfernt Fragmentierung
+            logger.info("Running VACUUM (this may take a moment)...")
+            cursor.execute("VACUUM")
+            stats['operations'].append('VACUUM completed (removed fragmentation)')
+            
+            # 5. ANALYZE - Aktualisiert Statistiken für Query Optimizer
+            logger.info("Running ANALYZE...")
+            cursor.execute("ANALYZE")
+            stats['operations'].append('ANALYZE completed (updated query planner statistics)')
+            
+            # 6. Synchronous Mode optimieren
+            cursor.execute("PRAGMA synchronous = NORMAL")
+            stats['operations'].append('Synchronous mode set to NORMAL (faster writes, still safe)')
+            
+            # 7. Temp Store in Memory
+            cursor.execute("PRAGMA temp_store = MEMORY")
+            stats['operations'].append('Temp store set to MEMORY (faster temporary operations)')
+            
+            conn.commit()
+            
+            # Größe nach Optimierung
+            size_after = self.db_path.stat().st_size
+            stats['size_after_mb'] = round(size_after / 1024 / 1024, 2)
+            stats['saved_mb'] = round((size_before - size_after) / 1024 / 1024, 2)
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            
+            logger.info(f"Database optimization completed:")
+            logger.info(f"  Size before: {stats['size_before_mb']} MB")
+            logger.info(f"  Size after:  {stats['size_after_mb']} MB")  
+            logger.info(f"  Saved:       {stats['saved_mb']} MB")
+            logger.info(f"  Duration:    {stats['duration_seconds']:.2f}s")
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error during database optimization: {e}")
+            stats['error'] = str(e)
+            return stats
+    
+    def get_database_stats(self) -> Dict[str, Any]:
+        """Liefert Statistiken über die Datenbank"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        stats = {}
+        
+        # Datenbankgröße
+        stats['size_mb'] = round(self.db_path.stat().st_size / 1024 / 1024, 2)
+        
+        # Anzahl Tabellen
+        cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        stats['table_count'] = cursor.fetchone()[0]
+        
+        # Anzahl Indizes
+        cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+        stats['index_count'] = cursor.fetchone()[0]
+        
+        # Pragma-Einstellungen
+        cursor.execute("PRAGMA page_size")
+        stats['page_size'] = cursor.fetchone()[0]
+        
+        cursor.execute("PRAGMA cache_size")
+        stats['cache_size'] = cursor.fetchone()[0]
+        stats['cache_mb'] = round((stats['cache_size'] * stats['page_size']) / 1024 / 1024, 2)
+        
+        cursor.execute("PRAGMA journal_mode")
+        stats['journal_mode'] = cursor.fetchone()[0]
+        
+        cursor.execute("PRAGMA auto_vacuum")
+        auto_vac = cursor.fetchone()[0]
+        stats['auto_vacuum'] = {0: 'NONE', 1: 'FULL', 2: 'INCREMENTAL'}.get(auto_vac, 'UNKNOWN')
+        
+        cursor.execute("PRAGMA synchronous")
+        sync = cursor.fetchone()[0]
+        stats['synchronous'] = {0: 'OFF', 1: 'NORMAL', 2: 'FULL', 3: 'EXTRA'}.get(sync, 'UNKNOWN')
+        
+        # Größte Tabellen
+        large_tables = []
+        for table in ['sensor_data', 'window_observations', 'continuous_measurements',
+                     'heating_observations', 'lighting_events']:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
+                large_tables.append({'name': table, 'row_count': count})
+            except:
+                pass
+        
+        stats['large_tables'] = sorted(large_tables, key=lambda x: x['row_count'], reverse=True)
+        
+        return stats
