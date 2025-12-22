@@ -298,10 +298,22 @@ class BathroomAutomation:
             state = platform.get_state(sensor_id)
             if state:
                 caps = state.get('attributes', {}).get('capabilities', {})
-                # alarm_contact: true = offen, false = geschlossen
+                # alarm_contact: true = offen, false = geschlossen (Standard)
+                # Mit invert_door_sensor kann die Logik umgekehrt werden
                 if 'alarm_contact' in caps:
-                    is_open = caps['alarm_contact'].get('value', False)
-                    return not is_open  # Umkehren: wir wollen wissen ob ZU
+                    sensor_value = caps['alarm_contact'].get('value', False)
+                    invert = self.config.get('invert_door_sensor', False)
+
+                    # sensor_value = true bedeutet normalerweise "offen"
+                    # Wir wollen wissen ob GESCHLOSSEN (return True wenn zu)
+                    if invert:
+                        # Invertierte Logik: true = geschlossen, false = offen
+                        is_closed = sensor_value
+                    else:
+                        # Standard-Logik: true = offen, false = geschlossen
+                        is_closed = not sensor_value
+
+                    return is_closed
         except Exception as e:
             logger.debug(f"Error reading door sensor: {e}")
 
@@ -317,9 +329,21 @@ class BathroomAutomation:
             state = platform.get_state(sensor_id)
             if state:
                 caps = state.get('attributes', {}).get('capabilities', {})
-                # alarm_contact: true = offen, false = geschlossen
+                # alarm_contact: true = offen, false = geschlossen (Standard)
+                # Mit invert_window_sensor kann die Logik umgekehrt werden
                 if 'alarm_contact' in caps:
-                    return caps['alarm_contact'].get('value', False)
+                    sensor_value = caps['alarm_contact'].get('value', False)
+                    invert = self.config.get('invert_window_sensor', False)
+
+                    # Wir wollen wissen ob OFFEN (return True wenn offen)
+                    if invert:
+                        # Invertierte Logik: true = geschlossen, false = offen
+                        is_open = not sensor_value
+                    else:
+                        # Standard-Logik: true = offen, false = geschlossen
+                        is_open = sensor_value
+
+                    return is_open
         except Exception as e:
             logger.debug(f"Error reading window sensor: {e}")
 
