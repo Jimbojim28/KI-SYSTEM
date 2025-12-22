@@ -60,6 +60,7 @@ class BathroomAutomation:
 
         # Verzögerung bevor Luftentfeuchter ausschaltet
         self.dehumidifier_delay_minutes = config.get('dehumidifier_delay', 5)
+        self.dehumidifier_off_hysteresis = config.get('dehumidifier_off_hysteresis', 2.0)
 
         # Event-Tracking
         self.current_event_id = None
@@ -521,16 +522,24 @@ class BathroomAutomation:
                 logger.error(f"Error checking mold risk for shutdown: {e}")
         
         should_turn_off = humidity < self.humidity_low and not mold_risk_still_present
+        within_shutdown_window = (
+            self.humidity_below_threshold_since is not None
+            and humidity < (self.humidity_low + self.dehumidifier_off_hysteresis)
+            and not mold_risk_still_present
+        )
         
         logger.debug(f"Dehumidifier decision: humidity={humidity}%, threshold={self.humidity_low}%, "
                     f"running={self.dehumidifier_running}, should_off={should_turn_off}, "
                     f"mold_risk={mold_risk_still_present}")
 
-        if should_turn_off and self.dehumidifier_running:
+        if (should_turn_off or within_shutdown_window) and self.dehumidifier_running:
             # Merke dir, wann Luftfeuchtigkeit unter Schwellwert gefallen ist
             if self.humidity_below_threshold_since is None:
-                self.humidity_below_threshold_since = datetime.now()
-                logger.info(f"Humidity dropped below threshold ({humidity}%), starting {self.dehumidifier_delay_minutes} min shutdown countdown")
+                if should_turn_off:
+                    self.humidity_below_threshold_since = datetime.now()
+                    logger.info(f"Humidity dropped below threshold ({humidity}%), starting {self.dehumidifier_delay_minutes} min shutdown countdown")
+                else:
+                    return None
             
             # Prüfe ob Verzögerung abgelaufen ist
             minutes_since_below = (datetime.now() - self.humidity_below_threshold_since).seconds / 60
@@ -552,8 +561,8 @@ class BathroomAutomation:
                 'action': 'turn_off',
                 'reason': reason
             }
-        elif humidity >= self.humidity_low:
-            # Reset wenn Luftfeuchtigkeit wieder steigt
+        elif humidity >= (self.humidity_low + self.dehumidifier_off_hysteresis):
+            # Reset nur bei deutlichem Anstieg über den Schwellwert
             self.humidity_below_threshold_since = None
 
         return None
