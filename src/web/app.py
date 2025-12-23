@@ -1774,7 +1774,8 @@ class WebInterface:
                 from pathlib import Path
 
                 config_path = Path('config/config.yaml')
-                
+                env_path = Path('.env')
+
                 # Lade existierende Config
                 if config_path.exists():
                     with open(config_path, 'r') as f:
@@ -1782,55 +1783,121 @@ class WebInterface:
                 else:
                     config = {}
 
+                # Lade existierende .env Datei
+                env_vars = {}
+                if env_path.exists():
+                    with open(env_path, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith('#'):
+                                if '=' in line:
+                                    key, value = line.split('=', 1)
+                                    env_vars[key] = value
+
                 # Multi-Platform Option
                 multi_platform = data.get('enable_multi_platform', False)
-                
+
                 if multi_platform:
                     # Multi-Platform Mode
                     if 'platforms' not in config:
                         config['platforms'] = {}
                     config['platforms']['enable_multi_platform'] = True
                     config['platforms']['primary'] = data.get('primary_platform', 'homey')
-                    
+
                     # Update wenn Daten gesendet wurden (auch wenn leer - User kann absichtlich löschen)
                     if 'homey' in data:
                         config['homey'] = data['homey']
+                        # Schreibe in .env
+                        env_vars['HOMEY_URL'] = data['homey'].get('url', '')
+                        env_vars['HOMEY_TOKEN'] = data['homey'].get('token', '')
                     if 'homeassistant' in data:
                         config['homeassistant'] = data['homeassistant']
-                    
+                        # Schreibe in .env
+                        env_vars['HA_URL'] = data['homeassistant'].get('url', '')
+                        env_vars['HA_TOKEN'] = data['homeassistant'].get('token', '')
+
                     logger.info("Multi-Platform mode enabled")
                 else:
                     # Single Platform Mode
                     if 'platforms' not in config:
                         config['platforms'] = {}
                     config['platforms']['enable_multi_platform'] = False
-                    
+
                     # Update platform type
+                    platform_type = data.get('platform_type', 'homey')
                     if 'platform' not in config:
                         config['platform'] = {}
-                    config['platform']['type'] = data.get('platform_type', 'homey')
+                    config['platform']['type'] = platform_type
+
+                    # Schreibe Platform Type in .env
+                    env_vars['PLATFORM_TYPE'] = platform_type
 
                     # Update wenn Daten gesendet wurden
                     if 'homey' in data:
                         config['homey'] = data['homey']
+                        # Schreibe in .env
+                        env_vars['HOMEY_URL'] = data['homey'].get('url', '')
+                        env_vars['HOMEY_TOKEN'] = data['homey'].get('token', '')
 
                     # Update Home Assistant config
                     if 'homeassistant' in data:
                         config['homeassistant'] = data['homeassistant']
+                        # Schreibe in .env
+                        env_vars['HA_URL'] = data['homeassistant'].get('url', '')
+                        env_vars['HA_TOKEN'] = data['homeassistant'].get('token', '')
 
                 # Update Weather API config
                 if 'weather' in data:
                     if 'platforms' not in config:
                         config['platforms'] = {}
                     config['platforms']['weather'] = data['weather']
+                    # Schreibe in .env
+                    if data['weather'].get('api_key'):
+                        env_vars['WEATHER_API_KEY'] = data['weather']['api_key']
                     logger.info(f"Weather API config updated: enabled={data['weather'].get('enabled', False)}, location={data['weather'].get('location', 'N/A')}")
 
                 # Speichere Config
                 with open(config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
-                logger.info(f"Connection configuration saved: Multi-Platform={multi_platform}")
-                logger.info(f"Saved config - Homey URL: {config.get('homey', {}).get('url', 'N/A')}, HA URL: {config.get('homeassistant', {}).get('url', 'N/A')}")
+                # Speichere .env Datei - behalte existierende Werte
+                # Lese vollständige .env Datei mit Kommentaren
+                env_lines = []
+                if env_path.exists():
+                    with open(env_path, 'r') as f:
+                        env_lines = f.readlines()
+
+                # Schreibe aktualisierte .env Datei
+                with open(env_path, 'w') as f:
+                    # Schreibe Zeile für Zeile und aktualisiere nur die geänderten Werte
+                    updated_keys = set()
+                    for line in env_lines:
+                        stripped = line.strip()
+                        # Behalte Kommentare und leere Zeilen
+                        if not stripped or stripped.startswith('#'):
+                            f.write(line)
+                            continue
+
+                        # Prüfe ob Zeile ein Key=Value Paar ist
+                        if '=' in stripped:
+                            key = stripped.split('=', 1)[0]
+                            # Wenn dieser Key aktualisiert werden soll, schreibe neuen Wert
+                            if key in env_vars:
+                                f.write(f"{key}={env_vars[key]}\n")
+                                updated_keys.add(key)
+                            else:
+                                # Ansonsten behalte alte Zeile
+                                f.write(line)
+
+                    # Füge neue Keys hinzu, die noch nicht in der Datei waren
+                    new_keys = set(env_vars.keys()) - updated_keys
+                    if new_keys:
+                        f.write('\n# Automatisch hinzugefügte Werte\n')
+                        for key in new_keys:
+                            f.write(f"{key}={env_vars[key]}\n")
+
+                logger.info(f"Connection configuration saved to config.yaml and .env: Multi-Platform={multi_platform}")
+                logger.info(f"Saved config - Homey URL: {env_vars.get('HOMEY_URL', 'N/A')}, HA URL: {env_vars.get('HA_URL', 'N/A')}")
 
                 # Trigger server restart in background
                 import threading
