@@ -1765,8 +1765,11 @@ class WebInterface:
         @self.app.route('/api/config/connection', methods=['POST'])
         def api_save_connection_config():
             """API: Speichere Verbindungskonfiguration"""
+            logger.info("=== API /api/config/connection aufgerufen ===")
             data = request.get_json()
+            logger.info(f"Empfangene Daten: {data}")
             if not data:
+                logger.error("Keine Daten erhalten!")
                 return jsonify({'success': False, 'error': 'Keine Daten erhalten'}), 400
 
             try:
@@ -1857,17 +1860,24 @@ class WebInterface:
                     logger.info(f"Weather API config updated: enabled={data['weather'].get('enabled', False)}, location={data['weather'].get('location', 'N/A')}")
 
                 # Speichere Config
+                logger.info("Speichere config.yaml...")
                 with open(config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+                logger.info("config.yaml gespeichert")
 
                 # Speichere .env Datei - behalte existierende Werte
                 # Lese vollständige .env Datei mit Kommentaren
+                logger.info(f"Schreibe .env Datei mit {len(env_vars)} Variablen...")
                 env_lines = []
                 if env_path.exists():
                     with open(env_path, 'r') as f:
                         env_lines = f.readlines()
+                    logger.info(f".env Datei gelesen: {len(env_lines)} Zeilen")
+                else:
+                    logger.warning(".env Datei existiert nicht - erstelle neue")
 
                 # Schreibe aktualisierte .env Datei
+                logger.info("Schreibe aktualisierte .env Datei...")
                 with open(env_path, 'w') as f:
                     # Schreibe Zeile für Zeile und aktualisiere nur die geänderten Werte
                     updated_keys = set()
@@ -1892,10 +1902,12 @@ class WebInterface:
                     # Füge neue Keys hinzu, die noch nicht in der Datei waren
                     new_keys = set(env_vars.keys()) - updated_keys
                     if new_keys:
+                        logger.info(f"Füge neue Keys hinzu: {new_keys}")
                         f.write('\n# Automatisch hinzugefügte Werte\n')
                         for key in new_keys:
                             f.write(f"{key}={env_vars[key]}\n")
 
+                logger.info(f".env Datei erfolgreich geschrieben! Updated keys: {updated_keys}, New keys: {new_keys if new_keys else 'keine'}")
                 logger.info(f"Connection configuration saved to config.yaml and .env: Multi-Platform={multi_platform}")
                 logger.info(f"Saved config - Homey URL: {env_vars.get('HOMEY_URL', 'N/A')}, HA URL: {env_vars.get('HA_URL', 'N/A')}")
 
@@ -1922,7 +1934,9 @@ class WebInterface:
                 })
 
             except Exception as e:
+                import traceback
                 logger.error(f"Error saving connection config: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 return jsonify({'success': False, 'error': str(e)}), 500
 
         @self.app.route('/api/config/data-collection', methods=['POST'])
