@@ -22,14 +22,17 @@ async function loadDevices() {
             </div>
         `;
 
-        // Lade Geräte und Räume parallel
+        // Lade Geräte und Raum-Einstellungen parallel (zentrale Settings-API)
         const [devicesData, roomsData] = await Promise.all([
             fetchJSON('/api/devices'),
-            fetchJSON('/api/rooms')
+            fetchJSON('/api/rooms/settings')
         ]);
 
         allDevices = devicesData.devices || [];
         allRooms = roomsData.rooms || [];
+        
+        // Sensor-Mappings sind jetzt auch verfügbar in roomsData.sensor_mappings
+        // (kann für zukünftige Features genutzt werden)
 
         // Erstelle Zone-ID zu Name Mapping
         zoneNameMap = {};

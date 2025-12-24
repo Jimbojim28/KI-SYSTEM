@@ -8,9 +8,11 @@ let selectedRoomId = null;
 // Lade Räume
 async function loadRooms() {
     try {
-        const data = await fetchJSON('/api/rooms');
+        // Nutze zentrale Settings-API für alle Raum-Einstellungen
+        const data = await fetchJSON('/api/rooms/settings');
         rooms = data.rooms || [];
         deviceRoomAssignments = data.assignments || {};
+        // Sensor-Mappings sind jetzt auch verfügbar in data.sensor_mappings
         renderRooms();
         populateRoomSelector();
     } catch (error) {

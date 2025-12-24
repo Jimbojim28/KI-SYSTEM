@@ -58,10 +58,10 @@ function restoreLastMainTab() {
 
 // ===== END MAIN TAB NAVIGATION =====
 
-// Lade alle Räume
+// Lade alle Räume (nutze zentrale Settings-API)
 async function loadRooms() {
     try {
-        const roomsData = await fetchJSON('/api/rooms');
+        const roomsData = await fetchJSON('/api/rooms/settings');
         allRooms = roomsData.rooms || [];
         populateRoomSelect();
     } catch (error) {

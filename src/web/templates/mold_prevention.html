@@ -599,7 +599,8 @@ let hiddenRooms = [];
 // Versteckte Räume vom Server laden (zentrale Einstellung aus /rooms)
 async function loadHiddenRooms() {
     try {
-        const response = await fetch('/api/rooms/hidden');
+        // Nutze zentrale Settings-API (enthält auch hidden)
+        const response = await fetch('/api/rooms/settings');
         const data = await response.json();
         if (data.success) {
             hiddenRooms = data.hidden || [];
@@ -824,14 +825,15 @@ function renderOutdoorHeader() {
 // Daten laden
 async function loadOverview() {
     try {
-        // Nutze neue zentrale API für Raum-Sensordaten
-        const [sensorDataResponse, hiddenResponse] = await Promise.all([
+        // Nutze zentrale APIs: sensor-data für Live-Daten, settings für hidden
+        const [sensorDataResponse, settingsResponse] = await Promise.all([
             fetch('/api/rooms/sensor-data'),
-            fetch('/api/rooms/hidden')
+            fetch('/api/rooms/settings')
         ]);
         
         const sensorData = await sensorDataResponse.json();
-        const hiddenData = await hiddenResponse.json();
+        const settingsData = await settingsResponse.json();
+        const hiddenData = { success: true, hidden: settingsData.hidden || [] };
         
         if (!sensorData.success) {
             document.getElementById('rooms-grid').innerHTML = '<div class="loading-state">❌ Fehler beim Laden</div>';

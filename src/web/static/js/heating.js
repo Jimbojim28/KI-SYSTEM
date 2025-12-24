@@ -86,7 +86,8 @@ function updateOutdoorTempDisplay() {
 // Versteckte Räume aus zentraler Konfiguration laden
 async function loadHiddenRooms() {
     try {
-        const response = await fetch('/api/rooms/hidden');
+        // Nutze zentrale Settings-API (enthält auch hidden)
+        const response = await fetch('/api/rooms/settings');
         if (response.ok) {
             const data = await response.json();
             hiddenRooms = data.hidden || [];

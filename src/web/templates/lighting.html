@@ -1598,27 +1598,26 @@ let roomNameMap = {}; // zone_id -> room_name
 // Zentrale Raum-Konfiguration laden
 async function loadRoomsConfig() {
     try {
-        // Versteckte Räume laden
-        const hiddenResponse = await fetch('/api/rooms/hidden');
-        if (hiddenResponse.ok) {
-            const hiddenData = await hiddenResponse.json();
-            hiddenRooms = hiddenData.hidden || [];
-            console.log('Hidden rooms loaded:', hiddenRooms);
-        }
-        
-        // Alle Räume laden für Zone-ID zu Name Mapping
-        const roomsResponse = await fetch('/api/rooms');
-        if (roomsResponse.ok) {
-            const roomsData = await roomsResponse.json();
-            allRooms = roomsData.rooms || [];
+        // Nutze zentrale Settings-API für alle Raum-Einstellungen
+        const settingsResponse = await fetch('/api/rooms/settings');
+        if (settingsResponse.ok) {
+            const settingsData = await settingsResponse.json();
             
-            // Baue Zone-ID zu Raumname Mapping
+            // Versteckte Räume
+            hiddenRooms = settingsData.hidden || [];
+            console.log('Hidden rooms loaded:', hiddenRooms);
+            
+            // Alle Räume für Zone-ID zu Name Mapping
+            allRooms = settingsData.rooms || [];
             allRooms.forEach(room => {
                 if (room.id) {
                     roomNameMap[room.id] = room.name;
                 }
             });
             console.log('Rooms loaded:', allRooms.length, 'rooms');
+            
+            // Sensor-Mappings sind jetzt auch verfügbar in settingsData.sensor_mappings
+            // (kann für zukünftige Features genutzt werden)
         }
     } catch (error) {
         console.error('Error loading rooms config:', error);

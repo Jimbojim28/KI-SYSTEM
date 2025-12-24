@@ -4597,22 +4597,41 @@ class WebInterface:
 
         @self.app.route('/api/rooms/settings', methods=['GET'])
         def api_rooms_settings():
-            """API: Alle Raum-Einstellungen für Frontend - zentrale Datenquelle"""
+            """API: Alle Raum-Einstellungen für Frontend - zentrale Datenquelle
+            Liefert: Räume, versteckte Räume, Geräte-Zuordnungen, Sensor-Mappings, Motion-Sensors, Outdoor-Sensoren
+            """
             import json
             rooms_file = Path('data/rooms.json')
+            mapping_file = Path('data/ventilation_sensor_mapping.json')
             
             try:
+                # Lade Räume
                 if rooms_file.exists():
                     with open(rooms_file, 'r') as f:
                         rooms_data = json.load(f)
                 else:
-                    rooms_data = {'rooms': [], 'assignments': {}, 'hidden': []}
+                    rooms_data = {'rooms': [], 'assignments': {}, 'hidden': [], 'motion_sensors': {}}
+                
+                # Lade Sensor-Mappings
+                if mapping_file.exists():
+                    with open(mapping_file, 'r') as f:
+                        mapping_data = json.load(f)
+                else:
+                    mapping_data = {'rooms': {}, 'outdoor_sensors': {}}
+                
+                # Motion-Sensors aus rooms.json (falls vorhanden)
+                motion_sensors = rooms_data.get('motion_sensors', {})
                 
                 return jsonify({
                     'success': True,
                     'rooms': rooms_data.get('rooms', []),
                     'hidden': rooms_data.get('hidden', []),
-                    'assignments': rooms_data.get('assignments', {})
+                    'assignments': rooms_data.get('assignments', {}),
+                    'sensor_mappings': {
+                        'rooms': mapping_data.get('rooms', {}),
+                        'outdoor_sensors': mapping_data.get('outdoor_sensors', {})
+                    },
+                    'motion_sensors': motion_sensors
                 })
                 
             except Exception as e:

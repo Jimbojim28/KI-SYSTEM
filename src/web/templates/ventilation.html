@@ -1839,7 +1839,8 @@ let hiddenRooms = [];
 // Versteckte Räume vom Server laden (zentrale Einstellung aus /rooms)
 async function loadHiddenRooms() {
     try {
-        const response = await fetch('/api/rooms/hidden');
+        // Nutze zentrale Settings-API (enthält auch hidden)
+        const response = await fetch('/api/rooms/settings');
         const data = await response.json();
         if (data.success) {
             hiddenRooms = data.hidden || [];
