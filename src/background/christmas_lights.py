@@ -92,8 +92,11 @@ class ChristmasLightsController:
             }
         }
         
-        # Location für Sonnenuntergang (Berlin als Default)
-        self.location = LocationInfo("Berlin", "Germany", "Europe/Berlin", 52.52, 13.405)
+        # Location für Sonnenuntergang (Berlin als Default) - nur wenn astral verfügbar
+        if ASTRAL_AVAILABLE:
+            self.location = LocationInfo("Berlin", "Germany", "Europe/Berlin", 52.52, 13.405)
+        else:
+            self.location = None
         
         # Track device states to avoid redundant commands
         self._device_states: Dict[str, bool] = {}  # device_id -> is_on
@@ -475,7 +478,7 @@ class ChristmasLightsController:
                 pass
 
         # Fallback: globale Einstellung
-        if self.config['use_sunset'] and ASTRAL_AVAILABLE:
+        if self.config['use_sunset'] and ASTRAL_AVAILABLE and self.location:
             try:
                 s = sun(self.location.observer, date=now.date())
                 sunset = s['sunset'].time()
