@@ -124,17 +124,14 @@ class ForgottenLightDetector:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS forgotten_light_predictions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                     device_id TEXT NOT NULL,
                     device_name TEXT,
                     room_name TEXT,
                     on_duration_minutes REAL,
-                    reasons TEXT,
                     confidence REAL,
-                    would_turn_off BOOLEAN DEFAULT 1,
-                    test_mode BOOLEAN DEFAULT 1,
-                    ml_prediction BOOLEAN DEFAULT 0,
-                    actually_turned_off BOOLEAN DEFAULT 0,
+                    reasons TEXT,
+                    ml_prediction REAL,
                     action_taken TEXT DEFAULT 'logged'
                 )
             """)
@@ -164,40 +161,28 @@ class ForgottenLightDetector:
             self.ml_model = None
         
     def _init_platform(self):
-        """Initialisiert die Platform (Homey/HA) mit PlatformFactory"""
+        """Initialisiert die Platform (Homey/HA)"""
         try:
-            # Hole Platform-Typ aus Config
-            platform_type = self.config.get('platform', {}).get('type', '')
-            if not platform_type:
-                # Fallback: versuche platform.type direkt
-                platform_type = self.config.get('platform.type', 'homeassistant')
+            platform_type = self.config.get('platform', {}).get('type', '').lower()
             
-            platform_type = platform_type.lower()
-            
-            # Hole URL und Token basierend auf Platform-Typ
-            if platform_type in ['homey', 'homey_pro']:
-                platform_url = self.config.get('homey', {}).get('url', '')
-                platform_token = self.config.get('homey', {}).get('token', '')
-            else:
-                # Home Assistant oder default
-                platform_url = self.config.get('homeassistant', {}).get('url', '')
-                platform_token = self.config.get('homeassistant', {}).get('token', '')
-            
-            # Nutze PlatformFactory für konsistente Initialisierung
-            from src.data_collector.platform_factory import PlatformFactory
-            self.platform = PlatformFactory.create_collector(
-                platform_type,
-                platform_url,
-                platform_token
-            )
-            
-            if self.platform:
-                logger.info(f"Platform initialized for ForgottenLightDetector: {self.platform.get_platform_name()}")
-            else:
-                logger.warning(f"Could not initialize platform '{platform_type}' for ForgottenLightDetector - URL or token missing")
+            if platform_type == 'homey':
+                from src.data_collector.homey_collector import HomeyCollector
+                homey_config = self.config.get('homey', {})
+                self.platform = HomeyCollector(
+                    url=homey_config.get('url', ''),
+                    token=homey_config.get('token', '')
+                )
+                logger.info("Homey platform initialized for ForgottenLightDetector")
+            elif platform_type == 'homeassistant':
+                from src.data_collector.ha_collector import HomeAssistantCollector
+                ha_config = self.config.get('homeassistant', {})
+                self.platform = HomeAssistantCollector(
+                    url=ha_config.get('url', ''),
+                    token=ha_config.get('token', '')
+                )
+                logger.info("Home Assistant platform initialized for ForgottenLightDetector")
         except Exception as e:
             logger.error(f"Could not initialize platform for ForgottenLightDetector: {e}")
-            self.platform = None
     
     def start(self):
         """Startet den Detektor im Hintergrund"""
@@ -234,7 +219,7 @@ class ForgottenLightDetector:
     def _check_for_forgotten_lights(self):
         """Prüft alle Lampen auf 'vergessen' Status"""
         if not self.platform:
-            logger.warning("No platform available for forgotten light detection - cannot check for forgotten lights")
+            logger.warning("No platform available for forgotten light detection")
             return
         
         now = datetime.now()
@@ -244,15 +229,11 @@ class ForgottenLightDetector:
             devices = self.platform.get_all_devices()
             
             if not devices:
-                logger.warning("No devices returned from platform - cannot check for forgotten lights")
+                logger.warning("No devices returned from platform")
                 return
             
             # Debug: Zähle Geräte nach Typ
             total_devices = len(devices) if isinstance(devices, list) else len(list(devices.values())) if isinstance(devices, dict) else 0
-            
-            if total_devices == 0:
-                logger.warning("Platform returned empty device list - cannot check for forgotten lights")
-                return
             
             # Konvertiere Dict zu Liste falls nötig
             if isinstance(devices, dict):
@@ -276,7 +257,6 @@ class ForgottenLightDetector:
             # Debug: Zähle Lampen
             light_count = 0
             lights_on_count = 0
-            skipped_not_lights = 0
             
             # Bei Abwesenheit: Alle Lampen als vergessen markieren
             if not presence_home and self.turn_off_when_away:
@@ -290,7 +270,6 @@ class ForgottenLightDetector:
             
             for device in devices:
                 if not self._is_light_device(device):
-                    skipped_not_lights += 1
                     continue
                 
                 light_count += 1
@@ -360,16 +339,12 @@ class ForgottenLightDetector:
             # Debug-Logging alle 5 Minuten
             if not hasattr(self, '_last_debug_log') or (now - self._last_debug_log).seconds > 300:
                 self._last_debug_log = now
-                logger.debug(f"Forgotten light check: {total_devices} total devices, {light_count} lights identified, "
-                            f"{skipped_not_lights} devices skipped (not lights), "
+                logger.debug(f"Forgotten light check: {total_devices} devices, {light_count} lights, "
                             f"{len(self.light_on_times)} currently tracked as ON, "
-                            f"presence_home={presence_home}, outdoor_light={outdoor_light:.0f} Lux")
-                
-                if light_count == 0:
-                    logger.warning(f"No lights found in {total_devices} devices - check device configuration in /rooms")
+                            f"presence_home={presence_home}, outdoor_light={outdoor_light}")
                         
         except Exception as e:
-            logger.error(f"Error checking forgotten lights: {e}", exc_info=True)
+            logger.error(f"Error checking forgotten lights: {e}")
     
     def _predict_forgotten(self, device_id: str, device_name: str, room_name: str,
                            on_minutes: float, minutes_since_motion: float,
@@ -541,8 +516,7 @@ class ForgottenLightDetector:
             self.stats['predictions_today'] += 1
             
             logger.info(f"Forgotten light detected: {device_name} in {room_name} "
-                       f"(confidence: {confidence:.0%}, on for {on_minutes:.1f} min, "
-                       f"reasons: {', '.join(reasons)}, {'ML' if ml_prediction else 'rule-based'})")
+                       f"(confidence: {confidence:.0%}, reasons: {', '.join(reasons)})")
             
             # Pushover-Benachrichtigung senden
             self._send_forgotten_light_notification(
@@ -645,37 +619,44 @@ class ForgottenLightDetector:
 
     def _save_prediction_to_db(self, prediction: Dict):
         """Speichert Vorhersage in Datenbank"""
-        try:
-            # Stelle sicher, dass Tabelle existiert
-            self._ensure_table()
-            
-            conn = self.db._get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO forgotten_light_predictions
-                (timestamp, device_id, device_name, room_name, on_duration_minutes, 
-                 reasons, confidence, would_turn_off, test_mode, ml_prediction)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                prediction['timestamp'],
-                prediction['device_id'],
-                prediction['device_name'],
-                prediction['room_name'],
-                prediction['on_duration_minutes'],
-                ','.join(prediction['reasons']),
-                prediction['confidence'],
-                prediction['would_turn_off'],
-                prediction['test_mode'],
-                1 if prediction.get('ml_prediction', False) else 0
-            ))
-            
-            conn.commit()
-            logger.debug(f"Saved forgotten light prediction to DB: {prediction['device_name']} in {prediction['room_name']}")
-        except Exception as e:
-            logger.error(f"Error saving forgotten light prediction to database: {e}")
-            logger.error(f"Prediction data: device={prediction.get('device_name')}, room={prediction.get('room_name')}")
-            raise
+        conn = self.db._get_connection()
+        cursor = conn.cursor()
+        
+        # Tabelle erstellen falls nicht vorhanden
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS forgotten_light_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME NOT NULL,
+                device_id TEXT NOT NULL,
+                device_name TEXT,
+                room_name TEXT,
+                on_duration_minutes REAL,
+                reasons TEXT,
+                confidence REAL,
+                would_turn_off BOOLEAN,
+                test_mode BOOLEAN,
+                actually_turned_off BOOLEAN DEFAULT 0
+            )
+        """)
+        
+        cursor.execute("""
+            INSERT INTO forgotten_light_predictions
+            (timestamp, device_id, device_name, room_name, on_duration_minutes, 
+             reasons, confidence, would_turn_off, test_mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            prediction['timestamp'],
+            prediction['device_id'],
+            prediction['device_name'],
+            prediction['room_name'],
+            prediction['on_duration_minutes'],
+            ','.join(prediction['reasons']),
+            prediction['confidence'],
+            prediction['would_turn_off'],
+            prediction['test_mode']
+        ))
+        
+        conn.commit()
     
     def _turn_off_light(self, device_id: str, device_name: str):
         """Schaltet Lampe aus (nur im aktiven Modus)"""
@@ -876,26 +857,24 @@ class ForgottenLightDetector:
         Logik wie bei /rooms:
         - device_type="device" -> wird ignoriert (ausgeblendet)
         - device_type="light" -> wird als Lampe behandelt
-        - kein Eintrag -> wird nach Homey-Klasse/Capabilities geprüft (Standard-Verhalten)
+        - kein Eintrag -> wird nach Homey-Klasse geprüft (Standard-Verhalten)
         
         Alle Lampen werden genutzt, außer die explizit ausgeblendeten!
         """
         device_id = device.get('id', '')
-        device_name = device.get('name', 'Unknown')
         
         # Prüfe ob in device_types konfiguriert
         configured_type = self.device_types.get(device_id)
         
         # Explizit als "device" ausgeblendet -> ignorieren
         if configured_type == 'device':
-            logger.debug(f"Skipping {device_name} (ID: {device_id[:8]}...) - marked as 'device' in rooms config")
             return False
         
         # Explizit als "light" markiert -> ist eine Lampe
         if configured_type == 'light':
             return True
         
-        # Nicht konfiguriert -> nach Homey-Klasse/Capabilities prüfen
+        # Nicht konfiguriert -> nach Homey-Klasse prüfen
         device_class = device.get('class', '').lower()
         capabilities = device.get('capabilities', [])
         
@@ -903,9 +882,8 @@ class ForgottenLightDetector:
         if 'light' in device_class:
             return True
         
-        # Capability-basiert: Geräte mit onoff Capability sind Lampen
-        # (auch ohne Dimmer oder Farbsteuerung)
-        if 'onoff' in capabilities:
+        # Geräte mit Dimmer oder Farbsteuerung
+        if 'onoff' in capabilities and ('dim' in capabilities or 'light_hue' in capabilities):
             return True
         
         return False
