@@ -90,6 +90,9 @@ class ForgottenLightDetector:
             'away_since': None
         }
         
+        # Notification-Tracking für Cooldown (pro Gerät)
+        self._notification_tracking: Dict[str, dict] = {}  # device_id -> {count, last_sent, is_away}
+        
         # Datenbank-Tabelle sicherstellen
         self._ensure_table()
         
@@ -518,13 +521,14 @@ class ForgottenLightDetector:
             logger.info(f"Forgotten light detected: {device_name} in {room_name} "
                        f"(confidence: {confidence:.0%}, reasons: {', '.join(reasons)})")
             
-            # Pushover-Benachrichtigung senden
+            # Pushover-Benachrichtigung senden (mit device_id für Cooldown-Tracking)
             self._send_forgotten_light_notification(
                 device_name=device_name,
                 room_name=room_name,
                 on_minutes=on_minutes,
                 reasons=reasons,
-                confidence=confidence
+                confidence=confidence,
+                device_id=device_id
             )
             
             # Im aktiven Modus: Lampe ausschalten
@@ -534,10 +538,88 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.error(f"Error saving forgotten light prediction: {e}")
     
+    def _calculate_notification_cooldown(self, device_id: str, is_away: bool) -> int:
+        """Berechnet den Cooldown für Forgotten Light Benachrichtigungen
+        
+        Args:
+            device_id: ID des Geräts
+            is_away: True wenn niemand zu Hause ist
+            
+        Returns:
+            Cooldown in Minuten
+        """
+        # Kritisch (niemand zu Hause): Fester Cooldown von 10 Minuten
+        if is_away:
+            return 10
+        
+        # Normal: Exponentielles Backoff
+        tracking = self._notification_tracking.get(device_id, {})
+        count = tracking.get('count', 0)
+        
+        # Exponentiell: 5, 10, 20, 40, 60 (max) Minuten
+        base_cooldown = 5
+        max_cooldown = 60
+        cooldown = min(base_cooldown * (2 ** count), max_cooldown)
+        
+        return cooldown
+    
+    def _should_send_notification(self, device_id: str, is_away: bool) -> bool:
+        """Prüft ob eine Benachrichtigung gesendet werden soll (Cooldown-Check)"""
+        tracking = self._notification_tracking.get(device_id, {})
+        last_sent = tracking.get('last_sent')
+        
+        if not last_sent:
+            return True
+        
+        cooldown_minutes = self._calculate_notification_cooldown(device_id, is_away)
+        elapsed = (datetime.now() - last_sent).total_seconds() / 60
+        
+        if elapsed < cooldown_minutes:
+            remaining = cooldown_minutes - elapsed
+            logger.debug(f"Notification skipped for {device_id} (cooldown {cooldown_minutes}min, {remaining:.1f}min remaining)")
+            return False
+        
+        return True
+    
+    def _update_notification_tracking(self, device_id: str, is_away: bool):
+        """Aktualisiert das Tracking nach einer gesendeten Benachrichtigung"""
+        now = datetime.now()
+        
+        if device_id not in self._notification_tracking:
+            self._notification_tracking[device_id] = {
+                'count': 0,
+                'last_sent': None,
+                'is_away': is_away,
+                'first_event': now
+            }
+        
+        tracking = self._notification_tracking[device_id]
+        tracking['count'] += 1
+        tracking['last_sent'] = now
+        tracking['is_away'] = is_away
+        
+        cooldown = self._calculate_notification_cooldown(device_id, is_away)
+        logger.debug(f"Forgotten light notification tracking: {device_id}, count={tracking['count']}, next_cooldown={cooldown}min")
+    
+    def reset_notification_tracking(self, device_id: str = None):
+        """Setzt das Tracking zurück (z.B. wenn Lampe ausgeschaltet wird)"""
+        if device_id:
+            if device_id in self._notification_tracking:
+                del self._notification_tracking[device_id]
+                logger.debug(f"Forgotten light notification tracking reset: {device_id}")
+        else:
+            self._notification_tracking.clear()
+            logger.debug("All forgotten light notification tracking reset")
+
     def _send_forgotten_light_notification(self, device_name: str, room_name: str,
                                             on_minutes: float, reasons: List[str],
-                                            confidence: float):
-        """Sendet Pushover-Benachrichtigung für vergessene Lampe"""
+                                            confidence: float, device_id: str = None):
+        """Sendet Pushover-Benachrichtigung für vergessene Lampe mit intelligentem Cooldown
+        
+        Cooldown-Logik:
+        - Niemand zu Hause (kritisch): 10 Min fester Cooldown
+        - Normal: Exponentielles Backoff (5, 10, 20, 40, 60 Min max)
+        """
         try:
             config_path = Path('config/config.yaml')
             if not config_path.exists():
@@ -549,6 +631,11 @@ class ForgottenLightDetector:
             # Prüfe ob Benachrichtigungen aktiviert
             forgotten_light_config = full_config.get('forgotten_light', {})
             if not forgotten_light_config.get('notifications_enabled', True):
+                return
+            
+            # Prüfe Cooldown
+            is_away = not self.current_presence
+            if device_id and not self._should_send_notification(device_id, is_away):
                 return
             
             # Hole Pushover-Credentials
@@ -610,7 +697,11 @@ class ForgottenLightDetector:
             )
             
             if response.status_code == 200:
-                logger.info(f"Pushover notification sent for forgotten light: {device_name}")
+                cooldown = self._calculate_notification_cooldown(device_id, is_away) if device_id else 5
+                logger.info(f"Pushover notification sent for forgotten light: {device_name} (next in {cooldown}min)")
+                # Tracking aktualisieren
+                if device_id:
+                    self._update_notification_tracking(device_id, is_away)
             else:
                 logger.error(f"Pushover error: {response.text}")
                 

@@ -1,6 +1,6 @@
 {
   "lighting_model": {
-    "current_version": "20251204_020425",
+    "current_version": "20251227_020208",
     "versions": [
       {
         "version": "20251128_082436",
@@ -134,6 +134,41 @@
         },
         "notes": "Accuracy: 0.927, Samples: 3991",
         "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20251227_020208",
+        "timestamp": "2025-12-27T02:02:08.347791",
+        "metrics": {
+          "accuracy": 0.885952712100139,
+          "cv_accuracy_mean": 0.8002781641168288,
+          "cv_accuracy_std": 0.06336160955098714,
+          "samples_train": 2876,
+          "samples_test": 719,
+          "feature_importance": {
+            "hour_of_day": 0.09143695748420418,
+            "day_of_week": 0.04459327205826221,
+            "is_weekend": 0.018540282522585286,
+            "is_evening": 0.010654791013988547,
+            "is_night": 0.002468291961166371,
+            "brightness": 0.2649594107761565,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0057057762997638605,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2417981659759146,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.3198430519079586,
+            "month": 0.0,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.886, Samples: 3595 [Performance-Warnung]",
+        "model_path": "lighting_model.pkl"
       }
     ]
   },
@@ -259,7 +294,7 @@
     ]
   },
   "forgotten_light_model": {
-    "current_version": "20251205_061314",
+    "current_version": "20251227_020208",
     "versions": [
       {
         "version": "20251205_061314",
@@ -287,6 +322,34 @@
           }
         },
         "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 319",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20251227_020208",
+        "timestamp": "2025-12-27T02:02:08.749023",
+        "metrics": {
+          "success": true,
+          "samples": 325,
+          "forgotten_samples": 33,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 1.0331191219561905e-16,
+            "day_of_week": 9.514535151729868e-16,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.13536580917684501,
+            "minutes_since_motion": 0.8646341908231538,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 1.3098474581944558e-16,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 325",
         "model_path": "forgotten_light_model.pkl"
       }
     ]

@@ -45,7 +45,21 @@ class VentilationNotifier:
         
         # Cooldown: Verhindert zu viele Benachrichtigungen
         self._last_notifications: Dict[str, datetime] = {}
-        self._cooldown_minutes = 30  # Mindestens 30 Min zwischen gleichen Benachrichtigungen
+        self._cooldown_minutes = 30  # Default-Cooldown (wird dynamisch angepasst)
+        
+        # Erweitertes Notification-Tracking für exponentielles Backoff
+        self._notification_tracking: Dict[str, dict] = {}  # key -> {count, last_sent, is_critical}
+        
+        # Kritische Event-Typen (kein exponentielles Backoff, fester Cooldown)
+        self._critical_patterns = [
+            'window_away',      # Fenster offen + niemand zu Hause
+            'frost_',           # Frostwarnung
+            'mold_',            # Schimmelgefahr
+            'heater_active',    # Fenster offen + Heizung aktiv
+        ]
+        
+        # CO2-Pattern für speziellen Cooldown
+        self._co2_patterns = ['co2_high', 'co2_alert']
         
         # Tracke offene Fenster und deren Öffnungszeit
         self._open_windows: Dict[str, dict] = {}  # device_id -> {opened_at, room, name, climate_start}
@@ -220,16 +234,103 @@ class VentilationNotifier:
             logger.debug(f"Error checking quiet hours: {e}")
             return False
 
+    def _is_critical_notification(self, notification_key: str) -> bool:
+        """Prüft ob eine Benachrichtigung als kritisch eingestuft wird"""
+        if not notification_key:
+            return False
+        key_lower = notification_key.lower()
+        return any(pattern in key_lower for pattern in self._critical_patterns)
+    
+    def _is_co2_notification(self, notification_key: str) -> bool:
+        """Prüft ob es sich um eine CO2-Benachrichtigung handelt"""
+        if not notification_key:
+            return False
+        key_lower = notification_key.lower()
+        return any(pattern in key_lower for pattern in self._co2_patterns)
+    
+    def _calculate_cooldown(self, notification_key: str) -> int:
+        """Berechnet den Cooldown basierend auf Event-Typ und Anzahl der Benachrichtigungen
+        
+        Returns:
+            Cooldown in Minuten
+        """
+        if not notification_key:
+            return self._cooldown_minutes
+        
+        # CO2: Fester Cooldown von 30 Minuten
+        if self._is_co2_notification(notification_key):
+            return 30
+        
+        # Kritische Events: Fester Cooldown von 5 Minuten
+        if self._is_critical_notification(notification_key):
+            return 5
+        
+        # Nicht-kritische Events: Exponentielles Backoff
+        tracking = self._notification_tracking.get(notification_key, {})
+        count = tracking.get('count', 0)
+        
+        # Exponentiell: 1, 2, 4, 8, 16, 32, 60 (max) Minuten
+        base_cooldown = 1
+        max_cooldown = 60
+        cooldown = min(base_cooldown * (2 ** count), max_cooldown)
+        
+        return cooldown
+    
+    def _update_notification_tracking(self, notification_key: str, sent: bool):
+        """Aktualisiert das Tracking nach einer Benachrichtigung"""
+        if not notification_key:
+            return
+        
+        now = datetime.now()
+        is_critical = self._is_critical_notification(notification_key)
+        
+        if notification_key not in self._notification_tracking:
+            self._notification_tracking[notification_key] = {
+                'count': 0,
+                'last_sent': None,
+                'is_critical': is_critical,
+                'first_event': now
+            }
+        
+        tracking = self._notification_tracking[notification_key]
+        
+        if sent:
+            tracking['count'] += 1
+            tracking['last_sent'] = now
+            cooldown = self._calculate_cooldown(notification_key)
+            logger.debug(f"Notification tracking updated: {notification_key}, count={tracking['count']}, next_cooldown={cooldown}min")
+    
+    def reset_notification_tracking(self, notification_key: str = None):
+        """Setzt das Tracking für einen Key oder alle zurück (z.B. wenn Fenster geschlossen)"""
+        if notification_key:
+            if notification_key in self._notification_tracking:
+                del self._notification_tracking[notification_key]
+                logger.debug(f"Notification tracking reset: {notification_key}")
+        else:
+            self._notification_tracking.clear()
+            logger.debug("All notification tracking reset")
+
     def _send_notification(self, title: str, message: str, priority: int = 0, 
                           notification_key: Optional[str] = None) -> bool:
-        """Sende Pushover-Benachrichtigung mit Cooldown"""
+        """Sende Pushover-Benachrichtigung mit intelligentem Cooldown
+        
+        Cooldown-Logik:
+        - Kritische Events (Frost, Schimmel, Abwesenheit): 5 Min fester Cooldown
+        - CO2-Benachrichtigungen: 30 Min fester Cooldown
+        - Normale Events: Exponentielles Backoff (1, 2, 4, 8, ... bis 60 Min)
+        """
         
         # Prüfe Cooldown
         if notification_key:
-            last_sent = self._last_notifications.get(notification_key)
-            if last_sent and datetime.now() - last_sent < timedelta(minutes=self._cooldown_minutes):
-                logger.debug(f"Notification skipped (cooldown): {notification_key}")
-                return False
+            tracking = self._notification_tracking.get(notification_key, {})
+            last_sent = tracking.get('last_sent') or self._last_notifications.get(notification_key)
+            
+            if last_sent:
+                cooldown_minutes = self._calculate_cooldown(notification_key)
+                if datetime.now() - last_sent < timedelta(minutes=cooldown_minutes):
+                    remaining = cooldown_minutes - (datetime.now() - last_sent).total_seconds() / 60
+                    logger.debug(f"Notification skipped (cooldown {cooldown_minutes}min, {remaining:.1f}min remaining): {notification_key}")
+                    return False
         
         api_key, user_key = self._get_pushover_credentials()
         if not api_key or not user_key:
@@ -251,9 +352,11 @@ class VentilationNotifier:
             )
             
             if response.status_code == 200:
-                logger.info(f"Ventilation notification sent: {title}")
+                cooldown = self._calculate_cooldown(notification_key) if notification_key else self._cooldown_minutes
+                logger.info(f"Ventilation notification sent: {title} (next in {cooldown}min)")
                 if notification_key:
                     self._last_notifications[notification_key] = datetime.now()
+                    self._update_notification_tracking(notification_key, sent=True)
                 return True
             else:
                 logger.error(f"Pushover error: {response.text}")
