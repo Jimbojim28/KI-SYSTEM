@@ -7372,8 +7372,9 @@ class WebInterface:
                 with open(update_log, 'w') as log_file:
                     log_file.write(f"=== Update gestartet: {datetime.now().isoformat()} ===\n\n")
                 
+                # WICHTIG: --delay Flag gibt Zeit für Response bevor Update startet
                 subprocess.Popen(
-                    ['bash', str(update_script)],
+                    ['bash', str(update_script), '--delay'],
                     cwd=str(project_root),
                     stdout=open(update_log, 'a'),
                     stderr=subprocess.STDOUT,

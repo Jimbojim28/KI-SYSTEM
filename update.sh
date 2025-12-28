@@ -4,6 +4,12 @@
 
 set -e
 
+# Verzögerung für Web-Interface Response (damit fetch() nicht abbricht)
+if [ "$1" = "--delay" ]; then
+    echo "⏳ Warte 2 Sekunden auf Web-Response..."
+    sleep 2
+fi
+
 echo "╔═══════════════════════════════════════════╗"
 echo "║   KI Smart Home System - Update          ║"
 echo "╚═══════════════════════════════════════════╝"

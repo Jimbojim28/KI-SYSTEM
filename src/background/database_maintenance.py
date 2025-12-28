@@ -5,6 +5,7 @@ Läuft täglich um 5:00 Uhr und optimiert die Datenbank
 
 import schedule
 import time
+import threading
 from datetime import datetime
 from loguru import logger
 from src.utils.database import Database
@@ -13,14 +14,24 @@ from src.utils.database import Database
 class DatabaseMaintenanceJob:
     """Automatische Datenbank-Wartung"""
     
-    def __init__(self, run_time: str = "05:00"):
+    def __init__(self, run_time: str = None, retention_days: int = 90, run_hour: int = 5):
         """
         Args:
-            run_time: Uhrzeit für tägliche Wartung (HH:MM Format)
+            run_time: Uhrzeit für tägliche Wartung (HH:MM Format) - legacy parameter
+            retention_days: Wie viele Tage Daten behalten werden sollen
+            run_hour: Stunde für tägliche Wartung (0-23)
         """
-        self.run_time = run_time
+        # Support both old and new parameter style
+        if run_time:
+            self.run_time = run_time
+        else:
+            self.run_time = f"{run_hour:02d}:00"
+        
+        self.retention_days = retention_days
         self.db = Database()
         self.last_run = None
+        self._stop_event = threading.Event()
+        self._thread = None
         
     def run_maintenance(self):
         """Führt Datenbank-Wartung aus"""
@@ -32,16 +43,16 @@ class DatabaseMaintenanceJob:
             logger.info(f"Database size before: {stats_before['size_mb']} MB")
             logger.info(f"Total rows in large tables: {sum(t['row_count'] for t in stats_before['large_tables'])}")
             
-            # Optimiere Datenbank
+            # Lösche alte Daten (Retention Policy) - ZUERST, damit optimize effektiver ist
+            logger.info(f"🗑️ Cleaning old data (retention: {self.retention_days} days)...")
+            self.db.cleanup_old_data(days=self.retention_days)
+            
+            # Optimiere Datenbank (VACUUM etc.)
             result = self.db.optimize(enable_auto_vacuum=True)
             
             if 'error' in result:
                 logger.error(f"❌ Maintenance failed: {result['error']}")
                 return False
-            
-            # Lösche alte Daten (Retention Policy)
-            logger.info("🗑️ Cleaning old data (retention policy)...")
-            self.db.cleanup_old_data(days=90)  # 90 Tage behalten
             
             # Hole Stats nach Wartung
             stats_after = self.db.get_database_stats()
@@ -57,19 +68,33 @@ class DatabaseMaintenanceJob:
             
         except Exception as e:
             logger.error(f"❌ Error during maintenance: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
+    def _run_scheduler(self):
+        """Background thread für Scheduler"""
+        while not self._stop_event.is_set():
+            schedule.run_pending()
+            self._stop_event.wait(60)  # Prüfe jede Minute
+    
     def start(self):
-        """Startet den Wartungs-Scheduler"""
-        logger.info(f"📅 Database maintenance scheduled daily at {self.run_time}")
+        """Startet den Wartungs-Scheduler (non-blocking)"""
+        logger.info(f"📅 Database maintenance scheduled daily at {self.run_time} (retention: {self.retention_days} days)")
         
         # Schedule tägliche Wartung
         schedule.every().day.at(self.run_time).do(self.run_maintenance)
         
-        # Haupt-Loop
-        while True:
-            schedule.run_pending()
-            time.sleep(60)  # Prüfe jede Minute
+        # Starte Background-Thread
+        self._thread = threading.Thread(target=self._run_scheduler, daemon=True)
+        self._thread.start()
+    
+    def stop(self):
+        """Stoppt den Wartungs-Scheduler"""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+        logger.info("Database maintenance scheduler stopped")
 
 
 if __name__ == "__main__":
