@@ -2118,9 +2118,17 @@ async function loadShowerPredictions() {
 async function loadMoldPreventionStatus() {
     try {
         const response = await fetchJSON('/api/status');
-        
         const container = document.getElementById('mold-status-container');
         const card = document.getElementById('mold-prevention-card');
+
+        if (!response) {
+            container.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: #ef4444;">
+                    ⚠️ Fehler beim Laden der Schimmelprävention
+                </div>
+            `;
+            return;
+        }
 
         if (!response.mold_prevention) {
             container.innerHTML = `
