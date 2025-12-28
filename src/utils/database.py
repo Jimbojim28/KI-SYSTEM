@@ -692,68 +692,144 @@ class Database:
 
         conn.commit()
 
-    def cleanup_old_data(self, retention_days: int = 90):
+    def cleanup_old_data(self, retention_days: int = 90, days: int = None):
         """Löscht alte Daten basierend auf Retention-Policy
 
         Args:
             retention_days: Anzahl der Tage, die Daten aufbewahrt werden sollen (Standard: 90)
+            days: Alias für retention_days (für Kompatibilität)
 
         Returns:
             Dict mit Anzahl der gelöschten Zeilen pro Tabelle
         """
+        # Support both parameter names
+        if days is not None:
+            retention_days = days
+            
         conn = self._get_connection()
         cursor = conn.cursor()
 
         cutoff_date = datetime.now() - timedelta(days=retention_days)
         deleted_counts = {}
 
+        logger.info(f"🗑️ Cleaning data older than {retention_days} days (cutoff: {cutoff_date})")
+
         # Alte Sensor-Daten löschen
-        cursor.execute("DELETE FROM sensor_data WHERE timestamp < ?", (cutoff_date,))
-        deleted_counts['sensor_data'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM sensor_data WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['sensor_data'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning sensor_data: {e}")
 
         # Alte externe Daten löschen
-        cursor.execute("DELETE FROM external_data WHERE timestamp < ?", (cutoff_date,))
-        deleted_counts['external_data'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM external_data WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['external_data'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning external_data: {e}")
 
         # Alte Entscheidungen löschen
-        cursor.execute("DELETE FROM decisions WHERE timestamp < ?", (cutoff_date,))
-        deleted_counts['decisions'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM decisions WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['decisions'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning decisions: {e}")
+
+        # ===== WICHTIG: Fehlende Tabellen hinzugefügt =====
+        
+        # Alte Window-Beobachtungen löschen (GROSSE TABELLE!)
+        try:
+            cursor.execute("DELETE FROM window_observations WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['window_observations'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning window_observations: {e}")
+
+        # Alte kontinuierliche Messungen löschen (GROSSE TABELLE!)
+        try:
+            cursor.execute("DELETE FROM continuous_measurements WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['continuous_measurements'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning continuous_measurements: {e}")
+
+        # Alte Lighting-Events löschen (GROSSE TABELLE!)
+        try:
+            cursor.execute("DELETE FROM lighting_events WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['lighting_events'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning lighting_events: {e}")
+
+        # Alte Presence-Daten löschen
+        try:
+            cursor.execute("DELETE FROM presence_data WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['presence_data'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning presence_data: {e}")
+
+        # Alte Temperature-Observations löschen
+        try:
+            cursor.execute("DELETE FROM temperature_observations WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['temperature_observations'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning temperature_observations: {e}")
+
+        # ===== Ende neue Tabellen =====
 
         # Alte Badezimmer-Events löschen (behalte mehr Daten für Muster-Erkennung)
         bathroom_retention = max(retention_days, 180)  # Mind. 6 Monate
         bathroom_cutoff = datetime.now() - timedelta(days=bathroom_retention)
-        cursor.execute("DELETE FROM bathroom_events WHERE start_time < ?", (bathroom_cutoff,))
-        deleted_counts['bathroom_events'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM bathroom_events WHERE start_time < ?", (bathroom_cutoff,))
+            deleted_counts['bathroom_events'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning bathroom_events: {e}")
 
         # Alte Badezimmer-Messungen löschen (nur behalten wenn Event noch existiert)
-        cursor.execute("""
-            DELETE FROM bathroom_measurements
-            WHERE event_id NOT IN (SELECT id FROM bathroom_events)
-        """)
-        deleted_counts['bathroom_measurements'] = cursor.rowcount
+        try:
+            cursor.execute("""
+                DELETE FROM bathroom_measurements
+                WHERE event_id NOT IN (SELECT id FROM bathroom_events)
+            """)
+            deleted_counts['bathroom_measurements'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning bathroom_measurements: {e}")
 
         # Alte Badezimmer-Aktionen löschen
-        cursor.execute("DELETE FROM bathroom_device_actions WHERE timestamp < ?", (bathroom_cutoff,))
-        deleted_counts['bathroom_device_actions'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM bathroom_device_actions WHERE timestamp < ?", (bathroom_cutoff,))
+            deleted_counts['bathroom_device_actions'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning bathroom_device_actions: {e}")
 
         # Alte kontinuierliche Badezimmer-Messungen löschen (normale Retention)
-        cursor.execute("DELETE FROM bathroom_continuous_measurements WHERE timestamp < ?", (cutoff_date,))
-        deleted_counts['bathroom_continuous_measurements'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM bathroom_continuous_measurements WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['bathroom_continuous_measurements'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning bathroom_continuous_measurements: {e}")
 
         # Alte Heizungs-Beobachtungen löschen
-        cursor.execute("DELETE FROM heating_observations WHERE timestamp < ?", (cutoff_date,))
-        deleted_counts['heating_observations'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM heating_observations WHERE timestamp < ?", (cutoff_date,))
+            deleted_counts['heating_observations'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning heating_observations: {e}")
 
         # Alte Heizungs-Insights löschen (nur die ältesten, behalte mind. 30 Tage)
         insights_retention = max(retention_days, 30)
         insights_cutoff = datetime.now() - timedelta(days=insights_retention)
-        cursor.execute("DELETE FROM heating_insights WHERE timestamp < ?", (insights_cutoff,))
-        deleted_counts['heating_insights'] = cursor.rowcount
+        try:
+            cursor.execute("DELETE FROM heating_insights WHERE timestamp < ?", (insights_cutoff,))
+            deleted_counts['heating_insights'] = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Error cleaning heating_insights: {e}")
 
         conn.commit()
 
         total_deleted = sum(deleted_counts.values())
-        logger.info(f"Cleaned up {total_deleted} rows older than {retention_days} days: {deleted_counts}")
+        logger.info(f"✅ Cleaned up {total_deleted} rows older than {retention_days} days")
+        for table, count in sorted(deleted_counts.items(), key=lambda x: x[1], reverse=True):
+            if count > 0:
+                logger.info(f"   {table}: {count:,} rows deleted")
 
         return deleted_counts
 
@@ -2945,17 +3021,28 @@ class Database:
         sync = cursor.fetchone()[0]
         stats['synchronous'] = {0: 'OFF', 1: 'NORMAL', 2: 'FULL', 3: 'EXTRA'}.get(sync, 'UNKNOWN')
         
-        # Größte Tabellen
+        # Größte Tabellen - ALLE Tabellen mit timestamp-Spalte
         large_tables = []
-        for table in ['sensor_data', 'window_observations', 'continuous_measurements',
-                     'heating_observations', 'lighting_events']:
+        all_tables = [
+            'sensor_data', 'window_observations', 'continuous_measurements',
+            'heating_observations', 'lighting_events', 'presence_data',
+            'temperature_observations', 'external_data', 'decisions',
+            'bathroom_events', 'bathroom_measurements', 'bathroom_device_actions',
+            'bathroom_continuous_measurements', 'heating_insights', 'heating_schedules',
+            'humidity_alerts', 'ventilation_recommendations', 'shower_predictions'
+        ]
+        for table in all_tables:
             try:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cursor.fetchone()[0]
-                large_tables.append({'name': table, 'row_count': count})
+                if count > 0:
+                    large_tables.append({'name': table, 'row_count': count})
             except:
                 pass
         
         stats['large_tables'] = sorted(large_tables, key=lambda x: x['row_count'], reverse=True)
+        
+        # Gesamtanzahl Zeilen
+        stats['total_rows'] = sum(t['row_count'] for t in large_tables)
         
         return stats
