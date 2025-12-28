@@ -22,31 +22,40 @@ let windowTrendsChart = null;
 document.addEventListener('DOMContentLoaded', async () => {
     // Zuerst versteckte Räume laden (aus zentraler /rooms Konfiguration)
     await loadHiddenRooms();
-    
     // Lade zentrale Sensordaten (inkl. Outdoor)
     await loadCentralSensorData();
-    
     loadHeaters();
     loadHeatingMode();
     setupEventListeners();
     setupSliders();
-
-    // Lade Fenster-Daten
     loadWindowData();
-
-    // Lade Temperaturverlauf (immer)
     loadTemperatureHistory();
-
-    // Lade Optimierungsdaten (immer, unabhängig vom Modus)
     loadOptimizationData();
-
-    // Lade Heizungs-Analytics
     loadHeatingAnalytics();
-
-    // Lade neue Features
     loadHumidityAlerts();
     loadVentilationRecommendations();
     loadShowerPredictions();
+});
+
+// Re-lade alle wichtigen Daten, wenn der Tab wieder sichtbar wird
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+        // Lade alle kritischen Daten neu
+        await loadHiddenRooms();
+        await loadCentralSensorData();
+        loadHeaters();
+        loadHeatingMode();
+        loadWindowData();
+        loadTemperatureHistory();
+        loadOptimizationData();
+        loadHeatingAnalytics();
+        loadHumidityAlerts();
+        loadVentilationRecommendations();
+        loadShowerPredictions();
+        if (typeof loadMoldPreventionStatus === 'function') {
+            loadMoldPreventionStatus();
+        }
+    }
 });
 
 // Zentrale Sensordaten laden (für Outdoor-Temperatur und Raumdaten)
