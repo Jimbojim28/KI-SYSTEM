@@ -5,10 +5,14 @@ const API_BASE = window.location.origin;
 
 // Tab Visibility State - vermeide Netzwerkfehler bei inaktivem Tab
 const TabVisibility = {
-    isVisible: true,
+    isVisible: document.visibilityState === 'visible',
     lastHiddenTime: null,
+    initialized: false,
     
     init() {
+        if (this.initialized) return;
+        this.initialized = true;
+        
         document.addEventListener('visibilitychange', () => {
             this.isVisible = document.visibilityState === 'visible';
             if (!this.isVisible) {
@@ -17,7 +21,7 @@ const TabVisibility = {
         });
     },
     
-    // Prüfe ob Tab sichtbar ist oder kürzlich sichtbar war
+    // Prüfe ob Tab sichtbar ist
     shouldFetch() {
         return this.isVisible;
     },
@@ -32,15 +36,9 @@ const TabVisibility = {
 // Initialisiere Tab Visibility Tracking
 TabVisibility.init();
 
-// Utility: Fetch JSON mit Tab-Visibility-Check und Retry-Logik
+// Utility: Fetch JSON mit verbesserter Fehlerbehandlung
 async function fetchJSON(endpoint, options = {}) {
-    const { skipVisibilityCheck = false, silent = false } = options;
-    
-    // Wenn Tab nicht sichtbar ist und kein Skip-Flag gesetzt, überspringe Fetch
-    if (!skipVisibilityCheck && !TabVisibility.shouldFetch()) {
-        // Stille Rückgabe statt Fehler bei inaktivem Tab
-        return null;
-    }
+    const { silent = false } = options;
     
     try {
         const controller = new AbortController();

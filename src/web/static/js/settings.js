@@ -628,13 +628,13 @@ async function installUpdate() {
         const data = await response.json();
 
         if (data.success) {
-            resultEl.textContent = '✓ ' + data.message + '\n\nSeite wird in 10 Sekunden neu geladen...';
+            resultEl.textContent = '✓ ' + data.message + '\n\nSeite wird in 15 Sekunden neu geladen...';
             resultEl.className = 'action-result success';
 
-            // Warte 10 Sekunden und reload
+            // Warte 15 Sekunden und reload (mehr Zeit für Update)
             setTimeout(() => {
                 window.location.reload();
-            }, 10000);
+            }, 15000);
         } else {
             resultEl.textContent = '✗ Fehler: ' + (data.error || 'Unbekannter Fehler');
             resultEl.className = 'action-result error';
@@ -642,9 +642,20 @@ async function installUpdate() {
         }
 
     } catch (error) {
-        resultEl.textContent = '✗ Fehler beim Update: ' + error.message;
-        resultEl.className = 'action-result error';
-        installBtn.disabled = false;
+        // NetworkError ist normal wenn Server während Update neu startet
+        if (error.message.includes('NetworkError') || error.message.includes('fetch')) {
+            resultEl.textContent = '🔄 Update läuft... Server startet neu.\n\nSeite wird in 20 Sekunden neu geladen...';
+            resultEl.className = 'action-result success';
+            
+            // Längere Wartezeit bei NetworkError
+            setTimeout(() => {
+                window.location.reload();
+            }, 20000);
+        } else {
+            resultEl.textContent = '✗ Fehler beim Update: ' + error.message;
+            resultEl.className = 'action-result error';
+            installBtn.disabled = false;
+        }
     }
 }
 

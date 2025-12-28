@@ -117,6 +117,7 @@ function restoreLastMainTab() {
 async function loadRooms() {
     try {
         const roomsData = await fetchJSON('/api/rooms/settings');
+        if (!roomsData) return; // Null bei Netzwerkfehler
         allRooms = roomsData.rooms || [];
         populateRoomSelect();
     } catch (error) {
@@ -150,6 +151,8 @@ async function loadConfig() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/config');
 
+        if (!data) return; // Null bei Netzwerkfehler
+        
         if (data.config) {
             const config = data.config;
 
@@ -530,7 +533,7 @@ async function loadLiveSensorStatus() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/live-status');
 
-        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        // Wenn null zurückgegeben wurde (Netzwerkfehler), überspringe Update
         if (!data) return;
 
         if (!data.devices || Object.keys(data.devices).length === 0) {
@@ -762,6 +765,8 @@ async function loadLearnedParams() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/learned-params');
 
+        if (!data) return; // Null bei Netzwerkfehler
+        
         const learnedParams = data.learned_params || {};
         const eventsCount = data.events_last_30_days || 0;
         const readyForOptimization = data.ready_for_optimization || false;
@@ -891,6 +896,8 @@ async function loadEnergyStats() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/energy-stats?days=30');
 
+        if (!data) return; // Null bei Netzwerkfehler
+        
         document.getElementById('energy-stats-loading').style.display = 'none';
         document.getElementById('energy-stats-content').style.display = 'block';
 
@@ -914,6 +921,8 @@ async function loadAlerts() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/alerts?days=7');
 
+        if (!data) return; // Null bei Netzwerkfehler
+        
         if (data.alerts && data.alerts.length > 0) {
             const alertsCard = document.getElementById('alerts-card');
             const alertsContent = document.getElementById('alerts-content');
@@ -1066,6 +1075,8 @@ async function loadDataStats() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/data-stats');
 
+        if (!data) return; // Null bei Netzwerkfehler
+        
         if (data.success) {
             // Events Count
             document.getElementById('data-events-count').textContent =
@@ -1110,6 +1121,7 @@ let weeklyOverviewData = null;
 async function loadWeeklyOverview() {
     try {
         const response = await fetchJSON('/api/luftentfeuchten/weekly-overview');
+        if (!response) return; // Null bei Netzwerkfehler
         weeklyOverviewData = response;
         renderWeeklyOverview();
     } catch (error) {
@@ -1606,6 +1618,8 @@ function displayCountdown() {
 async function loadMoldPreventionStatusBathroom() {
     try {
         const response = await fetchJSON('/api/status');
+        
+        if (!response) return; // Null bei Netzwerkfehler
         
         const container = document.getElementById('mold-status-container-bathroom');
         const card = document.getElementById('mold-prevention-card-bathroom');
