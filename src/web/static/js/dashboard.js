@@ -410,4 +410,7 @@ function startAutoRefresh() {
     DashboardPolling.refreshAll();
     
     // Starte Polling
-    DashboardPolling.startPolling();
+    DashboardPolling.startPolling();}
+
+// Start beim Laden der Seite
+document.addEventListener('DOMContentLoaded', startAutoRefresh);
