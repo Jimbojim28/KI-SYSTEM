@@ -5,6 +5,9 @@ async function updateStatus() {
     try {
         const data = await fetchJSON('/api/status');
 
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
+
         // Temperatur
         document.getElementById('temp-indoor').textContent = formatTemperature(data.temperature.indoor);
         document.getElementById('temp-outdoor').textContent = formatTemperature(data.temperature.outdoor);
@@ -115,6 +118,9 @@ async function updatePredictions() {
     try {
         const data = await fetchJSON('/api/predictions');
 
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
+
         // Beleuchtung
         updatePrediction('lighting', data.predictions.lighting);
 
@@ -224,9 +230,13 @@ async function updatePresenceStatus() {
         // Fallback: Direkt laden wenn Service nicht verfügbar
         const data = await fetchJSON('/api/presence');
 
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
+
         if (!data.success) {
             // Fallback auf alte API
             const oldData = await fetchJSON('/api/automations/presence');
+            if (!oldData) return;
             updatePresenceUI(oldData, presenceDot, presenceText, presenceCount);
             return;
         }
@@ -324,6 +334,9 @@ async function updateConnectionStatus() {
     try {
         const data = await fetchJSON('/api/connection-test');
 
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
+
         // Update Status-Dots
         const statusMap = {
             'smart_home_platform': 'platform',
@@ -344,22 +357,57 @@ async function updateConnectionStatus() {
     }
 }
 
-// Auto-Refresh alle 10 Sekunden
-function startAutoRefresh() {
-    updateStatus();
-    updatePredictions();
-    updatePresenceStatus();
-    updateConnectionStatus();
-
-    setInterval(() => {
+// ===== TAB VISIBILITY MANAGEMENT =====
+const DashboardPolling = {
+    mainInterval: null,
+    connectionInterval: null,
+    isPageVisible: true,
+    
+    init() {
+        document.addEventListener('visibilitychange', () => {
+            this.isPageVisible = document.visibilityState === 'visible';
+            
+            if (this.isPageVisible) {
+                // Tab wieder sichtbar - sofort aktualisieren
+                console.log('Dashboard: Tab wieder sichtbar - aktualisiere');
+                this.refreshAll();
+            }
+        });
+    },
+    
+    refreshAll() {
         updateStatus();
         updatePredictions();
         updatePresenceStatus();
-    }, 10000); // 10 Sekunden
+        updateConnectionStatus();
+    },
+    
+    startPolling() {
+        // Hauptdaten alle 10 Sekunden
+        this.mainInterval = setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                updateStatus();
+                updatePredictions();
+                updatePresenceStatus();
+            }
+        }, 10000);
 
-    // Verbindungsstatus alle 30 Sekunden
-    setInterval(updateConnectionStatus, 30000);
-}
+        // Verbindungsstatus alle 30 Sekunden
+        this.connectionInterval = setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                updateConnectionStatus();
+            }
+        }, 30000);
+    }
+};
 
-// Start beim Laden der Seite
-document.addEventListener('DOMContentLoaded', startAutoRefresh);
+// Auto-Refresh mit Tab-Visibility-Handling
+function startAutoRefresh() {
+    // Initialisiere Visibility-Handling
+    DashboardPolling.init();
+    
+    // Initial laden
+    DashboardPolling.refreshAll();
+    
+    // Starte Polling
+    DashboardPolling.startPolling();

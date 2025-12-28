@@ -35,12 +35,25 @@
         
         // Daten laden
         refresh: async function() {
+            // Nicht laden wenn Tab nicht sichtbar
+            if (document.visibilityState !== 'visible') {
+                return this.data;
+            }
+            
             if (this.isLoading) return this.data;
             
             this.isLoading = true;
             
             try {
-                const response = await fetch('/api/presence');
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
+                const response = await fetch('/api/presence', {
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
                 const data = await response.json();
                 
                 if (data.success) {
@@ -59,6 +72,11 @@
                 return this.data;
                 
             } catch (error) {
+                // Bei Tab-Wechsel Netzwerkfehler stille behandeln
+                if (error.name === 'AbortError' || 
+                    (error.name === 'TypeError' && error.message.includes('NetworkError'))) {
+                    return this.data;
+                }
                 console.error('Fehler beim Laden der Anwesenheitsdaten:', error);
                 return this.data;
             } finally {
@@ -71,7 +89,10 @@
             if (this.intervalId) return;
             
             this.intervalId = setInterval(() => {
-                this.refresh();
+                // Nur aktualisieren wenn Tab sichtbar
+                if (document.visibilityState === 'visible') {
+                    this.refresh();
+                }
             }, this.updateInterval);
         },
         

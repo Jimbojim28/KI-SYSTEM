@@ -7,6 +7,61 @@ let selectedRoomId = '';
 let countdownInterval = null;
 let countdownSeconds = 0;
 
+// ===== TAB VISIBILITY MANAGEMENT =====
+// Pausiere Polling wenn Tab nicht sichtbar ist
+
+const PollingManager = {
+    statusInterval: null,
+    liveStatusInterval: null,
+    isPageVisible: true,
+    
+    init() {
+        document.addEventListener('visibilitychange', () => {
+            this.isPageVisible = document.visibilityState === 'visible';
+            
+            if (this.isPageVisible) {
+                // Tab wieder sichtbar - sofort aktualisieren und Intervals neu starten
+                console.log('Tab wieder sichtbar - aktualisiere Daten');
+                this.restartPolling();
+            } else {
+                // Tab versteckt - Polling pausieren
+                console.log('Tab versteckt - pausiere Polling');
+                this.pausePolling();
+            }
+        });
+    },
+    
+    pausePolling() {
+        if (this.statusInterval) {
+            clearInterval(this.statusInterval);
+            this.statusInterval = null;
+        }
+        if (this.liveStatusInterval) {
+            clearInterval(this.liveStatusInterval);
+            this.liveStatusInterval = null;
+        }
+    },
+    
+    restartPolling() {
+        // Stoppe erst alle laufenden Intervals
+        this.pausePolling();
+        
+        // Sofort Daten laden
+        loadStatus();
+        loadLiveSensorStatus();
+        
+        // Intervals neu starten
+        this.statusInterval = setInterval(loadStatus, 10000);
+        this.liveStatusInterval = setInterval(loadLiveSensorStatus, 5000);
+    },
+    
+    // Starte initiales Polling
+    startInitialPolling() {
+        this.statusInterval = setInterval(loadStatus, 10000);
+        this.liveStatusInterval = setInterval(loadLiveSensorStatus, 5000);
+    }
+};
+
 // ===== MAIN TAB NAVIGATION =====
 
 /**
@@ -201,6 +256,9 @@ async function saveConfig() {
 async function loadStatus() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/status');
+
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
 
         if (data.status) {
             const status = data.status;
@@ -471,6 +529,9 @@ let liveSensorInterval = null;
 async function loadLiveSensorStatus() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/live-status');
+
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
 
         if (!data.devices || Object.keys(data.devices).length === 0) {
             // Keine Geräte konfiguriert - verstecke Live-Card
@@ -1489,14 +1550,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         heaterDown.addEventListener('click', () => controlActuator('heater', 'temp_down'));
     }
 
-    // Auto-refresh Status alle 10 Sekunden
-    setInterval(loadStatus, 10000);
+    // Initialisiere Polling Manager für Tab-Visibility-Handling
+    PollingManager.init();
 
     // Lade Live-Sensor-Status initial
     await loadLiveSensorStatus();
 
-    // Auto-refresh Live-Sensoren alle 5 Sekunden
-    liveSensorInterval = setInterval(loadLiveSensorStatus, 5000);
+    // Starte Auto-Refresh mit Tab-Visibility-Handling
+    PollingManager.startInitialPolling();
 });
 
 // ===== COUNTDOWN TIMER =====
