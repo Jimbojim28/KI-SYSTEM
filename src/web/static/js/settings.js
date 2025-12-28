@@ -1672,6 +1672,7 @@ function initConnectionTab() {
 async function updateConnectionStatus() {
     try {
         const data = await fetchJSON('/api/connection/status');
+        if (!data) return;
         const statusContent = document.getElementById('connection-status-content');
         const liveIndicator = document.getElementById('connection-live-indicator');
         
