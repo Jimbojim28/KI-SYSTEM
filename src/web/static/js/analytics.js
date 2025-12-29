@@ -7,6 +7,9 @@ let humidityChart = null;
 async function updateCollectorStatus() {
     try {
         const data = await fetchJSON('/api/collector/status');
+        
+        // Null-Check: Bei Netzwerkfehler oder Tab-Wechsel kann data null sein
+        if (!data) return;
 
         const statusEl = document.getElementById('collector-status');
         if (data.running) {
@@ -43,8 +46,9 @@ async function updateCollectorStatus() {
 async function updateTemperatureChart(hoursBack = 168) {
     try {
         const response = await fetchJSON(`/api/analytics/temperature?hours=${hoursBack}`);
-
-        if (!response.data || response.data.length === 0) {
+        
+        // Null-Check: Bei Netzwerkfehler oder Tab-Wechsel kann response null sein
+        if (!response || !response.data || response.data.length === 0) {
             showNoDataMessage();
             return;
         }
@@ -161,8 +165,9 @@ async function updateTemperatureChart(hoursBack = 168) {
 async function updateHumidityChart(hoursBack = 168) {
     try {
         const response = await fetchJSON(`/api/analytics/humidity?hours=${hoursBack}`);
-
-        if (!response.data || response.data.length === 0) {
+        
+        // Null-Check: Bei Netzwerkfehler oder Tab-Wechsel kann response null sein
+        if (!response || !response.data || response.data.length === 0) {
             showNoDataMessage();
             return;
         }
@@ -276,6 +281,9 @@ async function updateComfortMetrics() {
     try {
         const hoursBack = parseInt(document.getElementById('time-range').value);
         const data = await fetchJSON(`/api/analytics/comfort?hours=${hoursBack}`);
+        
+        // Null-Check: Bei Netzwerkfehler oder Tab-Wechsel kann data null sein
+        if (!data) return;
 
         // Komfort-Score Circle
         const score = data.comfort_score || 0;
@@ -398,9 +406,13 @@ async function updateMLPerformance() {
     try {
         const daysBack = 30; // Fester Zeitraum für ML-Performance
         const data = await fetchJSON(`/api/analytics/ml-performance?days=${daysBack}`);
+        
+        // Null-Check: Bei Netzwerkfehler oder Tab-Wechsel kann data null sein
+        if (!data) return;
 
         // Prüfe ob überhaupt ML-Daten vorhanden sind
-        const hasMLData = (data.decision_stats.total_decisions > 0) || (data.training_history.length > 0);
+        const hasMLData = (data.decision_stats && data.decision_stats.total_decisions > 0) || 
+                         (data.training_history && data.training_history.length > 0);
 
         // Statistiken
         document.getElementById('ml-total-decisions').textContent =
