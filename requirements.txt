@@ -26,6 +26,8 @@ pydantic==2.5.3
 # Web Interface
 flask==3.0.0
 flask-cors==4.0.0
+gunicorn==21.2.0
+gevent==23.9.1
 
 # Development & Type Checking (optional)
 # mypy==1.7.1  # Type checking

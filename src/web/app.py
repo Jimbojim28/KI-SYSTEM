@@ -8237,9 +8237,9 @@ class WebInterface:
             'message': f'{hour_matches} von {total_predictions} Vorhersagen korrekt (±1 Stunde)'
         }
 
-    def run(self, host='0.0.0.0', port=8080, debug=False):
-        """Starte den Web-Server"""
-        logger.info(f"Starting web interface on http://{host}:{port}")
+    def start_background_services(self):
+        """Startet alle Background Services (für Gunicorn)"""
+        logger.info("Starting background services...")
 
         # Starte Background Data Collector
         if self.background_collector:
@@ -8325,57 +8325,73 @@ class WebInterface:
             logger.warning(f"Could not start Forgotten Light Detector: {e}")
             self.forgotten_light_detector = None
 
+        logger.info("All background services started")
+
+    def run(self, host='0.0.0.0', port=8080, debug=False):
+        """Starte den Web-Server (für Entwicklung - nutze Gunicorn für Produktion)"""
+        logger.info(f"Starting web interface on http://{host}:{port}")
+
+        # Starte Background Services
+        self.start_background_services()
+
         try:
             self.app.run(host=host, port=port, debug=debug)
         finally:
-            # Stoppe Background Processes beim Herunterfahren
-            if self.background_collector:
-                self.background_collector.stop()
-                logger.info("Background Data Collector stopped")
+            self.stop_background_services()
 
-            if self.ml_auto_trainer:
-                self.ml_auto_trainer.stop()
-                logger.info("ML Auto-Trainer stopped")
+    def stop_background_services(self):
+        """Stoppt alle Background Services (für Gunicorn Shutdown)"""
+        logger.info("Stopping background services...")
 
-            if self.bathroom_optimizer:
-                self.bathroom_optimizer.stop()
-                logger.info("Bathroom Optimizer stopped")
+        if self.background_collector:
+            self.background_collector.stop()
+            logger.info("Background Data Collector stopped")
 
-            if self.bathroom_collector:
-                self.bathroom_collector.stop()
-                logger.info("Bathroom Data Collector stopped")
+        if self.ml_auto_trainer:
+            self.ml_auto_trainer.stop()
+            logger.info("ML Auto-Trainer stopped")
 
-            if self.heating_collector:
-                self.heating_collector.stop()
-                logger.info("Heating Data Collector stopped")
+        if self.bathroom_optimizer:
+            self.bathroom_optimizer.stop()
+            logger.info("Bathroom Optimizer stopped")
 
-            if self.window_collector:
-                self.window_collector.stop()
-                logger.info("Window Data Collector stopped")
+        if self.bathroom_collector:
+            self.bathroom_collector.stop()
+            logger.info("Bathroom Data Collector stopped")
 
-            if self.lighting_collector:
-                self.lighting_collector.stop()
-                logger.info("Lighting Data Collector stopped")
+        if self.heating_collector:
+            self.heating_collector.stop()
+            logger.info("Heating Data Collector stopped")
 
-            if self.temperature_collector:
-                self.temperature_collector.stop()
-                logger.info("Temperature Data Collector stopped")
+        if self.window_collector:
+            self.window_collector.stop()
+            logger.info("Window Data Collector stopped")
 
-            if self.db_maintenance:
-                self.db_maintenance.stop()
-                logger.info("Database Maintenance Job stopped")
+        if self.lighting_collector:
+            self.lighting_collector.stop()
+            logger.info("Lighting Data Collector stopped")
 
-            if self.ventilation_notifier:
-                self.ventilation_notifier.stop()
-                logger.info("Ventilation Notifier stopped")
+        if self.temperature_collector:
+            self.temperature_collector.stop()
+            logger.info("Temperature Data Collector stopped")
 
-            if self.christmas_controller:
-                self.christmas_controller.stop()
-                logger.info("Christmas Lights Controller stopped")
+        if self.db_maintenance:
+            self.db_maintenance.stop()
+            logger.info("Database Maintenance Job stopped")
 
-            if hasattr(self, 'forgotten_light_detector') and self.forgotten_light_detector:
-                self.forgotten_light_detector.stop()
-                logger.info("Forgotten Light Detector stopped")
+        if self.ventilation_notifier:
+            self.ventilation_notifier.stop()
+            logger.info("Ventilation Notifier stopped")
+
+        if self.christmas_controller:
+            self.christmas_controller.stop()
+            logger.info("Christmas Lights Controller stopped")
+
+        if hasattr(self, 'forgotten_light_detector') and self.forgotten_light_detector:
+            self.forgotten_light_detector.stop()
+            logger.info("Forgotten Light Detector stopped")
+
+        logger.info("All background services stopped")
 
 
 def create_app(config_path=None):

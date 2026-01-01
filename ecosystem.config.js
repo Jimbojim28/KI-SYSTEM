@@ -1,22 +1,22 @@
 module.exports = {
   apps: [{
     name: 'ki-smart-home',
-    script: 'main.py',
-    args: 'web --host 0.0.0.0 --port 8080',
-    interpreter: './venv/bin/python3',
+    script: './venv/bin/gunicorn',
+    args: '-c gunicorn.conf.py wsgi:app',
+    interpreter: 'none',  // Gunicorn ist bereits ein Python-Wrapper
 
-    // Instances
+    // Instances (Gunicorn managt eigene Worker, PM2 nur 1 Instanz)
     instances: 1,
     exec_mode: 'fork',
 
     // Auto-restart
     autorestart: true,
     watch: false,
-    max_memory_restart: '500M',
+    max_memory_restart: '800M',  // Erhöht für Gunicorn + Worker
 
     // Restart delay
     restart_delay: 4000,
-    min_uptime: '10s',
+    min_uptime: '30s',  // Erhöht, da Gunicorn länger zum Starten braucht
     max_restarts: 10,
 
     // Logs
@@ -32,8 +32,8 @@ module.exports = {
     },
 
     // Advanced
-    listen_timeout: 10000,
-    kill_timeout: 5000,
+    listen_timeout: 30000,  // Erhöht für Gunicorn startup
+    kill_timeout: 10000,    // Erhöht für graceful shutdown
     wait_ready: false,
 
     // Cron restart (täglich um 4:00 Uhr)
