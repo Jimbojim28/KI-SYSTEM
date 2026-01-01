@@ -351,18 +351,25 @@ class VentilationNotifier:
                 timeout=30
             )
             
+            # Tracking immer aktualisieren (auch bei Fehler), um Spam zu verhindern
+            if notification_key:
+                self._last_notifications[notification_key] = datetime.now()
+                self._update_notification_tracking(notification_key, sent=(response.status_code == 200))
+            
             if response.status_code == 200:
                 cooldown = self._calculate_cooldown(notification_key) if notification_key else self._cooldown_minutes
                 logger.info(f"Ventilation notification sent: {title} (next in {cooldown}min)")
-                if notification_key:
-                    self._last_notifications[notification_key] = datetime.now()
-                    self._update_notification_tracking(notification_key, sent=True)
                 return True
             else:
-                logger.error(f"Pushover error: {response.text}")
+                cooldown = self._calculate_cooldown(notification_key) if notification_key else self._cooldown_minutes
+                logger.error(f"Pushover error (retry in {cooldown}min): {response.text}")
                 return False
                 
         except Exception as e:
+            # Auch bei Exception Tracking aktualisieren um Spam zu verhindern
+            if notification_key:
+                self._last_notifications[notification_key] = datetime.now()
+                self._update_notification_tracking(notification_key, sent=False)
             logger.error(f"Error sending notification: {e}")
             return False
 

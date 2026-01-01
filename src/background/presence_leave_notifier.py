@@ -477,8 +477,12 @@ Antworte NUR mit dem Kommentar, keine Anführungszeichen, kein "Hier ist..." etc
             # Benachrichtigung erstellen und senden
             if self.config.get('enabled', True):
                 title, message = self._build_notification(who_left)
+                # Tracking immer aktualisieren (auch bei Fehler), um Spam zu verhindern
+                self._last_notification_time = datetime.now()
                 if self._send_notification(title, message):
-                    self._last_notification_time = datetime.now()
+                    logger.info(f"Leave notification sent for: {who_left}")
+                else:
+                    logger.warning(f"Leave notification failed for: {who_left} (retry in 5min)")
         
         # Status aktualisieren
         self._last_anyone_home = anyone_home

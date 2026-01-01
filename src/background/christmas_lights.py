@@ -200,6 +200,9 @@ class ChristmasLightsController:
             return
         
         try:
+            # Tracking immer aktualisieren (auch bei Fehler), um Spam zu verhindern
+            self._last_notification_time = get_local_time()
+            
             response = requests.post(
                 'https://api.pushover.net/1/messages.json',
                 data={
@@ -212,12 +215,11 @@ class ChristmasLightsController:
                 timeout=10
             )
             if response.status_code == 200:
-                self._last_notification_time = get_local_time()
                 logger.info(f"🔔 Christmas notification sent: {title}")
             else:
-                logger.warning(f"Pushover notification failed: {response.status_code}")
+                logger.warning(f"Pushover notification failed (retry in 5min): {response.status_code}")
         except Exception as e:
-            logger.error(f"Error sending notification: {e}")
+            logger.error(f"Error sending notification (retry in 5min): {e}")
     
     def start(self):
         """Startet den Background-Thread"""

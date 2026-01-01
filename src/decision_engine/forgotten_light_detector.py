@@ -696,16 +696,21 @@ class ForgottenLightDetector:
                 timeout=30
             )
             
+            # Tracking immer aktualisieren (auch bei Fehler), um Spam zu verhindern
+            if device_id:
+                self._update_notification_tracking(device_id, is_away)
+            
             if response.status_code == 200:
                 cooldown = self._calculate_notification_cooldown(device_id, is_away) if device_id else 5
                 logger.info(f"Pushover notification sent for forgotten light: {device_name} (next in {cooldown}min)")
-                # Tracking aktualisieren
-                if device_id:
-                    self._update_notification_tracking(device_id, is_away)
             else:
-                logger.error(f"Pushover error: {response.text}")
+                cooldown = self._calculate_notification_cooldown(device_id, is_away) if device_id else 10
+                logger.error(f"Pushover error (retry in {cooldown}min): {response.text}")
                 
         except Exception as e:
+            # Auch bei Exception Tracking aktualisieren um Spam zu verhindern
+            if device_id:
+                self._update_notification_tracking(device_id, is_away)
             logger.error(f"Error sending forgotten light notification: {e}")
 
     def _save_prediction_to_db(self, prediction: Dict):
