@@ -95,6 +95,16 @@ class DatabaseMaintenanceJob:
         if self._thread:
             self._thread.join(timeout=5)
         logger.info("Database maintenance scheduler stopped")
+    
+    def get_status(self) -> dict:
+        """Gibt den aktuellen Status des Maintenance-Jobs zurück"""
+        return {
+            'running': self._thread is not None and self._thread.is_alive(),
+            'last_cleanup': self.last_run.isoformat() if self.last_run else None,
+            'last_vacuum': self.last_run.isoformat() if self.last_run else None,
+            'retention_days': self.retention_days,
+            'run_hour': int(self.run_time.split(':')[0])
+        }
 
 
 if __name__ == "__main__":
