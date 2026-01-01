@@ -8,10 +8,10 @@ bind = "0.0.0.0:8080"
 backlog = 2048
 
 # Worker processes
-# Für I/O-intensive Apps (wie diese mit vielen API-Calls) sind mehr Worker besser
-workers = 2  # Gevent-Worker können viele gleichzeitige Verbindungen handlen
-worker_class = "gevent"  # Async worker für bessere Parallelität
-worker_connections = 100  # Max gleichzeitige Verbindungen pro Worker
+# Für Server mit 2GB RAM: nur 1 Worker mit gevent für Async-Parallelität
+workers = 1  # Reduziert auf 1 Worker wegen begrenztem RAM
+worker_class = "gevent"  # Async worker für bessere Parallelität ohne extra RAM
+worker_connections = 50  # Max gleichzeitige Verbindungen pro Worker
 
 # Timeouts
 timeout = 120  # Worker timeout (für lange DB-Queries)
@@ -19,7 +19,7 @@ graceful_timeout = 30  # Zeit für graceful shutdown
 keepalive = 5  # Keep-alive Verbindungen
 
 # Restart workers periodisch um Memory Leaks zu vermeiden
-max_requests = 1000
+max_requests = 500  # Reduziert für bessere Memory-Verwaltung
 max_requests_jitter = 50
 
 # Logging

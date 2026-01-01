@@ -430,10 +430,19 @@ class Database:
             )
             self.connection.row_factory = sqlite3.Row
             
-            # Aktiviere Write-Ahead Logging (WAL) für bessere Parallelität
+            # === PERFORMANCE OPTIMIERUNGEN ===
+            # Write-Ahead Logging (WAL) für bessere Parallelität
             self.connection.execute('PRAGMA journal_mode=WAL')
+            # NORMAL sync ist ein guter Kompromiss zwischen Speed und Sicherheit
             self.connection.execute('PRAGMA synchronous=NORMAL')
+            # Erhöhtes Timeout für parallele Zugriffe
             self.connection.execute('PRAGMA busy_timeout=30000')
+            # Cache-Größe erhöhen (negative Zahl = KB, 32MB Cache)
+            self.connection.execute('PRAGMA cache_size=-32000')
+            # Memory-mapped I/O für schnellere Lesezugriffe (64MB)
+            self.connection.execute('PRAGMA mmap_size=67108864')
+            # Temp-Store im Memory
+            self.connection.execute('PRAGMA temp_store=MEMORY')
         return self.connection
 
     def execute(self, query: str, params: tuple = None) -> List[Dict]:
