@@ -15,6 +15,7 @@
         <button class="tab-button" data-tab="sensors">📡 Sensoren</button>
         <button class="tab-button" data-tab="heating">🔥 Heizung</button>
         <button class="tab-button" data-tab="database">💾 Datenbank</button>
+        <button class="tab-button" data-tab="backup">📦 Backup</button>
         <button class="tab-button" data-tab="ml">🧠 ML Training</button>
         <button class="tab-button" data-tab="system">🖥️ System</button>
     </div>
@@ -699,6 +700,165 @@
         </div>
     </div>
     <!-- Ende Tab: Datenbank -->
+
+    <!-- Tab: Backup & Restore -->
+    <div class="tab-content" id="tab-backup">
+        <div class="settings-sections">
+        <!-- Backup erstellen -->
+        <div class="card settings-card">
+            <h3>📦 Backup erstellen</h3>
+            <p class="card-description">
+                Erstelle ein vollständiges Backup aller Daten und Einstellungen. 
+                Das Backup enthält die Datenbank, Konfigurationen und trainierte ML-Modelle.
+            </p>
+
+            <!-- Backup Options -->
+            <div class="backup-options" style="margin: 20px 0;">
+                <h4 style="font-size: 14px; margin-bottom: 15px;">📋 Backup-Inhalt auswählen:</h4>
+                <div style="display: grid; gap: 12px;">
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #f9fafb; border-radius: 8px; cursor: pointer;">
+                        <input type="checkbox" id="backup-database" checked style="width: 18px; height: 18px;">
+                        <div>
+                            <strong>💾 Datenbank</strong>
+                            <div style="font-size: 12px; color: #6b7280;">Sensor-Daten, Entscheidungen, Trainingsdaten, Badezimmer-Events</div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #f9fafb; border-radius: 8px; cursor: pointer;">
+                        <input type="checkbox" id="backup-config" checked style="width: 18px; height: 18px;">
+                        <div>
+                            <strong>⚙️ Konfiguration</strong>
+                            <div style="font-size: 12px; color: #6b7280;">config.yaml, Räume, Automatisierungen, Sensor-Zuordnungen</div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #f9fafb; border-radius: 8px; cursor: pointer;">
+                        <input type="checkbox" id="backup-models" checked style="width: 18px; height: 18px;">
+                        <div>
+                            <strong>🧠 ML-Modelle</strong>
+                            <div style="font-size: 12px; color: #6b7280;">Trainierte Modelle und Modell-Registry</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="create-backup" style="font-size: 16px; padding: 12px 24px;">
+                    <span style="margin-right: 8px;">⬇️</span> Backup erstellen & herunterladen
+                </button>
+            </div>
+            <div id="backup-create-result" class="action-result"></div>
+
+            <!-- Backup Progress -->
+            <div id="backup-progress-container" style="display: none; margin-top: 15px;">
+                <div style="background: #e5e7eb; border-radius: 8px; height: 8px; overflow: hidden;">
+                    <div id="backup-progress-bar" style="background: linear-gradient(90deg, #10b981, #059669); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div id="backup-progress-text" style="margin-top: 8px; font-size: 13px; color: #6b7280; text-align: center;"></div>
+            </div>
+        </div>
+
+        <!-- Backup wiederherstellen -->
+        <div class="card settings-card">
+            <h3>📥 Backup wiederherstellen</h3>
+            <p class="card-description">
+                Lade ein zuvor erstelltes Backup hoch, um alle Daten wiederherzustellen.
+                <strong style="color: #dc2626;">Achtung:</strong> Bestehende Daten werden überschrieben!
+            </p>
+
+            <!-- Warning Box -->
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-left: 4px solid #dc2626; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <span style="font-size: 20px;">⚠️</span>
+                    <div>
+                        <strong style="color: #991b1b;">Wichtige Hinweise:</strong>
+                        <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 13px; color: #7f1d1d;">
+                            <li>Erstelle zuerst ein Backup der aktuellen Daten</li>
+                            <li>Der Server wird nach dem Restore automatisch neu gestartet</li>
+                            <li>Dieser Vorgang kann nicht rückgängig gemacht werden</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Upload -->
+            <div style="margin: 20px 0;">
+                <label for="restore-file" style="display: block; font-weight: 600; margin-bottom: 10px;">
+                    Backup-Datei auswählen (.zip):
+                </label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="file" id="restore-file" accept=".zip" style="flex: 1; padding: 10px; border: 2px dashed #d1d5db; border-radius: 8px; background: #f9fafb;">
+                </div>
+                <div id="restore-file-info" style="margin-top: 10px; font-size: 13px; color: #6b7280;"></div>
+            </div>
+
+            <!-- Restore Options -->
+            <div class="restore-options" style="margin: 20px 0; display: none;" id="restore-options">
+                <h4 style="font-size: 14px; margin-bottom: 15px;">📋 Wiederherstellen:</h4>
+                <div style="display: grid; gap: 12px;">
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #f9fafb; border-radius: 8px; cursor: pointer;">
+                        <input type="checkbox" id="restore-database" checked style="width: 18px; height: 18px;">
+                        <span>💾 Datenbank</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #f9fafb; border-radius: 8px; cursor: pointer;">
+                        <input type="checkbox" id="restore-config" checked style="width: 18px; height: 18px;">
+                        <span>⚙️ Konfiguration</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #f9fafb; border-radius: 8px; cursor: pointer;">
+                        <input type="checkbox" id="restore-models" checked style="width: 18px; height: 18px;">
+                        <span>🧠 ML-Modelle</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-danger" id="restore-backup" disabled style="font-size: 16px; padding: 12px 24px; background: #dc2626;">
+                    <span style="margin-right: 8px;">⬆️</span> Backup wiederherstellen
+                </button>
+            </div>
+            <div id="backup-restore-result" class="action-result"></div>
+
+            <!-- Restore Progress -->
+            <div id="restore-progress-container" style="display: none; margin-top: 15px;">
+                <div style="background: #e5e7eb; border-radius: 8px; height: 8px; overflow: hidden;">
+                    <div id="restore-progress-bar" style="background: linear-gradient(90deg, #3b82f6, #1d4ed8); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div id="restore-progress-text" style="margin-top: 8px; font-size: 13px; color: #6b7280; text-align: center;"></div>
+            </div>
+        </div>
+
+        <!-- Backup-Historie -->
+        <div class="card settings-card">
+            <h3>📜 Backup-Information</h3>
+            <p class="card-description">
+                Übersicht über die enthaltenen Daten in einem Backup.
+            </p>
+
+            <div id="backup-info-content" style="background: #f9fafb; padding: 20px; border-radius: 8px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div>
+                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">DATENBANK-GRÖSSE</div>
+                        <div id="backup-db-size" style="font-size: 24px; font-weight: 600;">--</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">CONFIG-DATEIEN</div>
+                        <div id="backup-config-count" style="font-size: 24px; font-weight: 600;">--</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">ML-MODELLE</div>
+                        <div id="backup-models-count" style="font-size: 24px; font-weight: 600;">--</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">GESCHÄTZTE BACKUP-GRÖSSE</div>
+                        <div id="backup-total-size" style="font-size: 24px; font-weight: 600;">--</div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-secondary" id="refresh-backup-info" style="margin-top: 15px;">
+                🔄 Aktualisieren
+            </button>
+        </div>
+        </div>
+    </div>
+    <!-- Ende Tab: Backup & Restore -->
 
     <!-- Tab: ML Training -->
     <div class="tab-content" id="tab-ml">

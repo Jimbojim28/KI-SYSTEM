@@ -26,6 +26,8 @@ function initTabs() {
                 loadConnectionConfig();
             } else if (targetTab === 'database') {
                 loadDatabaseStatus();
+            } else if (targetTab === 'backup') {
+                loadBackupInfo();
             } else if (targetTab === 'ml') {
                 loadMLStatus();
             } else if (targetTab === 'system') {
@@ -3332,7 +3334,311 @@ async function savePresenceLeaveConfig() {
     }
 }
 
+// === BACKUP & RESTORE FUNKTIONEN ===
+
+// Formatiere Bytes in lesbare Größe
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// Lade Backup-Informationen
+async function loadBackupInfo() {
+    try {
+        const response = await fetch('/api/backup/info');
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('backup-db-size').textContent = formatBytes(data.database.size_bytes);
+            document.getElementById('backup-config-count').textContent = data.config.count + ' Dateien';
+            document.getElementById('backup-models-count').textContent = data.models.count + ' Dateien';
+            document.getElementById('backup-total-size').textContent = formatBytes(data.total_size_bytes);
+        } else {
+            console.error('Error loading backup info:', data.error);
+        }
+    } catch (error) {
+        console.error('Error loading backup info:', error);
+    }
+}
+
+// Erstelle Backup und lade es herunter
+async function createBackup() {
+    const resultEl = document.getElementById('backup-create-result');
+    const progressContainer = document.getElementById('backup-progress-container');
+    const progressBar = document.getElementById('backup-progress-bar');
+    const progressText = document.getElementById('backup-progress-text');
+    const createBtn = document.getElementById('create-backup');
+    
+    // Sammle Optionen
+    const includeDatabase = document.getElementById('backup-database').checked;
+    const includeConfig = document.getElementById('backup-config').checked;
+    const includeModels = document.getElementById('backup-models').checked;
+    
+    if (!includeDatabase && !includeConfig && !includeModels) {
+        resultEl.innerHTML = '⚠️ Bitte wähle mindestens eine Option aus.';
+        resultEl.style.display = 'block';
+        resultEl.className = 'action-result error';
+        return;
+    }
+    
+    createBtn.disabled = true;
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressText.textContent = 'Erstelle Backup...';
+    resultEl.style.display = 'none';
+    
+    try {
+        // Simuliere Fortschritt
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += 5;
+            if (progress <= 90) {
+                progressBar.style.width = progress + '%';
+            }
+        }, 100);
+        
+        const response = await fetch('/api/backup/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                include_database: includeDatabase,
+                include_config: includeConfig,
+                include_models: includeModels
+            })
+        });
+        
+        clearInterval(progressInterval);
+        
+        if (response.ok) {
+            progressBar.style.width = '100%';
+            progressText.textContent = 'Backup erstellt! Download startet...';
+            
+            // Hole Dateinamen aus Header oder generiere einen
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'ki_system_backup.zip';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1].replace(/['"]/g, '');
+                }
+            }
+            
+            // Konvertiere Response zu Blob und starte Download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            resultEl.innerHTML = `✅ Backup erfolgreich erstellt: <strong>${filename}</strong>`;
+            resultEl.className = 'action-result success';
+            resultEl.style.display = 'block';
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Unbekannter Fehler');
+        }
+    } catch (error) {
+        console.error('Error creating backup:', error);
+        resultEl.innerHTML = `❌ Fehler beim Erstellen des Backups: ${error.message}`;
+        resultEl.className = 'action-result error';
+        resultEl.style.display = 'block';
+        progressText.textContent = 'Fehler beim Erstellen';
+    } finally {
+        createBtn.disabled = false;
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+        }, 2000);
+    }
+}
+
+// Handle Datei-Upload für Restore
+function handleRestoreFileSelect(event) {
+    const file = event.target.files[0];
+    const fileInfoEl = document.getElementById('restore-file-info');
+    const restoreBtn = document.getElementById('restore-backup');
+    const restoreOptions = document.getElementById('restore-options');
+    
+    if (file) {
+        if (!file.name.endsWith('.zip')) {
+            fileInfoEl.innerHTML = '❌ Bitte wähle eine ZIP-Datei aus.';
+            fileInfoEl.style.color = '#dc2626';
+            restoreBtn.disabled = true;
+            restoreOptions.style.display = 'none';
+            return;
+        }
+        
+        fileInfoEl.innerHTML = `
+            📁 <strong>${file.name}</strong><br>
+            📦 Größe: ${formatBytes(file.size)}<br>
+            📅 Geändert: ${new Date(file.lastModified).toLocaleString('de-DE')}
+        `;
+        fileInfoEl.style.color = '#059669';
+        restoreBtn.disabled = false;
+        restoreOptions.style.display = 'block';
+    } else {
+        fileInfoEl.innerHTML = '';
+        restoreBtn.disabled = true;
+        restoreOptions.style.display = 'none';
+    }
+}
+
+// Stelle Backup wieder her
+async function restoreBackup() {
+    const fileInput = document.getElementById('restore-file');
+    const resultEl = document.getElementById('backup-restore-result');
+    const progressContainer = document.getElementById('restore-progress-container');
+    const progressBar = document.getElementById('restore-progress-bar');
+    const progressText = document.getElementById('restore-progress-text');
+    const restoreBtn = document.getElementById('restore-backup');
+    
+    if (!fileInput.files.length) {
+        resultEl.innerHTML = '⚠️ Bitte wähle eine Backup-Datei aus.';
+        resultEl.style.display = 'block';
+        resultEl.className = 'action-result error';
+        return;
+    }
+    
+    // Bestätigung anfordern
+    const confirmed = confirm(
+        '⚠️ ACHTUNG: Alle aktuellen Daten werden überschrieben!\n\n' +
+        'Es wird empfohlen, vorher ein Backup der aktuellen Daten zu erstellen.\n\n' +
+        'Nach dem Restore wird der Server automatisch neu gestartet.\n\n' +
+        'Möchtest du fortfahren?'
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    // Sammle Optionen
+    const restoreDatabase = document.getElementById('restore-database').checked;
+    const restoreConfig = document.getElementById('restore-config').checked;
+    const restoreModels = document.getElementById('restore-models').checked;
+    
+    restoreBtn.disabled = true;
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressText.textContent = 'Lade Backup hoch...';
+    resultEl.style.display = 'none';
+    
+    try {
+        // Simuliere Fortschritt
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += 3;
+            if (progress <= 70) {
+                progressBar.style.width = progress + '%';
+            }
+        }, 100);
+        
+        // Erstelle FormData für File-Upload
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('restore_database', restoreDatabase);
+        formData.append('restore_config', restoreConfig);
+        formData.append('restore_models', restoreModels);
+        
+        progressText.textContent = 'Stelle Backup wieder her...';
+        
+        const response = await fetch('/api/backup/restore', {
+            method: 'POST',
+            body: formData
+        });
+        
+        clearInterval(progressInterval);
+        progressBar.style.width = '90%';
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            progressBar.style.width = '100%';
+            progressText.textContent = 'Restore abgeschlossen!';
+            
+            let message = `✅ Backup erfolgreich wiederhergestellt!<br>`;
+            message += `<strong>Wiederhergestellt:</strong> ${data.restored.join(', ')}<br>`;
+            if (data.backup_info) {
+                message += `<strong>Backup vom:</strong> ${new Date(data.backup_info.created_at).toLocaleString('de-DE')}<br>`;
+                message += `<strong>Version:</strong> ${data.backup_info.version}`;
+            }
+            
+            resultEl.innerHTML = message;
+            resultEl.className = 'action-result success';
+            resultEl.style.display = 'block';
+            
+            // Server-Neustart anzeigen
+            if (data.restart_required) {
+                setTimeout(() => {
+                    resultEl.innerHTML += '<br><br>🔄 <strong>Server wird neu gestartet...</strong>';
+                    
+                    // Restart-Request
+                    fetch('/api/server/restart', { method: 'POST' })
+                        .then(() => {
+                            setTimeout(() => {
+                                resultEl.innerHTML += '<br>✅ Seite wird in 5 Sekunden neu geladen...';
+                                setTimeout(() => {
+                                    window.location.reload();
+                                }, 5000);
+                            }, 2000);
+                        })
+                        .catch(err => {
+                            resultEl.innerHTML += '<br>ℹ️ Bitte starte den Server manuell neu.';
+                        });
+                }, 1000);
+            }
+        } else {
+            throw new Error(data.error || 'Unbekannter Fehler');
+        }
+    } catch (error) {
+        console.error('Error restoring backup:', error);
+        resultEl.innerHTML = `❌ Fehler beim Wiederherstellen: ${error.message}`;
+        resultEl.className = 'action-result error';
+        resultEl.style.display = 'block';
+        progressText.textContent = 'Fehler beim Wiederherstellen';
+    } finally {
+        restoreBtn.disabled = false;
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// Initialisiere Backup-Tab Event-Listener
+function initBackupTab() {
+    // Backup erstellen Button
+    const createBackupBtn = document.getElementById('create-backup');
+    if (createBackupBtn) {
+        createBackupBtn.addEventListener('click', createBackup);
+    }
+    
+    // Datei-Upload für Restore
+    const restoreFileInput = document.getElementById('restore-file');
+    if (restoreFileInput) {
+        restoreFileInput.addEventListener('change', handleRestoreFileSelect);
+    }
+    
+    // Restore Button
+    const restoreBackupBtn = document.getElementById('restore-backup');
+    if (restoreBackupBtn) {
+        restoreBackupBtn.addEventListener('click', restoreBackup);
+    }
+    
+    // Refresh Button
+    const refreshBackupInfoBtn = document.getElementById('refresh-backup-info');
+    if (refreshBackupInfoBtn) {
+        refreshBackupInfoBtn.addEventListener('click', loadBackupInfo);
+    }
+}
+
 // Initialisiere beim Laden
 document.addEventListener('DOMContentLoaded', () => {
     initHAEntitiesTab();
+    initBackupTab();
 });

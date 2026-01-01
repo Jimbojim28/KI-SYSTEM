@@ -3,7 +3,7 @@ Flask Web Interface für KI-System
 Dashboard, Einstellungen, Geräte-Übersicht, KI-Vorhersagen
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 from flask_cors import CORS
 from pathlib import Path
 from loguru import logger
@@ -7608,6 +7608,290 @@ class WebInterface:
 
             except Exception as e:
                 logger.error(f"Error clearing training data: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        # === BACKUP & RESTORE ENDPOINTS ===
+
+        @self.app.route('/api/backup/info')
+        def backup_info():
+            """Gibt Informationen über die zu sichernden Daten zurück"""
+            try:
+                import glob
+
+                # Datenbank-Größe
+                db_path = Path("data/ki_system.db")
+                db_size = db_path.stat().st_size if db_path.exists() else 0
+
+                # Config-Dateien zählen
+                config_files = []
+                config_patterns = [
+                    "config/*.yaml",
+                    "config/*.json",
+                    "data/*.json"
+                ]
+                for pattern in config_patterns:
+                    config_files.extend(glob.glob(pattern))
+
+                # ML-Modelle zählen
+                models_path = Path("models")
+                model_files = []
+                if models_path.exists():
+                    model_files = list(models_path.rglob("*.pkl")) + list(models_path.rglob("*.json"))
+
+                # Geschätzte Gesamtgröße
+                total_size = db_size
+                for f in config_files:
+                    total_size += Path(f).stat().st_size
+                for f in model_files:
+                    total_size += f.stat().st_size
+
+                return jsonify({
+                    'success': True,
+                    'database': {
+                        'size_bytes': db_size,
+                        'size_mb': round(db_size / (1024 * 1024), 2)
+                    },
+                    'config': {
+                        'count': len(config_files),
+                        'files': config_files
+                    },
+                    'models': {
+                        'count': len(model_files),
+                        'files': [str(f) for f in model_files]
+                    },
+                    'total_size_bytes': total_size,
+                    'total_size_mb': round(total_size / (1024 * 1024), 2)
+                })
+            except Exception as e:
+                logger.error(f"Error getting backup info: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/backup/create', methods=['POST'])
+        def create_backup():
+            """Erstellt ein Backup und gibt es als Download zurück"""
+            try:
+                import zipfile
+                import tempfile
+                import glob
+                import shutil
+
+                data = request.json or {}
+                include_database = data.get('include_database', True)
+                include_config = data.get('include_config', True)
+                include_models = data.get('include_models', True)
+
+                # Erstelle temporäre ZIP-Datei
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                backup_filename = f"ki_system_backup_{timestamp}.zip"
+
+                # Erstelle temporäres Verzeichnis für das Backup
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    zip_path = Path(temp_dir) / backup_filename
+
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        # Backup-Metadaten
+                        metadata = {
+                            'created_at': datetime.now().isoformat(),
+                            'version': src.__version__ if hasattr(src, '__version__') else 'unknown',
+                            'includes': {
+                                'database': include_database,
+                                'config': include_config,
+                                'models': include_models
+                            }
+                        }
+                        zipf.writestr('backup_metadata.json', json.dumps(metadata, indent=2))
+
+                        # Datenbank sichern
+                        if include_database:
+                            db_path = Path("data/ki_system.db")
+                            if db_path.exists():
+                                # Erstelle eine Kopie der Datenbank für konsistentes Backup
+                                temp_db = Path(temp_dir) / "ki_system.db"
+                                shutil.copy2(db_path, temp_db)
+                                zipf.write(temp_db, "data/ki_system.db")
+                                logger.info("Database added to backup")
+
+                        # Config-Dateien sichern
+                        if include_config:
+                            config_patterns = [
+                                ("config/*.yaml", "config/"),
+                                ("config/*.json", "config/"),
+                                ("data/*.json", "data/")
+                            ]
+                            for pattern, prefix in config_patterns:
+                                for filepath in glob.glob(pattern):
+                                    # Überspringe die Datenbank
+                                    if filepath.endswith('.db'):
+                                        continue
+                                    zipf.write(filepath, filepath)
+                                    logger.debug(f"Config file added: {filepath}")
+                            logger.info("Config files added to backup")
+
+                        # ML-Modelle sichern
+                        if include_models:
+                            models_path = Path("models")
+                            if models_path.exists():
+                                for filepath in models_path.rglob("*"):
+                                    if filepath.is_file():
+                                        arcname = str(filepath)
+                                        zipf.write(filepath, arcname)
+                                        logger.debug(f"Model file added: {arcname}")
+                                logger.info("ML models added to backup")
+
+                    # Sende die Datei zum Download
+                    return send_file(
+                        zip_path,
+                        mimetype='application/zip',
+                        as_attachment=True,
+                        download_name=backup_filename
+                    )
+
+            except Exception as e:
+                logger.error(f"Error creating backup: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/backup/restore', methods=['POST'])
+        def restore_backup():
+            """Stellt ein Backup wieder her"""
+            try:
+                import zipfile
+                import tempfile
+                import shutil
+
+                if 'file' not in request.files:
+                    return jsonify({'success': False, 'error': 'Keine Datei hochgeladen'}), 400
+
+                file = request.files['file']
+                if file.filename == '':
+                    return jsonify({'success': False, 'error': 'Keine Datei ausgewählt'}), 400
+
+                if not file.filename.endswith('.zip'):
+                    return jsonify({'success': False, 'error': 'Nur ZIP-Dateien werden unterstützt'}), 400
+
+                # Optionen aus dem Request
+                restore_database = request.form.get('restore_database', 'true').lower() == 'true'
+                restore_config = request.form.get('restore_config', 'true').lower() == 'true'
+                restore_models = request.form.get('restore_models', 'true').lower() == 'true'
+
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    # Speichere hochgeladene Datei
+                    zip_path = Path(temp_dir) / "backup.zip"
+                    file.save(zip_path)
+
+                    # Validiere ZIP-Datei
+                    if not zipfile.is_zipfile(zip_path):
+                        return jsonify({'success': False, 'error': 'Ungültige ZIP-Datei'}), 400
+
+                    # Extrahiere und validiere
+                    extract_path = Path(temp_dir) / "extracted"
+                    with zipfile.ZipFile(zip_path, 'r') as zipf:
+                        zipf.extractall(extract_path)
+
+                    # Prüfe auf Backup-Metadaten
+                    metadata_path = extract_path / "backup_metadata.json"
+                    if not metadata_path.exists():
+                        return jsonify({
+                            'success': False,
+                            'error': 'Keine gültige Backup-Datei (backup_metadata.json fehlt)'
+                        }), 400
+
+                    with open(metadata_path) as f:
+                        metadata = json.load(f)
+
+                    restored_items = []
+
+                    # Stoppe Background-Jobs vor dem Restore
+                    logger.info("Stopping background services for restore...")
+                    if self.background_collector:
+                        self.background_collector.stop()
+
+                    # Datenbank wiederherstellen
+                    if restore_database:
+                        db_backup = extract_path / "data" / "ki_system.db"
+                        if db_backup.exists():
+                            # Schließe aktuelle Datenbankverbindung
+                            if self.db.connection:
+                                self.db.connection.close()
+                                self.db.connection = None
+
+                            # Erstelle Backup der aktuellen Datenbank
+                            current_db = Path("data/ki_system.db")
+                            if current_db.exists():
+                                backup_current = Path("data/ki_system.db.pre_restore")
+                                shutil.copy2(current_db, backup_current)
+
+                            # Kopiere neue Datenbank
+                            shutil.copy2(db_backup, current_db)
+                            restored_items.append('database')
+                            logger.info("Database restored")
+
+                    # Config-Dateien wiederherstellen
+                    if restore_config:
+                        # Config-Verzeichnis
+                        config_extract = extract_path / "config"
+                        if config_extract.exists():
+                            for filepath in config_extract.iterdir():
+                                if filepath.is_file():
+                                    dest = Path("config") / filepath.name
+                                    # Erstelle Backup der aktuellen Datei
+                                    if dest.exists():
+                                        backup_dest = dest.with_suffix(dest.suffix + '.pre_restore')
+                                        shutil.copy2(dest, backup_dest)
+                                    shutil.copy2(filepath, dest)
+                                    logger.debug(f"Config restored: {filepath.name}")
+
+                        # Data-JSON-Dateien
+                        data_extract = extract_path / "data"
+                        if data_extract.exists():
+                            for filepath in data_extract.iterdir():
+                                if filepath.is_file() and filepath.suffix == '.json':
+                                    dest = Path("data") / filepath.name
+                                    if dest.exists():
+                                        backup_dest = dest.with_suffix(dest.suffix + '.pre_restore')
+                                        shutil.copy2(dest, backup_dest)
+                                    shutil.copy2(filepath, dest)
+                                    logger.debug(f"Data file restored: {filepath.name}")
+
+                        restored_items.append('config')
+                        logger.info("Config files restored")
+
+                    # ML-Modelle wiederherstellen
+                    if restore_models:
+                        models_extract = extract_path / "models"
+                        if models_extract.exists():
+                            models_dest = Path("models")
+
+                            # Backup existierender Modelle
+                            if models_dest.exists():
+                                models_backup = Path("models.pre_restore")
+                                if models_backup.exists():
+                                    shutil.rmtree(models_backup)
+                                shutil.copytree(models_dest, models_backup)
+
+                            # Kopiere neue Modelle
+                            for filepath in models_extract.rglob("*"):
+                                if filepath.is_file():
+                                    rel_path = filepath.relative_to(models_extract)
+                                    dest = models_dest / rel_path
+                                    dest.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(filepath, dest)
+
+                            restored_items.append('models')
+                            logger.info("ML models restored")
+
+                    return jsonify({
+                        'success': True,
+                        'message': 'Backup erfolgreich wiederhergestellt',
+                        'restored': restored_items,
+                        'backup_info': {
+                            'created_at': metadata.get('created_at'),
+                            'version': metadata.get('version')
+                        },
+                        'restart_required': True
+                    })
+
+            except Exception as e:
+                logger.error(f"Error restoring backup: {e}")
                 return jsonify({'success': False, 'error': str(e)}), 500
 
     def _get_database_stats(self):
