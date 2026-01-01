@@ -167,6 +167,8 @@ async function loadConfig() {
             setSlider('humidity-high', config.humidity_threshold_high || 70);
             setSlider('humidity-low', config.humidity_threshold_low || 60);
             setSlider('dehumidifier-delay', config.dehumidifier_delay || 5);
+            setSlider('max-dehumidifier-runtime', config.max_dehumidifier_runtime || 120);
+            setSlider('force-off-humidity', config.force_off_humidity || 50);
 
             // Heizung
             setSlider('target-temperature', config.target_temperature || 22);
@@ -219,6 +221,8 @@ async function saveConfig() {
             humidity_threshold_high: parseFloat(document.getElementById('humidity-high').value),
             humidity_threshold_low: parseFloat(document.getElementById('humidity-low').value),
             dehumidifier_delay: parseInt(document.getElementById('dehumidifier-delay').value),
+            max_dehumidifier_runtime: parseInt(document.getElementById('max-dehumidifier-runtime').value),
+            force_off_humidity: parseFloat(document.getElementById('force-off-humidity').value),
             // Heizung
             target_temperature: parseFloat(document.getElementById('target-temperature').value),
             heating_boost_enabled: document.getElementById('heating-boost-enabled').checked,
@@ -477,11 +481,11 @@ function updateSliderValue(sliderId) {
     let value = slider.value;
     let suffix = '';
 
-    if (sliderId.includes('humidity')) {
+    if (sliderId.includes('humidity') || sliderId === 'force-off-humidity') {
         suffix = '%';
     } else if (sliderId.includes('temperature')) {
         suffix = '°C';
-    } else if (sliderId.includes('delay')) {
+    } else if (sliderId.includes('delay') || sliderId.includes('runtime')) {
         suffix = ' Min';
     } else if (sliderId === 'heating-boost-delta') {
         suffix = '°C';
@@ -493,7 +497,7 @@ function updateSliderValue(sliderId) {
 
 // Setup Slider-Listeners
 function setupSliders() {
-    const sliders = ['humidity-high', 'humidity-low', 'target-temperature', 'dehumidifier-delay', 'heating-boost-delta'];
+    const sliders = ['humidity-high', 'humidity-low', 'target-temperature', 'dehumidifier-delay', 'heating-boost-delta', 'max-dehumidifier-runtime', 'force-off-humidity'];
     sliders.forEach(sliderId => {
         const slider = document.getElementById(sliderId);
         if (slider) {

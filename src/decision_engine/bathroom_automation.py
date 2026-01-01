@@ -61,6 +61,11 @@ class BathroomAutomation:
         # Verzögerung bevor Luftentfeuchter ausschaltet
         self.dehumidifier_delay_minutes = config.get('dehumidifier_delay', 5)
         self.dehumidifier_off_hysteresis = config.get('dehumidifier_off_hysteresis', 2.0)
+        
+        # Maximale Laufzeit für Luftentfeuchter (Sicherheit gegen Endlos-Lauf)
+        self.max_dehumidifier_runtime_minutes = config.get('max_dehumidifier_runtime', 120)  # Default: 2 Stunden
+        # Harte Abschalt-Schwelle: Unter diesem Wert IMMER ausschalten (unabhängig von Schimmelrisiko)
+        self.force_off_humidity = config.get('force_off_humidity', 50.0)  # Default: 50%
 
         # Event-Tracking
         self.current_event_id = None
@@ -86,7 +91,7 @@ class BathroomAutomation:
         if self.db and enable_learning:
             self._load_learned_parameters()
 
-        logger.info(f"Bathroom automation initialized: High={self.humidity_high}%, Low={self.humidity_low}%, Target={self.target_temp}°C, Frost={self.frost_protection_temp}°C, HeatingControl={self.heating_boost_enabled}, Learning={enable_learning}, MoldPrevention={self.mold_prevention is not None}, VentilationOptimizer={self.ventilation is not None}, ShowerPredictor={self.shower_predictor is not None}")
+        logger.info(f"Bathroom automation initialized: High={self.humidity_high}%, Low={self.humidity_low}%, ForceOff={self.force_off_humidity}%, MaxRuntime={self.max_dehumidifier_runtime_minutes}min, Target={self.target_temp}°C, Frost={self.frost_protection_temp}°C, HeatingControl={self.heating_boost_enabled}, Learning={enable_learning}, MoldPrevention={self.mold_prevention is not None}, VentilationOptimizer={self.ventilation is not None}, ShowerPredictor={self.shower_predictor is not None}")
 
     def process(self, platform, current_state: Dict) -> List[Dict]:
         """
@@ -456,6 +461,11 @@ class BathroomAutomation:
                         # Reset Countdown wenn Gerät extern ausgeschaltet wurde
                         if not actual_running:
                             self.humidity_below_threshold_since = None
+                            self.dehumidifier_start_time = None
+                        # Setze Start-Zeit wenn Gerät extern eingeschaltet wurde (für Runtime-Tracking)
+                        elif actual_running and self.dehumidifier_start_time is None:
+                            self.dehumidifier_start_time = datetime.now()
+                            logger.info(f"Dehumidifier detected as running - starting runtime tracking")
         except Exception as e:
             logger.debug(f"Could not check dehumidifier state: {e}")
 
@@ -517,14 +527,52 @@ class BathroomAutomation:
             self.humidity_below_threshold_since = None
             logger.debug(f"Dehumidifier already running (humidity: {humidity}%), no action needed")
 
+        # === SICHERHEITS-CHECKS FÜR SOFORTIGES AUSSCHALTEN ===
+        
+        # 1. HARTE ABSCHALTSCHWELLE: Unter force_off_humidity IMMER sofort ausschalten
+        if self.dehumidifier_running and humidity < self.force_off_humidity:
+            reason = f'Force OFF: Humidity very low ({humidity}% < {self.force_off_humidity}%)'
+            logger.info(f"⚡ FORCE OFF dehumidifier - humidity below force threshold: {humidity}% < {self.force_off_humidity}%")
+            self.dehumidifier_running = False
+            self.humidity_below_threshold_since = None
+            self.dehumidifier_start_time = None
+            self._log_device_action('dehumidifier', dehumidifier_id, 'turn_off', reason, platform)
+            return {
+                'device_id': dehumidifier_id,
+                'action': 'turn_off',
+                'reason': reason
+            }
+        
+        # 2. MAXIMALE LAUFZEIT: Nach max_dehumidifier_runtime_minutes Minuten IMMER ausschalten
+        if self.dehumidifier_running and self.dehumidifier_start_time:
+            runtime_minutes = (datetime.now() - self.dehumidifier_start_time).total_seconds() / 60
+            if runtime_minutes >= self.max_dehumidifier_runtime_minutes:
+                reason = f'Max runtime exceeded ({runtime_minutes:.0f} min >= {self.max_dehumidifier_runtime_minutes} min, humidity: {humidity}%)'
+                logger.warning(f"⏰ TIMEOUT: Dehumidifier running too long ({runtime_minutes:.0f} min) - forcing OFF")
+                self.dehumidifier_running = False
+                self.humidity_below_threshold_since = None
+                self.dehumidifier_start_time = None
+                self._log_device_action('dehumidifier', dehumidifier_id, 'turn_off', reason, platform)
+                return {
+                    'device_id': dehumidifier_id,
+                    'action': 'turn_off',
+                    'reason': reason
+                }
+            else:
+                logger.debug(f"Dehumidifier runtime: {runtime_minutes:.1f} min (max: {self.max_dehumidifier_runtime_minutes} min)")
+
+        # === NORMALE AUSSCHALTLOGIK ===
         # AUSSCHALTEN wenn:
         # - Luftfeuchtigkeit wieder niedrig
-        # - UND kein Schimmelrisiko mehr
+        # - UND kein Schimmelrisiko mehr (außer bei sehr niedriger Feuchtigkeit)
         # - UND Verzögerung abgelaufen
         
         # Prüfe erneut Schimmelrisiko für Ausschalt-Entscheidung
+        # ABER: Bei sehr niedriger Feuchtigkeit (<humidity_low - 5%) ignoriere Schimmelrisiko
         mold_risk_still_present = False
-        if self.mold_prevention and self.dehumidifier_running:
+        humidity_very_low = humidity < (self.humidity_low - 5)  # z.B. unter 49% wenn Low=54%
+        
+        if self.mold_prevention and self.dehumidifier_running and not humidity_very_low:
             try:
                 temperature = self._get_temperature(platform)
                 if temperature is not None:
@@ -554,7 +602,7 @@ class BathroomAutomation:
         
         logger.debug(f"Dehumidifier decision: humidity={humidity}%, threshold={self.humidity_low}%, "
                     f"running={self.dehumidifier_running}, should_off={should_turn_off}, "
-                    f"mold_risk={mold_risk_still_present}")
+                    f"mold_risk={mold_risk_still_present}, humidity_very_low={humidity_very_low}")
 
         if (should_turn_off or within_shutdown_window) and self.dehumidifier_running:
             # Merke dir, wann Luftfeuchtigkeit unter Schwellwert gefallen ist
@@ -566,7 +614,7 @@ class BathroomAutomation:
                     return None
             
             # Prüfe ob Verzögerung abgelaufen ist
-            minutes_since_below = (datetime.now() - self.humidity_below_threshold_since).seconds / 60
+            minutes_since_below = (datetime.now() - self.humidity_below_threshold_since).total_seconds() / 60
             if minutes_since_below < self.dehumidifier_delay_minutes:
                 remaining = self.dehumidifier_delay_minutes - minutes_since_below
                 logger.info(f"Delaying dehumidifier shutdown: {remaining:.1f} min remaining (humidity: {humidity}%)")
@@ -576,6 +624,7 @@ class BathroomAutomation:
             logger.info(f"💨 Turning OFF dehumidifier (humidity: {humidity}%)")
             self.dehumidifier_running = False
             self.humidity_below_threshold_since = None  # Reset
+            self.dehumidifier_start_time = None  # Reset runtime tracking
 
             # Protokolliere Aktion
             self._log_device_action('dehumidifier', dehumidifier_id, 'turn_off', reason, platform)

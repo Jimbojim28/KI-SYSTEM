@@ -494,6 +494,34 @@
                     <!-- Wird per JavaScript gefüllt -->
                 </small>
             </div>
+
+            <div class="form-group">
+                <label>
+                    Maximale Laufzeit (Minuten)
+                    <span class="param-info-icon" title="Sicherheit: Der Luftentfeuchter wird nach dieser Zeit automatisch ausgeschaltet, auch wenn die Luftfeuchtigkeit noch hoch ist.">ℹ️</span>
+                </label>
+                <div class="slider-group">
+                    <input type="range" id="max-dehumidifier-runtime" min="30" max="240" value="120" step="10" class="slider">
+                    <span class="slider-value" id="max-dehumidifier-runtime-value">120 Min</span>
+                </div>
+                <small style="color: #6b7280; margin-top: 4px; display: block;">
+                    Sicherheitslimit: Nach dieser Zeit wird der Luftentfeuchter automatisch ausgeschaltet (Standard: 2 Stunden)
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    Harte Abschaltschwelle (%)
+                    <span class="param-info-icon" title="Unter diesem Wert wird der Luftentfeuchter IMMER sofort ausgeschaltet, unabhängig von anderen Faktoren.">ℹ️</span>
+                </label>
+                <div class="slider-group">
+                    <input type="range" id="force-off-humidity" min="35" max="55" value="50" class="slider">
+                    <span class="slider-value" id="force-off-humidity-value">50%</span>
+                </div>
+                <small style="color: #f59e0b; margin-top: 4px; display: block;">
+                    ⚠️ Unter diesem Wert wird der Luftentfeuchter SOFORT ausgeschaltet (unabhängig von Schimmelrisiko)
+                </small>
+            </div>
             </div>
         </div>
 
