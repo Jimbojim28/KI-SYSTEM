@@ -2167,6 +2167,7 @@ async function saveDataCollectionConfig() {
     
     try {
         const isMultiPlatform = document.getElementById('enable-multi-platform').checked;
+        const bathroomEnabled = document.getElementById('collect-bathroom').checked;
         
         const config = {
             collect_types: {
@@ -2174,9 +2175,15 @@ async function saveDataCollectionConfig() {
                 temperature_data: document.getElementById('collect-temperature').checked,
                 heating_observations: document.getElementById('collect-heating').checked,
                 window_states: document.getElementById('collect-windows').checked,
-                bathroom_data: document.getElementById('collect-bathroom').checked,
+                bathroom_data: bathroomEnabled,
                 sensor_data: document.getElementById('collect-sensors').checked,
                 weather_data: document.getElementById('collect-weather').checked
+            },
+            collectors: {
+                bathroom: {
+                    enabled: bathroomEnabled,
+                    interval: 60
+                }
             }
         };
         
@@ -2215,18 +2222,33 @@ async function saveDataCollectionConfig() {
         const data = await response.json();
         
         if (data.success) {
-            resultEl.textContent = '[OK] Datensammlungs-Konfiguration gespeichert!';
+            resultEl.textContent = '✅ Datensammlungs-Konfiguration gespeichert! Server wird neu gestartet...';
             resultEl.className = 'action-result success';
             
-            setTimeout(() => {
-                resultEl.style.display = 'none';
-            }, 3000);
+            // Server automatisch neu starten nach 2 Sekunden
+            setTimeout(async () => {
+                try {
+                    resultEl.textContent = '🔄 Server wird neu gestartet...';
+                    const restartResponse = await fetch('/api/system/restart', { method: 'POST' });
+                    const restartData = await restartResponse.json();
+                    
+                    if (restartData.success) {
+                        resultEl.textContent = '✅ Server wird neu gestartet. Seite lädt in 10 Sekunden neu...';
+                        // Warte 10 Sekunden und lade Seite neu
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 10000);
+                    }
+                } catch (error) {
+                    resultEl.textContent = '⚠️ Config gespeichert. Bitte Server manuell neu starten.';
+                }
+            }, 2000);
         } else {
-            resultEl.textContent = `[FEHLER] ${data.error}`;
+            resultEl.textContent = `❌ Fehler: ${data.error}`;
             resultEl.className = 'action-result error';
         }
     } catch (error) {
-        resultEl.textContent = `[FEHLER] Beim Speichern: ${error.message}`;
+        resultEl.textContent = `❌ Fehler beim Speichern: ${error.message}`;
         resultEl.className = 'action-result error';
     } finally {
         btn.disabled = false;

@@ -1968,12 +1968,24 @@ class WebInterface:
                 # Update platform_sources (nur bei Multi-Platform)
                 if 'platform_sources' in data:
                     config['data_collection']['platform_sources'] = data['platform_sources']
+                
+                # Update collectors Sektion (für Badezimmer-Collector)
+                if 'collectors' in data:
+                    if 'collectors' not in config:
+                        config['collectors'] = {}
+                    
+                    # Update bathroom collector settings
+                    if 'bathroom' in data['collectors']:
+                        if 'bathroom' not in config['collectors']:
+                            config['collectors']['bathroom'] = {}
+                        config['collectors']['bathroom']['enabled'] = data['collectors']['bathroom'].get('enabled', False)
+                        config['collectors']['bathroom']['interval'] = data['collectors']['bathroom'].get('interval', 60)
 
                 # Speichere Config
                 with open(config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
-                logger.info("Data collection configuration saved")
+                logger.info("Data collection configuration saved (including collectors)")
 
                 return jsonify({
                     'success': True,
