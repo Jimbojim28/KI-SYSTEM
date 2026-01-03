@@ -9,10 +9,10 @@
     "badezimmer": {
       "co2": "",
       "dehumidifier": "fc3d7dcc-bbc9-45b3-bcf8-2e9fd39d7470",
-      "door_sensor": "f35f92a1-fc3a-456e-8d0d-67ddb6118a55",
+      "door_sensor": "5e2d9b44-0264-458b-b127-6cc9842e1fd9",
       "heater": "78aba55b-98ed-4838-bbff-47527a46d69b",
       "humidity": "40cf21f8-e419-410d-ac7b-28f11de88ba8",
-      "motion_sensor": "77d4986b-8a6a-4ff6-a064-3ac518c288b4",
+      "motion_sensor": "none",
       "name": "Badezimmer",
       "temperature": "40cf21f8-e419-410d-ac7b-28f11de88ba8",
       "window_sensor": "cbb061dc-bb29-4ceb-8acd-b234e21b5004"
