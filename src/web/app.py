@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.web.blueprints import (
     config_bp, init_config_blueprint,
     ml_bp, init_ml_blueprint,
-    ventilation_bp, init_ventilation_blueprint
+    ventilation_bp, init_ventilation_blueprint,
+    bathroom_bp, init_bathroom_blueprint
 )
 from src.web.blueprints.api_notifications import notifications_bp, init_notifications_blueprint
 from src.web.blueprints.api_absence import absence_bp, init_absence_blueprint
@@ -351,6 +352,7 @@ class WebInterface:
             init_config_blueprint(self.engine, self.db, self.config)
             init_ml_blueprint(self.engine, self.db)  # model_path ist optional
             init_ventilation_blueprint(self.engine, self.db, self.config)
+            init_bathroom_blueprint(self.engine, self.db, self.config)
             init_notifications_blueprint(self.engine, self.db, self.config)
             init_absence_blueprint(self.engine, self.db, self.config)
             init_ha_entities_blueprint(self.engine)
@@ -359,6 +361,7 @@ class WebInterface:
             self.app.register_blueprint(config_bp)
             self.app.register_blueprint(ml_bp)
             self.app.register_blueprint(ventilation_bp)
+            self.app.register_blueprint(bathroom_bp)
             self.app.register_blueprint(notifications_bp)
             self.app.register_blueprint(absence_bp)
             self.app.register_blueprint(ha_entities_bp)
@@ -369,7 +372,7 @@ class WebInterface:
                 self.app.register_blueprint(christmas_bp)
                 logger.info("Christmas Blueprint registered")
             
-            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, notifications_bp, absence_bp, ha_entities_bp")
+            logger.info("Blueprints registered: config_bp, ml_bp, ventilation_bp, bathroom_bp, notifications_bp, absence_bp, ha_entities_bp")
         except Exception as e:
             logger.error(f"Failed to register blueprints: {e}")
 
