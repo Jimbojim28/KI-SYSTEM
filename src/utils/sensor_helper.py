@@ -393,4 +393,25 @@ def get_bathroom_config() -> dict:
     if not config:
         logger.warning("No bathroom configuration found")
     
+    # 3. Lade Duschsensoren aus YAML Config
+    try:
+        import yaml
+        yaml_config_file = Path('config/config.yaml')
+        if yaml_config_file.exists():
+            with open(yaml_config_file, 'r', encoding='utf-8') as f:
+                yaml_config = yaml.safe_load(f)
+            
+            bathroom_collector_config = yaml_config.get('collectors', {}).get('bathroom', {})
+            shower_sensors = bathroom_collector_config.get('shower_sensors', {})
+            
+            if shower_sensors:
+                # Füge Duschsensoren zur Config hinzu
+                config['shower_humidity_sensor'] = shower_sensors.get('humidity_sensor', '')
+                config['shower_temperature_sensor'] = shower_sensors.get('temperature_sensor', '')
+                config['enable_rate_detection'] = shower_sensors.get('enable_rate_detection', True)
+                config['rate_threshold'] = shower_sensors.get('rate_threshold', 2.0)
+                logger.debug(f"Shower sensors loaded: humidity={config.get('shower_humidity_sensor')}, temp={config.get('shower_temperature_sensor')}")
+    except Exception as e:
+        logger.warning(f"Error loading shower sensors from YAML: {e}")
+    
     return config

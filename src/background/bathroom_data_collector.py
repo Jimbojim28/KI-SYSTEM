@@ -170,13 +170,64 @@ class BathroomDataCollector:
                 if state:
                     temperature = self.engine._extract_temperature_value(state)
 
+            # === DUSCHSENSOR-DATEN (falls konfiguriert) ===
+            shower_humidity = None
+            shower_temperature = None
+            
+            shower_humidity_sensor = self.config.get('shower_humidity_sensor')
+            shower_temp_sensor = self.config.get('shower_temperature_sensor')
+            
+            if shower_humidity_sensor:
+                try:
+                    if shower_humidity_sensor.startswith('sensor.'):
+                        # Home Assistant Sensor
+                        platform = self.engine.platforms.get('homeassistant') if hasattr(self.engine, 'platforms') else self.engine.platform
+                        if platform:
+                            state = platform.get_state(shower_humidity_sensor)
+                            if state:
+                                value = state.get('state')
+                                if value and value not in ['unknown', 'unavailable']:
+                                    shower_humidity = float(value)
+                                    logger.debug(f"Read shower humidity from HA: {shower_humidity}%")
+                    else:
+                        # Homey Sensor
+                        state = self.engine.platform.get_state(shower_humidity_sensor)
+                        if state:
+                            shower_humidity = self.engine._extract_humidity_value(state)
+                            logger.debug(f"Read shower humidity from Homey: {shower_humidity}%")
+                except Exception as e:
+                    logger.debug(f"Error reading shower humidity sensor: {e}")
+            
+            if shower_temp_sensor:
+                try:
+                    if shower_temp_sensor.startswith('sensor.'):
+                        # Home Assistant Sensor
+                        platform = self.engine.platforms.get('homeassistant') if hasattr(self.engine, 'platforms') else self.engine.platform
+                        if platform:
+                            state = platform.get_state(shower_temp_sensor)
+                            if state:
+                                value = state.get('state')
+                                if value and value not in ['unknown', 'unavailable']:
+                                    shower_temperature = float(value)
+                                    logger.debug(f"Read shower temperature from HA: {shower_temperature}°C")
+                    else:
+                        # Homey Sensor
+                        state = self.engine.platform.get_state(shower_temp_sensor)
+                        if state:
+                            shower_temperature = self.engine._extract_temperature_value(state)
+                            logger.debug(f"Read shower temperature from Homey: {shower_temperature}°C")
+                except Exception as e:
+                    logger.debug(f"Error reading shower temperature sensor: {e}")
+
             # Speichere nur wenn mindestens ein Wert vorhanden
             if humidity is not None or temperature is not None:
                 self.db.add_bathroom_continuous_measurement(
                     humidity=humidity,
-                    temperature=temperature
+                    temperature=temperature,
+                    shower_humidity=shower_humidity,
+                    shower_temperature=shower_temperature
                 )
-                logger.debug(f"Collected bathroom data: Humidity={humidity}%, Temp={temperature}°C")
+                logger.debug(f"Collected bathroom data: Humidity={humidity}%, Temp={temperature}°C, Shower: {shower_humidity}%/{shower_temperature}°C")
 
                 # Führe direkt die Badezimmer-Automation aus, sobald valide Daten vorliegen
                 if self.config.get('enabled', False):

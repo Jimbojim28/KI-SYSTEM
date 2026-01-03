@@ -197,6 +197,9 @@ async function loadConfig() {
             // Enabled
             document.getElementById('bathroom-enabled').checked = config.enabled || false;
         }
+        
+        // Lade auch Duschsensor-Konfiguration
+        await loadShowerSensorConfig();
     } catch (error) {
         console.error('Error loading bathroom config:', error);
     }
@@ -247,6 +250,10 @@ async function saveConfig() {
         if (result.success) {
             showToast('✅ Konfiguration gespeichert!', 'success');
             selectedRoomId = roomId;
+            
+            // Speichere auch Duschsensor-Konfiguration
+            await saveShowerSensorConfig();
+            
             loadStatus();
             // Energie-Stats neu laden
             loadEnergyStats();
@@ -1572,6 +1579,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Lade Live-Sensor-Status initial
     await loadLiveSensorStatus();
 
+    // Lade verfügbare Duschsensoren wenn auf Sensoren-Tab gewechselt wird
+    const sensorTab = document.querySelector('[data-tab="sensors"]');
+    if (sensorTab) {
+        sensorTab.addEventListener('click', () => {
+            loadAvailableShowerSensors();
+        });
+    }
+    
+    // Rate Threshold Slider
+    const rateThresholdSlider = document.getElementById('rate-threshold-luftentfeuchten');
+    if (rateThresholdSlider) {
+        rateThresholdSlider.addEventListener('input', function() {
+            const value = this.value;
+            const valueElement = document.getElementById('rate-threshold-value-luftentfeuchten');
+            if (valueElement) {
+                valueElement.textContent = value + ' %/min';
+            }
+        });
+    }
+    
+    // Refresh Shower Stats Button
+    const refreshStatsBtn = document.getElementById('refresh-shower-stats-luftentfeuchten');
+    if (refreshStatsBtn) {
+        refreshStatsBtn.addEventListener('click', loadShowerStats);
+    }
+    
+    // Save Shower Sensors Button
+    const saveShowerSensorsBtn = document.getElementById('save-shower-sensors-btn');
+    if (saveShowerSensorsBtn) {
+        saveShowerSensorsBtn.addEventListener('click', async () => {
+            saveShowerSensorsBtn.disabled = true;
+            saveShowerSensorsBtn.textContent = '⏳ Speichert...';
+            
+            try {
+                await saveShowerSensorConfig();
+                saveShowerSensorsBtn.textContent = '✅ Gespeichert!';
+                setTimeout(() => {
+                    saveShowerSensorsBtn.textContent = '💾 Sensoren speichern';
+                    saveShowerSensorsBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                saveShowerSensorsBtn.textContent = '❌ Fehler';
+                setTimeout(() => {
+                    saveShowerSensorsBtn.textContent = '💾 Sensoren speichern';
+                    saveShowerSensorsBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    }
+    
+    // Initialisiere Luftfeuchtigkeits-Chart
+    initHumidityChartButtons();
+    loadHumidityChart(12); // Lade initial mit 12h
+
     // Starte Auto-Refresh mit Tab-Visibility-Handling
     PollingManager.startInitialPolling();
 });
@@ -1724,4 +1785,384 @@ async function loadMoldPreventionStatusBathroom() {
             </div>
         `;
     }
+}
+// ===== DUSCHSENSOREN =====
+
+/**
+ * Lädt verfügbare Sensoren und füllt die Dropdowns
+ */
+async function loadAvailableShowerSensors() {
+    try {
+        const data = await fetchJSON('/api/bathroom/sensors/available');
+        
+        if (!data) {
+            console.log('No sensor data received');
+            return;
+        }
+        
+        console.log('Loading available shower sensors:', data);
+        
+        // Füllt Humidity-Sensor Dropdown
+        const humiditySelect = document.getElementById('shower-humidity-sensor-luftentfeuchten');
+        if (humiditySelect) {
+            // Speichere aktuell ausgewählten Wert
+            const currentValue = humiditySelect.value;
+            
+            // Behalte erste Option
+            const firstOption = humiditySelect.options[0];
+            humiditySelect.innerHTML = '';
+            humiditySelect.appendChild(firstOption);
+            
+            data.humidity_sensors.forEach(sensor => {
+                const option = document.createElement('option');
+                option.value = sensor.entity_id;
+                option.textContent = `${sensor.name} (${sensor.state} ${sensor.unit || ''})`;
+                humiditySelect.appendChild(option);
+            });
+            
+            // Setze vorherigen Wert wieder, falls vorhanden
+            if (currentValue) {
+                humiditySelect.value = currentValue;
+            }
+            
+            console.log(`Loaded ${data.humidity_sensors.length} humidity sensors`);
+        }
+        
+        // Füllt Temperature-Sensor Dropdown
+        const tempSelect = document.getElementById('shower-temperature-sensor-luftentfeuchten');
+        if (tempSelect) {
+            const currentValue = tempSelect.value;
+            
+            const firstOption = tempSelect.options[0];
+            tempSelect.innerHTML = '';
+            tempSelect.appendChild(firstOption);
+            
+            data.temperature_sensors.forEach(sensor => {
+                const option = document.createElement('option');
+                option.value = sensor.entity_id;
+                option.textContent = `${sensor.name} (${sensor.state} ${sensor.unit || ''})`;
+                tempSelect.appendChild(option);
+            });
+            
+            if (currentValue) {
+                tempSelect.value = currentValue;
+            }
+            
+            console.log(`Loaded ${data.temperature_sensors.length} temperature sensors`);
+        }
+    } catch (error) {
+        console.error('Error loading available shower sensors:', error);
+    }
+}
+
+/**
+ * Lädt Duschsensor-Konfiguration
+ */
+async function loadShowerSensorConfig() {
+    try {
+        // Lade erst verfügbare Sensoren
+        await loadAvailableShowerSensors();
+        
+        const data = await fetchJSON('/api/bathroom/sensors/config');
+        
+        if (!data || !data.shower_sensors) {
+            console.log('No shower sensor config found');
+            return;
+        }
+        
+        const showerSensors = data.shower_sensors;
+        console.log('Loaded shower sensor config:', showerSensors);
+        
+        // Setze Werte
+        const humiditySelect = document.getElementById('shower-humidity-sensor-luftentfeuchten');
+        const tempSelect = document.getElementById('shower-temperature-sensor-luftentfeuchten');
+        const rateDetectionCheckbox = document.getElementById('enable-rate-detection-luftentfeuchten');
+        const rateThresholdSlider = document.getElementById('rate-threshold-luftentfeuchten');
+        
+        if (humiditySelect) {
+            humiditySelect.value = showerSensors.humidity_sensor || '';
+            console.log('Set humidity sensor to:', humiditySelect.value, '(options:', humiditySelect.options.length, ')');
+        }
+        if (tempSelect) {
+            tempSelect.value = showerSensors.temperature_sensor || '';
+            console.log('Set temperature sensor to:', tempSelect.value, '(options:', tempSelect.options.length, ')');
+        }
+        if (rateDetectionCheckbox) rateDetectionCheckbox.checked = showerSensors.enable_rate_detection !== false;
+        if (rateThresholdSlider) {
+            rateThresholdSlider.value = showerSensors.rate_threshold || 2.0;
+            updateSliderValue('rate-threshold-luftentfeuchten');
+        }
+        
+        // Lade auch Statistiken
+        await loadShowerStats();
+        
+    } catch (error) {
+        console.error('Error loading shower sensor config:', error);
+    }
+}
+
+/**
+ * Speichert Duschsensor-Konfiguration
+ */
+async function saveShowerSensorConfig() {
+    try {
+        const humiditySelect = document.getElementById('shower-humidity-sensor-luftentfeuchten');
+        const tempSelect = document.getElementById('shower-temperature-sensor-luftentfeuchten');
+        const rateDetectionCheckbox = document.getElementById('enable-rate-detection-luftentfeuchten');
+        const rateThresholdSlider = document.getElementById('rate-threshold-luftentfeuchten');
+        
+        if (!humiditySelect || !tempSelect || !rateDetectionCheckbox || !rateThresholdSlider) {
+            console.log('Shower sensor elements not found, skipping save');
+            return;
+        }
+        
+        const config = {
+            shower_sensors: {
+                humidity_sensor: humiditySelect.value,
+                temperature_sensor: tempSelect.value,
+                enable_rate_detection: rateDetectionCheckbox.checked,
+                rate_threshold: parseFloat(rateThresholdSlider.value)
+            }
+        };
+        
+        const result = await postJSON('/api/bathroom/sensors/config', config);
+        
+        if (result && result.success) {
+            console.log('Shower sensor config saved');
+            // Zeige Erfolgs-Nachricht
+            if (result.message) {
+                showNotification(result.message, 'success');
+            }
+            return true;
+        } else {
+            throw new Error(result?.error || 'Unbekannter Fehler');
+        }
+    } catch (error) {
+        console.error('Error saving shower sensor config:', error);
+        showNotification('Fehler beim Speichern: ' + error.message, 'error');
+        throw error;
+    }
+}
+
+/**
+ * Lädt Dusch-Statistiken
+ */
+async function loadShowerStats() {
+    try {
+        const data = await fetchJSON('/api/bathroom/stats');
+        
+        if (!data) return;
+        
+        // Update Statistik-Werte
+        const totalElement = document.getElementById('shower-stats-total');
+        const durationElement = document.getElementById('shower-stats-duration');
+        const increaseElement = document.getElementById('shower-stats-increase');
+        
+        if (totalElement) totalElement.textContent = data.total_showers || '0';
+        if (durationElement) durationElement.textContent = data.avg_duration_minutes ? data.avg_duration_minutes.toFixed(1) : '--';
+        if (increaseElement) increaseElement.textContent = data.avg_humidity_increase ? data.avg_humidity_increase.toFixed(1) : '--';
+        
+    } catch (error) {
+        console.error('Error loading shower stats:', error);
+    }
+}
+
+// ===== LUFTFEUCHTIGKEITS-VERLAUF CHART =====
+
+let humidityChart = null;
+let currentHumidityPeriod = 12;
+
+/**
+ * Lädt die Luftfeuchtigkeitsdaten und rendert die Grafik
+ */
+async function loadHumidityChart(hours = 12) {
+    try {
+        currentHumidityPeriod = hours;
+        
+        const loadingElement = document.getElementById('humidity-chart-loading');
+        const containerElement = document.getElementById('humidity-chart-container');
+        
+        if (loadingElement) loadingElement.style.display = 'block';
+        if (containerElement) containerElement.style.display = 'none';
+        
+        const data = await fetchJSON(`/api/bathroom/humidity-history?hours=${hours}`);
+        
+        if (!data) {
+            console.error('No humidity history data received');
+            if (loadingElement) loadingElement.textContent = 'Keine Daten verfügbar';
+            return;
+        }
+        
+        // Verstecke Loading, zeige Chart
+        if (loadingElement) loadingElement.style.display = 'none';
+        if (containerElement) containerElement.style.display = 'block';
+        
+        renderHumidityChart(data);
+        
+    } catch (error) {
+        console.error('Error loading humidity chart:', error);
+        const loadingElement = document.getElementById('humidity-chart-loading');
+        if (loadingElement) loadingElement.textContent = 'Fehler beim Laden der Daten';
+    }
+}
+
+/**
+ * Rendert die Luftfeuchtigkeits-Grafik mit Chart.js
+ */
+function renderHumidityChart(data) {
+    const canvas = document.getElementById('humidity-chart');
+    if (!canvas) {
+        console.error('Canvas element not found');
+        return;
+    }
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Zerstöre existierendes Chart
+    if (humidityChart) {
+        humidityChart.destroy();
+    }
+    
+    // Bereite Daten vor
+    const mainSensorData = data.main_sensor?.data || [];
+    const showerSensorData = data.shower_sensor?.data || [];
+    
+    // Erstelle Datasets
+    const datasets = [];
+    
+    // Hauptsensor (immer anzeigen)
+    if (mainSensorData.length > 0) {
+        datasets.push({
+            label: data.main_sensor.name || 'Hauptsensor',
+            data: mainSensorData.map(d => ({
+                x: new Date(d.timestamp),
+                y: d.humidity
+            })),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 2,
+            tension: 0.4,
+            fill: false,
+            pointRadius: 2,
+            pointHoverRadius: 5
+        });
+    }
+    
+    // Duschsensor (nur wenn konfiguriert)
+    if (showerSensorData.length > 0) {
+        datasets.push({
+            label: data.shower_sensor.name || 'Duschsensor',
+            data: showerSensorData.map(d => ({
+                x: new Date(d.timestamp),
+                y: d.humidity
+            })),
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderWidth: 2,
+            tension: 0.4,
+            fill: false,
+            pointRadius: 2,
+            pointHoverRadius: 5
+        });
+    }
+    
+    // Erstelle Chart
+    humidityChart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    callbacks: {
+                        title: function(context) {
+                            const date = context[0].parsed.x;
+                            return new Date(date).toLocaleString('de-DE', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
+                        },
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: currentHumidityPeriod <= 12 ? 'hour' : 'hour',
+                        displayFormats: {
+                            hour: 'HH:mm',
+                            day: 'DD.MM'
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Zeit'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Luftfeuchtigkeit (%)'
+                    },
+                    min: 0,
+                    max: 100,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Initialisiert die Event-Listener für die Zeitraum-Buttons
+ */
+function initHumidityChartButtons() {
+    const buttons = document.querySelectorAll('.humidity-period-btn');
+    
+    buttons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const period = parseInt(this.getAttribute('data-period'));
+            
+            // Update Button-Styles
+            buttons.forEach(b => {
+                b.style.background = 'white';
+                b.style.color = '#374151';
+                b.classList.remove('active');
+            });
+            this.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+            this.style.color = 'white';
+            this.classList.add('active');
+            
+            // Lade neue Daten
+            loadHumidityChart(period);
+        });
+    });
 }

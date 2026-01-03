@@ -145,6 +145,48 @@
         </div>
     </div>
 
+    <!-- Luftfeuchtigkeits-Verlauf Card -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div>
+                <h3>💧 Luftfeuchtigkeits-Verlauf</h3>
+                <p style="color: #6b7280; font-size: 0.9em; margin-top: 5px;">
+                    Vergleich der Sensoren: Hauptsensor vs. Duschsensor
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="humidity-period-btn active" data-period="12" style="padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 6px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; font-size: 0.9em; cursor: pointer;">
+                    12h
+                </button>
+                <button class="humidity-period-btn" data-period="24" style="padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 6px; background: white; color: #374151; font-size: 0.9em; cursor: pointer;">
+                    24h
+                </button>
+                <button class="humidity-period-btn" data-period="48" style="padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 6px; background: white; color: #374151; font-size: 0.9em; cursor: pointer;">
+                    48h
+                </button>
+            </div>
+        </div>
+
+        <div id="humidity-chart-loading" style="text-align: center; padding: 40px; color: #6b7280;">
+            Lade Daten...
+        </div>
+        <div id="humidity-chart-container" style="display: none; position: relative; height: 400px;">
+            <canvas id="humidity-chart"></canvas>
+        </div>
+
+        <!-- Legende -->
+        <div style="display: flex; gap: 20px; margin-top: 15px; padding: 15px; background: #f9fafb; border-radius: 6px; flex-wrap: wrap; justify-content: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 20px; height: 3px; background: #3b82f6; border-radius: 2px;"></div>
+                <span style="font-size: 0.85em; color: #374151;">Hauptsensor (Badezimmer)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 20px; height: 3px; background: #10b981; border-radius: 2px;"></div>
+                <span style="font-size: 0.85em; color: #374151;">Duschsensor</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Wochenübersicht: Tatsächlich vs. Vorhergesagt -->
     <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -372,6 +414,7 @@
         <!-- Tab Navigation -->
         <div class="config-tabs">
             <button class="tab-btn active" data-tab="devices">🔌 Geräte zuweisen</button>
+            <button class="tab-btn" data-tab="sensors">📡 Duschsensoren</button>
             <button class="tab-btn" data-tab="thresholds">📏 Schwellwerte</button>
             <button class="tab-btn" data-tab="heating">🔥 Heizung</button>
             <button class="tab-btn" data-tab="advanced">⚙️ Erweitert</button>
@@ -418,6 +461,110 @@
                     <div id="test-result" style="margin-top: 15px; display: none;">
                         <!-- Test-Ergebnis wird hier angezeigt -->
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Duschsensoren -->
+        <div class="tab-content" id="tab-sensors">
+            <div class="form-section">
+                <h4>📡 Zusätzliche Duschsensoren</h4>
+                <p style="color: #6b7280; font-size: 0.9em; margin-bottom: 20px;">
+                    Konfiguriere zusätzliche Sensoren direkt an der Dusche für schnellere und genauere Duscherkennung.
+                </p>
+
+                <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #3b82f6; border-radius: 6px; padding: 15px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: start; gap: 12px;">
+                        <span style="font-size: 1.5em;">💡</span>
+                        <div style="flex: 1; font-size: 0.9em; color: #1e40af;">
+                            <strong>Vorteile von Duschsensoren:</strong><br>
+                            • Schnellere Erkennung (Sekunden statt Minuten)<br>
+                            • Weniger Fehlalarme (unterscheidet Duschen von Kochen, Wäsche, etc.)<br>
+                            • Präzisere Steuerung des Luftentfeuchters<br>
+                            • Besseres ML-Training für zukünftige Vorhersagen
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label><strong>Luftfeuchtigkeits-Sensor an der Dusche:</strong></label>
+                    <select id="shower-humidity-sensor-luftentfeuchten" class="form-select">
+                        <option value="">-- Kein zusätzlicher Sensor --</option>
+                    </select>
+                    <small style="color: #6b7280; margin-top: 4px; display: block;">
+                        Sensor direkt an/in der Dusche für schnellen Feuchtigkeitsanstieg (z.B. sensor.dusche_luftfeuchtigkeit)
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label><strong>Temperatur-Sensor an der Dusche:</strong></label>
+                    <select id="shower-temperature-sensor-luftentfeuchten" class="form-select">
+                        <option value="">-- Kein zusätzlicher Sensor --</option>
+                    </select>
+                    <small style="color: #6b7280; margin-top: 4px; display: block;">
+                        Optional: Temperaturanstieg unterstützt die Duscherkennung (z.B. sensor.dusche_temperatur)
+                    </small>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;">
+
+                <h4>⚙️ Erkennungs-Einstellungen</h4>
+
+                <div class="form-group">
+                    <label class="toggle-label" style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                        <input type="checkbox" id="enable-rate-detection-luftentfeuchten" class="toggle-checkbox" checked>
+                        <span class="toggle-switch"></span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1f2937;">Schnelle Steigungserkennung aktivieren</div>
+                            <div style="font-size: 0.85em; color: #6b7280; margin-top: 2px;">
+                                Erkennt Duschen durch schnellen Anstieg der Luftfeuchtigkeit (empfohlen)
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>Schwellwert für Anstiegsrate:</label>
+                    <div class="slider-group">
+                        <input type="range" id="rate-threshold-luftentfeuchten" min="0.5" max="5.0" step="0.5" value="2.0" class="slider">
+                        <span class="slider-value" id="rate-threshold-value-luftentfeuchten">2.0 %/min</span>
+                    </div>
+                    <small style="color: #6b7280; margin-top: 4px; display: block;">
+                        Anstieg pro Minute, um als "Duschen" zu gelten (Standard: 2.0 %/min)<br>
+                        Niedriger = sensibler, Höher = weniger Fehlalarme
+                    </small>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;">
+
+                <h4>📊 Statistiken (letzte 30 Tage)</h4>
+
+                <div class="stats-grid-small" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+                    <div class="stat-card-small" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px; border-radius: 8px; color: white;">
+                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">ERKANNTE DUSCHEN</div>
+                        <div id="shower-stats-total" style="font-size: 24px; font-weight: 700;">--</div>
+                    </div>
+                    
+                    <div class="stat-card-small" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 15px; border-radius: 8px; color: white;">
+                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">Ø DAUER</div>
+                        <div id="shower-stats-duration" style="font-size: 24px; font-weight: 700;">--</div>
+                        <div style="font-size: 10px; opacity: 0.8; margin-top: 2px;">Minuten</div>
+                    </div>
+                    
+                    <div class="stat-card-small" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 15px; border-radius: 8px; color: white;">
+                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">Ø ANSTIEG</div>
+                        <div id="shower-stats-increase" style="font-size: 24px; font-weight: 700;">--</div>
+                        <div style="font-size: 10px; opacity: 0.8; margin-top: 2px;">% Luftfeuchtigkeit</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button id="save-shower-sensors-btn" class="btn btn-primary" style="flex: 1;">
+                        💾 Sensoren speichern
+                    </button>
+                    <button id="refresh-shower-stats-luftentfeuchten" class="btn btn-secondary">
+                        🔄 Statistiken aktualisieren
+                    </button>
                 </div>
             </div>
         </div>
@@ -1095,5 +1242,9 @@
 
 </style>
 
-<script src="{{ url_for('static', filename='js/luftentfeuchten.js') }}?v=4"></script>
+<!-- Chart.js für Luftfeuchtigkeits-Grafik -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<script src="{{ url_for('static', filename='js/luftentfeuchten.js') }}?v=9"></script>
 {% endblock %}
