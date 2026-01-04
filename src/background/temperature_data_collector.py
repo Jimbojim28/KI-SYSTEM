@@ -115,66 +115,102 @@ class TemperatureDataCollector:
             try:
                 devices = collector.get_all_devices()
                 
+                if not devices:
+                    logger.warning(f"No devices returned from {platform_name}")
+                    continue
+                
                 for device in devices:
-                    # Nur Thermostate
-                    if not self._is_thermostat(device):
-                        continue
-                    
-                    device_id = device.get('id')
-                    device_name = device.get('name', 'Unknown')
+                    try:
+                        # Nur Thermostate
+                        if not self._is_thermostat(device):
+                            continue
+                        
+                        device_id = device.get('id')
+                        if not device_id:
+                            logger.warning(f"Device without ID: {device.get('name', 'Unknown')}")
+                            continue
+                        
+                        device_name = device.get('name', 'Unknown')
 
-                    # Handle zone - can be string (ID) or dict
-                    zone = device.get('zone')
-                    if isinstance(zone, dict):
-                        room_name = zone.get('name', 'Unknown')
-                    elif isinstance(zone, str):
-                        room_name = zone  # Zone ID
-                    else:
-                        room_name = 'Unknown'
+                        # Handle zone - can be string (ID) or dict
+                        zone = device.get('zone')
+                        if isinstance(zone, dict):
+                            room_name = zone.get('name', 'Unknown')
+                        elif isinstance(zone, str):
+                            room_name = zone  # Zone ID
+                        else:
+                            room_name = 'Unknown'
+                        
+                        # Temperaturen
+                        caps = device.get('capabilitiesObj', {})
+                        current_temp = caps.get('measure_temperature', {}).get('value')
+                        target_temp = caps.get('target_temperature', {}).get('value')
+                        
+                        # Validierung
+                        if current_temp is None or target_temp is None:
+                            logger.debug(f"Missing temperature values for {device_name}: current={current_temp}, target={target_temp}")
+                            continue
+                        
+                        # Validiere Temperaturbereich (Plausibilitätsprüfung)
+                        if not (-30 <= current_temp <= 50) or not (5 <= target_temp <= 35):
+                            logger.warning(f"Unrealistic temperature values for {device_name}: current={current_temp}°C, target={target_temp}°C")
+                            continue
+                        
+                        # Heizstatus
+                        heating_active = self._is_heating(device)
+                        
+                        # Fensterstatus für diesen Raum
+                        window_open = self._check_window_status(room_name, devices)
+                        
+                        # Anwesenheit (mit Fallback)
+                        try:
+                            presence = self.sensor_helper.get_presence_in_room(room_name) if self.sensor_helper and room_name != 'Unknown' else False
+                        except Exception as e:
+                            logger.debug(f"Could not get presence for {room_name}: {e}")
+                            presence = False
+                        
+                        # Humidity (falls verfügbar) mit Validierung
+                        humidity = caps.get('measure_humidity', {}).get('value')
+                        if humidity is not None and not (0 <= humidity <= 100):
+                            logger.warning(f"Invalid humidity value for {device_name}: {humidity}%")
+                            humidity = None
+                        
+                        # In DB speichern
+                        self.db.add_continuous_measurement(
+                            device_id=device_id,
+                            device_name=device_name,
+                            room_name=room_name,
+                            current_temp=float(current_temp),
+                            target_temp=float(target_temp),
+                            outdoor_temp=outdoor_temp,
+                            humidity=float(humidity) if humidity is not None else None,
+                            heating_active=heating_active,
+                            presence=presence,
+                            window_open=window_open,
+                            energy_price_level=energy_level
+                        )
+                        self.total_measurements_collected += 1
+                        
+                        logger.debug(f"Temperature data: {device_name} ({room_name}) - {current_temp}°C / {target_temp}°C (heating: {heating_active})")
                     
-                    # Temperaturen
-                    caps = device.get('capabilitiesObj', {})
-                    current_temp = caps.get('measure_temperature', {}).get('value')
-                    target_temp = caps.get('target_temperature', {}).get('value')
-                    
-                    if current_temp is None or target_temp is None:
+                    except Exception as e:
+                        error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                        logger.error(f"Error processing device {device.get('name', 'Unknown')}: {error_msg}")
                         continue
-                    
-                    # Heizstatus
-                    heating_active = self._is_heating(device)
-                    
-                    # Fensterstatus für diesen Raum
-                    window_open = self._check_window_status(room_name, devices)
-                    
-                    # Anwesenheit
-                    presence = self.sensor_helper.get_presence_in_room(room_name) if self.sensor_helper and room_name else False
-                    
-                    # Humidity (falls verfügbar)
-                    humidity = caps.get('measure_humidity', {}).get('value')
-                    
-                    # In DB speichern
-                    self.db.add_continuous_measurement(
-                        device_id=device_id,
-                        device_name=device_name,
-                        room_name=room_name,
-                        current_temp=current_temp,
-                        target_temp=target_temp,
-                        outdoor_temp=outdoor_temp,
-                        humidity=humidity,
-                        heating_active=heating_active,
-                        presence=presence,
-                        window_open=window_open,
-                        energy_price_level=energy_level
-                    )
-                    self.total_measurements_collected += 1
-                    
-                    logger.debug(f"Temperature data: {device_name} - {current_temp}°C / {target_temp}°C (heating: {heating_active})")
                 
                 # CO2-Sensoren separat sammeln
-                self._collect_co2_data(devices, platform_name)
+                try:
+                    self._collect_co2_data(devices, platform_name)
+                except Exception as e:
+                    error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                    logger.error(f"Error collecting CO2 data from {platform_name}: {error_msg}")
                 
                 # PM2.5 Feinstaub-Sensoren sammeln
-                self._collect_pm25_data(devices, platform_name)
+                try:
+                    self._collect_pm25_data(devices, platform_name)
+                except Exception as e:
+                    error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
+                    logger.error(f"Error collecting PM2.5 data from {platform_name}: {error_msg}")
                     
             except Exception as e:
                 error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
@@ -298,7 +334,16 @@ class TemperatureDataCollector:
                 if co2_value is None:
                     continue
                 
+                # Validiere CO2-Wert (normaler Bereich: 400-5000 ppm)
+                if not (350 <= co2_value <= 10000):
+                    logger.warning(f"Unrealistic CO2 value: {co2_value} ppm from {device.get('name', 'Unknown')}")
+                    continue
+                
                 device_id = device.get('id', '')
+                if not device_id:
+                    logger.debug(f"CO2 sensor without ID: {device.get('name', 'Unknown')}")
+                    continue
+                    
                 device_name = device.get('name', 'Unknown')
                 
                 # Room aus zone holen
@@ -331,6 +376,7 @@ class TemperatureDataCollector:
             except Exception as e:
                 error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
                 logger.error(f"Error collecting CO2 from {device.get('name', 'unknown')}: {error_msg}")
+                continue
         
         if collected_count > 0:
             logger.info(f"Collected CO2 data from {collected_count} sensor(s)")
@@ -348,7 +394,16 @@ class TemperatureDataCollector:
                 if pm25_value is None:
                     continue
                 
+                # Validiere PM2.5-Wert (normaler Bereich: 0-500 µg/m³)
+                if not (0 <= pm25_value <= 1000):
+                    logger.warning(f"Unrealistic PM2.5 value: {pm25_value} µg/m³ from {device.get('name', 'Unknown')}")
+                    continue
+                
                 device_id = device.get('id', '')
+                if not device_id:
+                    logger.debug(f"PM2.5 sensor without ID: {device.get('name', 'Unknown')}")
+                    continue
+                    
                 device_name = device.get('name', 'Unknown')
                 
                 # Room aus zone holen
@@ -381,6 +436,7 @@ class TemperatureDataCollector:
             except Exception as e:
                 error_msg = str(e).encode('ascii', 'ignore').decode('ascii')
                 logger.error(f"Error collecting PM2.5 from {device.get('name', 'unknown')}: {error_msg}")
+                continue
         
         if collected_count > 0:
             logger.info(f"Collected PM2.5 data from {collected_count} sensor(s)")
