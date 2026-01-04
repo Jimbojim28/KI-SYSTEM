@@ -525,6 +525,80 @@ class WebInterface:
                 logger.error(f"Error getting status: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/collectors/status')
+        def api_collectors_status():
+            """API: Status aller Data Collectors"""
+            collectors = []
+            
+            # Helper-Funktion zur Ermittlung des Collector-Status
+            def get_collector_status(collector, name):
+                if collector is None:
+                    return {
+                        'name': name,
+                        'status': 'error',
+                        'running': False,
+                        'message': 'Nicht initialisiert'
+                    }
+                
+                try:
+                    # Prüfe ob Collector ein Thread ist
+                    is_thread_alive = False
+                    if hasattr(collector, 'is_alive'):
+                        is_thread_alive = collector.is_alive()
+                    elif hasattr(collector, '_thread') and collector._thread:
+                        is_thread_alive = collector._thread.is_alive()
+                    
+                    # Prüfe interne running-Flag
+                    is_running = False
+                    if hasattr(collector, 'running'):
+                        is_running = collector.running
+                    elif hasattr(collector, '_running'):
+                        is_running = collector._running
+                    
+                    # Bestimme Status basierend auf Thread und Running-Flag
+                    if is_thread_alive and is_running:
+                        status = 'running'
+                        message = 'Läuft'
+                    elif is_thread_alive and not is_running:
+                        status = 'warning'
+                        message = 'Thread läuft, aber Collector pausiert'
+                    elif not is_thread_alive and is_running:
+                        status = 'warning'
+                        message = 'Collector aktiv, aber Thread nicht mehr aktiv'
+                    else:
+                        status = 'stopped'
+                        message = 'Gestoppt'
+                    
+                    return {
+                        'name': name,
+                        'status': status,
+                        'running': is_running,
+                        'thread_alive': is_thread_alive,
+                        'message': message
+                    }
+                except Exception as e:
+                    return {
+                        'name': name,
+                        'status': 'error',
+                        'running': False,
+                        'message': f'Fehler: {str(e)}'
+                    }
+            
+            # Prüfe alle Collectors
+            collectors.append(get_collector_status(self.bathroom_collector, 'Badezimmer Automation'))
+            collectors.append(get_collector_status(self.heating_collector, 'Heizungs Data Collector'))
+            collectors.append(get_collector_status(self.window_collector, 'Fenster Data Collector'))
+            collectors.append(get_collector_status(self.lighting_collector, 'Beleuchtungs Data Collector'))
+            collectors.append(get_collector_status(self.temperature_collector, 'Temperatur Data Collector'))
+            collectors.append(get_collector_status(self.ml_auto_trainer, 'ML Auto-Trainer'))
+            collectors.append(get_collector_status(self.db_maintenance, 'Database Maintenance'))
+            collectors.append(get_collector_status(self.ventilation_notifier, 'Lüftungs-Notifier'))
+            
+            return jsonify({
+                'timestamp': datetime.now().isoformat(),
+                'collectors': collectors
+            })
+
         @self.app.route('/api/devices')
         def api_devices():
             """API: Liste aller Geräte mit vollständigem Live-Status"""

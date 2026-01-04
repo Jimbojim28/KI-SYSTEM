@@ -401,6 +401,66 @@ const DashboardPolling = {
     }
 };
 
+// Update Data Collectors Status
+async function updateCollectorsStatus() {
+    try {
+        const data = await fetchJSON('/api/collectors/status');
+        
+        // Wenn null zurückgegeben wurde (Tab nicht sichtbar), überspringe Update
+        if (!data) return;
+        
+        const container = document.getElementById('collectors-list');
+        if (!container) return;
+        
+        if (!data.collectors || data.collectors.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #888;">Keine Collectors verfügbar</p>';
+            return;
+        }
+        
+        // Erstelle HTML für jeden Collector
+        let html = '';
+        data.collectors.forEach(collector => {
+            // Bestimme Status-Klasse und Icon
+            let statusClass = 'status-stopped';
+            let statusIcon = '🔴';
+            let statusText = 'Gestoppt';
+            
+            if (collector.status === 'running') {
+                statusClass = 'status-running';
+                statusIcon = '🟢';
+                statusText = 'Läuft';
+            } else if (collector.status === 'warning') {
+                statusClass = 'status-warning';
+                statusIcon = '🟡';
+                statusText = 'Warnung';
+            } else if (collector.status === 'error') {
+                statusClass = 'status-error';
+                statusIcon = '🔴';
+                statusText = 'Fehler';
+            }
+            
+            html += `
+                <div class="collector-item ${statusClass}">
+                    <div class="collector-icon">${statusIcon}</div>
+                    <div class="collector-info">
+                        <div class="collector-name">${collector.name}</div>
+                        <div class="collector-status">${statusText}: ${collector.message}</div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error updating collectors status:', error);
+        const container = document.getElementById('collectors-list');
+        if (container) {
+            container.innerHTML = '<p style="text-align: center; color: #f44;">Fehler beim Laden</p>';
+        }
+    }
+}
+
 // Auto-Refresh mit Tab-Visibility-Handling
 function startAutoRefresh() {
     // Initialisiere Visibility-Handling
@@ -409,8 +469,15 @@ function startAutoRefresh() {
     // Initial laden
     DashboardPolling.refreshAll();
     
+    // Initial Collectors laden
+    updateCollectorsStatus();
+    
     // Starte Polling
-    DashboardPolling.startPolling();}
+    DashboardPolling.startPolling();
+    
+    // Collectors Status alle 5 Sekunden aktualisieren
+    setInterval(updateCollectorsStatus, 5000);
+}
 
 // Start beim Laden der Seite
 document.addEventListener('DOMContentLoaded', startAutoRefresh);
