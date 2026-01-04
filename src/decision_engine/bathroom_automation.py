@@ -78,6 +78,11 @@ class BathroomAutomation:
         self.humidity_history = []  # Letzte 10 Messungen für Steigungsanalyse
         self.last_humidity_check = None
         self.humidity_rising_fast = False  # Flag ob Luftfeuchtigkeit schnell steigt
+        
+        # Duschsensor-Historie (zusätzlicher Sensor direkt an der Dusche)
+        self.shower_sensor_history = []
+        self.shower_sensor_enabled = False
+        self.shower_sensor_rate_threshold = 2.0  # Standard: 2% pro Minute
 
         # Datenbank für Lernsystem
         self.db = Database() if enable_learning else None
@@ -169,7 +174,7 @@ class BathroomAutomation:
             self.last_motion_time = datetime.now()
 
         # === DUSCHEN ERKENNUNG ===
-        shower_active = self._detect_shower(humidity, motion_detected, door_closed)
+        shower_active = self._detect_shower(humidity, motion_detected, door_closed, platform)
 
         if shower_active and not self.shower_detected:
             logger.info("🚿 Shower detected! Starting dehumidifier...")
@@ -273,6 +278,83 @@ class BathroomAutomation:
 
         return None
 
+    def _get_shower_sensor_humidity(self, platform) -> Optional[float]:
+        """Liest Luftfeuchtigkeit vom Duschsensor (zusätzlicher Sensor an der Dusche)"""
+        sensor_id = self.config.get('shower_humidity_sensor')
+        if not sensor_id:
+            return None
+
+        try:
+            # Versuche Home Assistant Sensor (mit sensor. prefix)
+            if sensor_id.startswith('sensor.'):
+                state = platform.get_state(sensor_id)
+                if state:
+                    # Für HA Sensoren ist der Wert direkt im state
+                    value = state.get('state')
+                    if value and value not in ['unknown', 'unavailable']:
+                        return float(value)
+            else:
+                # Homey Sensor
+                state = platform.get_state(sensor_id)
+                if state:
+                    caps = state.get('attributes', {}).get('capabilities', {})
+                    if 'measure_humidity' in caps:
+                        return caps['measure_humidity'].get('value')
+        except Exception as e:
+            logger.debug(f"Error reading shower humidity sensor: {e}")
+
+        return None
+    
+    def _get_shower_sensor_temperature(self, platform) -> Optional[float]:
+        """Liest Temperatur vom Duschsensor (zusätzlicher Sensor an der Dusche)"""
+        sensor_id = self.config.get('shower_temperature_sensor')
+        if not sensor_id:
+            return None
+
+        try:
+            # Versuche Home Assistant Sensor
+            if sensor_id.startswith('sensor.'):
+                state = platform.get_state(sensor_id)
+                if state:
+                    value = state.get('state')
+                    if value and value not in ['unknown', 'unavailable']:
+                        return float(value)
+            else:
+                # Homey Sensor
+                state = platform.get_state(sensor_id)
+                if state:
+                    caps = state.get('attributes', {}).get('capabilities', {})
+                    if 'measure_temperature' in caps:
+                        return caps['measure_temperature'].get('value')
+        except Exception as e:
+            logger.debug(f"Error reading shower temperature sensor: {e}")
+
+        return None
+
+    def configure_shower_sensors(self, humidity_sensor: str = None, temperature_sensor: str = None, 
+                                 enable_rate_detection: bool = True, rate_threshold: float = 2.0):
+        """
+        Konfiguriere zusätzliche Duschsensoren für verbesserte Erkennung
+        
+        Args:
+            humidity_sensor: Entity ID des Luftfeuchtigkeitssensors an der Dusche
+            temperature_sensor: Entity ID des Temperatursensors an der Dusche  
+            enable_rate_detection: Aktiviert Steigungserkennung
+            rate_threshold: Schwellwert für Anstieg in %/Minute
+        """
+        if humidity_sensor:
+            self.config['shower_humidity_sensor'] = humidity_sensor
+            self.shower_sensor_enabled = True
+            logger.info(f"Shower humidity sensor configured: {humidity_sensor}")
+        
+        if temperature_sensor:
+            self.config['shower_temperature_sensor'] = temperature_sensor
+            logger.info(f"Shower temperature sensor configured: {temperature_sensor}")
+        
+        self.shower_sensor_rate_threshold = rate_threshold
+        logger.info(f"Shower sensor rate detection: enabled={enable_rate_detection}, threshold={rate_threshold}%/min")
+
+
     def _check_motion(self, platform) -> bool:
         """Prüft Bewegungs-Sensor"""
         sensor_id = self.config.get('motion_sensor_id')
@@ -354,15 +436,16 @@ class BathroomAutomation:
 
         return False  # Bei Fehler: Fenster als geschlossen annehmen
 
-    def _detect_shower(self, humidity: float, motion: bool, door_closed: bool) -> bool:
+    def _detect_shower(self, humidity: float, motion: bool, door_closed: bool, platform=None) -> bool:
         """
         Verbesserte Duscherkennung mit mehreren Kriterien
 
         Kriterien:
         1. Luftfeuchtigkeit über Schwellwert (mit Toleranz)
-        2. Schneller Anstieg der Luftfeuchtigkeit (>3% in 2 Min)
-        3. Bewegung erkannt (wenn Sensor vorhanden)
-        4. Tür geschlossen (wenn Sensor vorhanden)
+        2. Schneller Anstieg der Luftfeuchtigkeit (>2% pro Minute)
+        3. Zusätzlicher Duschsensor (wenn konfiguriert) mit höherer Sensitivität
+        4. Bewegung erkannt (wenn Sensor vorhanden)
+        5. Tür geschlossen (wenn Sensor vorhanden)
 
         Returns:
             True wenn Dusche erkannt, False sonst
@@ -381,12 +464,44 @@ class BathroomAutomation:
         if len(self.humidity_history) > 10:
             self.humidity_history.pop(0)
 
+        # === DUSCHSENSOR AUSLESEN (falls konfiguriert) ===
+        shower_sensor_humidity = None
+        shower_sensor_rising_fast = False
+        
+        if platform and self.shower_sensor_enabled:
+            shower_sensor_humidity = self._get_shower_sensor_humidity(platform)
+            
+            if shower_sensor_humidity is not None:
+                # Speichere in separater Historie
+                self.shower_sensor_history.append({
+                    'time': now,
+                    'value': shower_sensor_humidity
+                })
+                
+                # Halte nur letzte 10 Messungen
+                if len(self.shower_sensor_history) > 10:
+                    self.shower_sensor_history.pop(0)
+                
+                # Prüfe schnellen Anstieg beim Duschsensor
+                if len(self.shower_sensor_history) >= 3:
+                    old_measurement = self.shower_sensor_history[-3]
+                    time_diff = (now - old_measurement['time']).seconds / 60
+                    
+                    if time_diff >= 1.0:
+                        humidity_diff = shower_sensor_humidity - old_measurement['value']
+                        rate_per_minute = humidity_diff / time_diff
+                        
+                        # Duschsensor ist sensibler - nutze konfigurierten Schwellwert
+                        if rate_per_minute > self.shower_sensor_rate_threshold:
+                            shower_sensor_rising_fast = True
+                            logger.info(f"🚿 Shower sensor: Fast rise detected! +{humidity_diff:.1f}% in {time_diff:.1f}min (rate: {rate_per_minute:.1f}%/min, threshold: {self.shower_sensor_rate_threshold}%/min)")
+
         # === KRITERIUM 1: Hohe Luftfeuchtigkeit ===
         # Reduziere Schwellwert um 5% für bessere Erkennung
         humidity_threshold = self.humidity_high - 5.0  # 70% -> 65%
         high_humidity = humidity > humidity_threshold
 
-        # === KRITERIUM 2: Schneller Anstieg ===
+        # === KRITERIUM 2: Schneller Anstieg (Hauptsensor) ===
         humidity_rising_fast = False
         if len(self.humidity_history) >= 3:  # Mindestens 3 Messungen
             # Vergleiche aktuelle mit Messung vor 2-3 Minuten
@@ -415,7 +530,15 @@ class BathroomAutomation:
                 # Noch nie Bewegung erkannt
                 motion_ok = False
 
-        # === ENTSCHEIDUNGS-LOGIK ===
+        # === ENTSCHEIDUNGS-LOGIK (PRIORISIERT DUSCHSENSOR) ===
+        
+        # HÖCHSTE PRIORITÄT: Duschsensor zeigt schnellen Anstieg
+        if shower_sensor_rising_fast:
+            # Duschsensor ist sehr verlässlich - wenn dort schneller Anstieg erkannt wird, ist es sehr wahrscheinlich Duschen
+            if shower_sensor_humidity and shower_sensor_humidity > 60:  # Mindestens 60% Luftfeuchtigkeit
+                logger.info(f"🚿 Shower detected via shower sensor! (humidity: {shower_sensor_humidity}%, main: {humidity}%)")
+                return True
+        
         # Option A: Hohe Luftfeuchtigkeit UND (schneller Anstieg ODER Bewegung)
         if high_humidity and (humidity_rising_fast or motion):
             if motion_ok:

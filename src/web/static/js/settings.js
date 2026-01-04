@@ -2618,6 +2618,12 @@ function initHAEntitiesTab() {
         refreshBtn.addEventListener('click', loadHAEntities);
     }
     
+    // Event Listener für Sync-All-Button
+    const syncAllBtn = document.getElementById('sync-all-ha-entities');
+    if (syncAllBtn) {
+        syncAllBtn.addEventListener('click', syncAllHAEntities);
+    }
+    
     // Enter-Taste zum Hinzufügen
     const entityInput = document.getElementById('ha-entity-id');
     if (entityInput) {
@@ -2845,6 +2851,94 @@ async function loadHAEntities() {
         }
     } catch (error) {
         listEl.innerHTML = `<div class="error-message">❌ Fehler: ${error.message}</div>`;
+    }
+}
+
+// Synchronisiere ALLE verfügbaren Entitäten von Home Assistant
+async function syncAllHAEntities() {
+    const btn = document.getElementById('sync-all-ha-entities');
+    const originalText = btn ? btn.textContent : '';
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '🔄 Synchronisiere...';
+    }
+    
+    try {
+        // Hole alle verfügbaren Entitäten
+        const response = await fetch('/api/ha/available');
+        const data = await response.json();
+        
+        if (!data.success) {
+            alert(`❌ Fehler beim Laden der Entitäten: ${data.error}`);
+            return;
+        }
+        
+        const available = data.entities || [];
+        
+        if (available.length === 0) {
+            alert('⚠️ Keine Entitäten von Home Assistant gefunden');
+            return;
+        }
+        
+        // Bestätigung
+        const confirmed = confirm(
+            `🔄 Alle ${available.length} Entitäten von Home Assistant synchronisieren?\n\n` +
+            `Dies überschreibt NICHT bereits gespeicherte Entitäten, ` +
+            `sondern fügt nur neue hinzu.`
+        );
+        
+        if (!confirmed) return;
+        
+        // Lade bereits gespeicherte Entitäten
+        const existingResponse = await fetch('/api/ha/entities');
+        const existingData = await existingResponse.json();
+        const existingIds = new Set(
+            (existingData.entities || []).map(e => e.entity_id)
+        );
+        
+        // Filtere nur neue Entitäten
+        const newEntities = available.filter(e => !existingIds.has(e.entity_id));
+        
+        if (newEntities.length === 0) {
+            alert('✅ Alle Entitäten sind bereits synchronisiert!');
+            return;
+        }
+        
+        // Füge alle neuen Entitäten hinzu
+        if (btn) {
+            btn.textContent = `🔄 Füge ${newEntities.length} Entitäten hinzu...`;
+        }
+        
+        const addResponse = await fetch('/api/ha/add-multiple', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                entities: newEntities.map(e => ({
+                    entity_id: e.entity_id,
+                    name: e.name,
+                    type: e.domain
+                }))
+            })
+        });
+        
+        const addData = await addResponse.json();
+        
+        if (addData.success) {
+            alert(`✅ ${newEntities.length} neue Entitäten wurden hinzugefügt!`);
+            // Liste neu laden
+            loadHAEntities();
+        } else {
+            alert(`❌ Fehler beim Hinzufügen: ${addData.error}`);
+        }
+        
+    } catch (error) {
+        alert(`❌ Fehler: ${error.message}`);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 }
 
