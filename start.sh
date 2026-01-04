@@ -22,12 +22,20 @@ echo "╔═══════════════════════�
 echo "║   KI Smart Home - Web-Interface Start   ║"
 echo "╚═══════════════════════════════════════════╝"
 echo ""
+echo "Optionen:"
+echo "  --restart / -r     Neu starten (stoppt laufende Instanz)"
+echo "  --clean / -c       Python-Cache löschen vor Start"
+echo "  --debug / -d       Debug-Modus mit Auto-Reload"
+echo "  --port=XXXX        Port festlegen (default: 8080)"
+echo "  --host=X.X.X.X     Host festlegen (default: 0.0.0.0)"
+echo ""
 
 # Parse Argumente
 PORT=$DEFAULT_PORT
 HOST=$DEFAULT_HOST
 FORCE_RESTART=false
 DEBUG_MODE=false
+CLEAN_CACHE=false
 
 for arg in "$@"; do
     case $arg in
@@ -36,6 +44,9 @@ for arg in "$@"; do
             ;;
         --debug|-d)
             DEBUG_MODE=true
+            ;;
+        --clean|-c)
+            CLEAN_CACHE=true
             ;;
         --port=*)
             PORT="${arg#*=}"
@@ -64,6 +75,30 @@ fi
 # Erstelle logs/ Verzeichnis falls nicht vorhanden
 mkdir -p logs
 mkdir -p data
+
+# Funktion: Lösche Python-Cache
+clean_python_cache() {
+    echo "🧹 Lösche Python-Cache..."
+    
+    # Zähle Dateien vor dem Löschen
+    PYC_COUNT=$(find . -type f -name "*.pyc" 2>/dev/null | wc -l | tr -d ' ')
+    CACHE_COUNT=$(find . -type d -name "__pycache__" 2>/dev/null | wc -l | tr -d ' ')
+    
+    if [[ $PYC_COUNT -gt 0 ]] || [[ $CACHE_COUNT -gt 0 ]]; then
+        echo "   Gefunden: $PYC_COUNT .pyc Dateien, $CACHE_COUNT __pycache__ Verzeichnisse"
+        
+        # Lösche .pyc Dateien
+        find . -type f -name "*.pyc" -delete 2>/dev/null || true
+        
+        # Lösche __pycache__ Verzeichnisse
+        find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        
+        echo -e "${GREEN}✓ Python-Cache gelöscht${NC}"
+    else
+        echo "   Kein Cache gefunden (bereits sauber)"
+    fi
+    echo ""
+}
 
 # Funktion: Prüfe ob Port belegt ist
 check_port() {
@@ -124,7 +159,15 @@ start_webapp() {
     if [[ "$DEBUG_MODE" == true ]]; then
         echo -e "   ${YELLOW}Debug-Modus: AKTIV (Auto-Reload bei Code-Änderungen)${NC}"
     fi
+    if [[ "$CLEAN_CACHE" == true ]]; then
+        echo -e "   ${YELLOW}Cache: Wird vor Start gelöscht${NC}"
+    fi
     echo ""
+
+    # Lösche Cache wenn gewünscht
+    if [[ "$CLEAN_CACHE" == true ]]; then
+        clean_python_cache
+    fi
 
     # Debug-Flag für Python
     DEBUG_FLAG=""
@@ -136,16 +179,41 @@ start_webapp() {
     nohup python3 main.py web --host $HOST --port $PORT $DEBUG_FLAG > "$LOG_FILE" 2>&1 &
 
     # Speichere PID
-    echo $! > "$PID_FILE"
+    NEW_PID=$!
+    echo $NEW_PID > "$PID_FILE"
 
-    # Warte länger damit Server starten kann (App braucht Zeit für Initialisierung)
-    # Mit allen Collectors benötigt der Server ~15 Sekunden zum Start
-    sleep 15
+    # Warte auf Server-Start mit Fortschrittsanzeige
+    echo -n "⏳ Warte auf Server-Start"
+    MAX_WAIT=20
+    WAITED=0
+    
+    while [ $WAITED -lt $MAX_WAIT ]; do
+        if check_port $PORT; then
+            echo "" # Neue Zeile nach Punkten
+            break
+        fi
+        
+        # Prüfe ob Prozess noch läuft
+        if ! ps -p $NEW_PID > /dev/null 2>&1; then
+            echo ""
+            echo -e "${RED}❌ Prozess ist vorzeitig beendet!${NC}"
+            echo ""
+            echo "Letzte Log-Einträge:"
+            tail -30 "$LOG_FILE"
+            rm -f "$PID_FILE"
+            return 1
+        fi
+        
+        echo -n "."
+        sleep 1
+        WAITED=$((WAITED + 1))
+    done
 
     # Prüfe ob erfolgreich gestartet
     if check_port $PORT; then
         PID=$(cat "$PID_FILE")
         echo -e "${GREEN}✅ Web-Interface erfolgreich gestartet!${NC}"
+        echo "   Start-Zeit: ${WAITED}s"
         echo ""
         echo "╔═══════════════════════════════════════════╗"
         echo "║             Server läuft!                ║"
@@ -167,6 +235,7 @@ start_webapp() {
         echo "💡 Nützliche Befehle:"
         echo "   tail -f $LOG_FILE          # Logs live ansehen"
         echo "   ./start.sh --restart         # Neu starten"
+        echo "   ./start.sh --clean           # Mit Cache-Löschung starten"
         echo "   ./start.sh --debug           # Mit Auto-Reload starten"
         echo "   ./stop.sh                    # Stoppen"
         echo "   ps -p $PID                   # Prozess-Status prüfen"
@@ -191,6 +260,11 @@ start_webapp() {
 
 # Hauptlogik
 echo "🔍 Prüfe aktuellen Status..."
+
+# Lösche Cache bei --clean auch wenn Server nicht neu startet
+if [[ "$CLEAN_CACHE" == true ]] && [[ "$FORCE_RESTART" == false ]]; then
+    clean_python_cache
+fi
 
 if check_port $PORT; then
     PID=$(lsof -ti :$PORT)
