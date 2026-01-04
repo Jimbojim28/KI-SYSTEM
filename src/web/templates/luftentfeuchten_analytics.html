@@ -16,6 +16,13 @@
     <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h3>💧 Live-Luftfeuchtigkeit (letzte 6 Stunden)</h3>
+            
+            <script>
+            // INLINE TEST - wird SOFORT ausgeführt
+            console.log('✅ INLINE Script läuft!');
+            document.write('<div style="background:yellow;padding:10px;margin:10px;">⚠️ INLINE SCRIPT FUNKTIONIERT</div>');
+            </script>
+            
             <div style="display: flex; gap: 10px; align-items: center;">
                 <select id="hours-selector" class="form-select" style="padding: 6px 12px;">
                     <option value="3">3 Stunden</option>
@@ -495,6 +502,19 @@
     font-size: 0.85em;
 }
 </style>
+
+<script>
+// Debug: Prüfe ob Seite lädt
+console.log('🔍 Analytics-Seite lädt...');
+window.addEventListener('DOMContentLoaded', () => {
+    console.log('🔍 DOM Content Loaded');
+    console.log('🔍 humidity-chart:', document.getElementById('humidity-chart'));
+    console.log('🔍 humidity-canvas:', document.getElementById('humidity-canvas'));
+});
+window.addEventListener('error', (e) => {
+    console.error('❌ JavaScript Fehler:', e.message, e.filename, e.lineno);
+});
+</script>
 
 <script src="{{ url_for('static', filename='js/luftentfeuchten_analytics.js') }}?v=3"></script>
 {% endblock %}

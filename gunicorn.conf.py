@@ -19,8 +19,9 @@ graceful_timeout = 30  # Zeit für graceful shutdown
 keepalive = 5  # Keep-alive Verbindungen
 
 # Restart workers periodisch um Memory Leaks zu vermeiden
-max_requests = 500  # Reduziert für bessere Memory-Verwaltung
-max_requests_jitter = 50
+# WICHTIG: Hoher Wert um Background-Services (Bathroom Collector, etc.) nicht zu unterbrechen
+max_requests = 10000  # Erhöht von 500 auf 10000 - Background-Services sollen durchlaufen
+max_requests_jitter = 500  # Erhöht proportional
 
 # Logging
 accesslog = "logs/gunicorn-access.log"

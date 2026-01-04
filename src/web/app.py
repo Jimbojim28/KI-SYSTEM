@@ -6384,12 +6384,81 @@ class WebInterface:
                 if not data or len(data) == 0:
                     logger.info(f"No continuous humidity measurements found in last {hours} hours")
 
+                # Hole Events im selben Zeitraum
+                from datetime import datetime, timedelta
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                
+                time_threshold = datetime.now() - timedelta(hours=hours)
+                cursor.execute('''
+                    SELECT start_time, end_time, peak_humidity, event_type
+                    FROM bathroom_events
+                    WHERE start_time >= ?
+                    ORDER BY start_time DESC
+                ''', (time_threshold,))
+                
+                events = []
+                for row in cursor.fetchall():
+                    events.append({
+                        'start_time': row[0],
+                        'end_time': row[1],
+                        'peak_humidity': row[2],
+                        'event_type': row[3]
+                    })
+                
+                # Hole Entfeuchter-Status aus bathroom_measurements
+                cursor.execute('''
+                    SELECT timestamp, dehumidifier_on
+                    FROM bathroom_measurements
+                    WHERE timestamp >= ?
+                    ORDER BY timestamp ASC
+                ''', (time_threshold,))
+                
+                dehumidifier_periods = []
+                current_start = None
+                for row in cursor.fetchall():
+                    timestamp = row[0]
+                    is_on = row[1]
+                    
+                    if is_on and current_start is None:
+                        # Entfeuchter startet
+                        current_start = timestamp
+                    elif not is_on and current_start is not None:
+                        # Entfeuchter stoppt
+                        dehumidifier_periods.append({
+                            'start': current_start,
+                            'end': timestamp
+                        })
+                        current_start = None
+                
+                # Falls Entfeuchter am Ende noch läuft
+                if current_start is not None:
+                    dehumidifier_periods.append({
+                        'start': current_start,
+                        'end': datetime.now().isoformat()
+                    })
+                
+                # Hole Schwellwerte aus Konfiguration
+                threshold_high = None
+                threshold_low = None
+                try:
+                    from src.bathroom.bathroom_optimizer import BathroomOptimizer
+                    optimizer = BathroomOptimizer(self.db, ha_api=self.ha_api, homey_api=self.homey_api)
+                    threshold_high = optimizer.high_threshold
+                    threshold_low = optimizer.low_threshold
+                except Exception as e:
+                    logger.warning(f"Could not load thresholds: {e}")
+
                 return jsonify({
                     'source': 'bathroom_continuous_measurements',
                     'interval': '60s',
                     'hours': hours,
                     'data': data,
-                    'count': len(data)
+                    'count': len(data),
+                    'events': events,
+                    'dehumidifier_periods': dehumidifier_periods,
+                    'threshold_high': threshold_high,
+                    'threshold_low': threshold_low
                 })
 
             except Exception as e:

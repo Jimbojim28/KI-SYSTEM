@@ -29,14 +29,21 @@ async function postJSON(url, data) {
 
 // Lade alle Daten
 async function loadAllData() {
+    console.log('🔄 loadAllData() gestartet');
     try {
         // Lade Analytics parallel
         const hours = parseInt(document.getElementById('hours-selector')?.value || 6);
+        console.log('📊 Lade Daten für', hours, 'Stunden');
+        
         const [analytics, events, humidityResponse] = await Promise.all([
             fetchJSON('/api/luftentfeuchten/analytics?days=30'),
             fetchJSON('/api/luftentfeuchten/events?days=30&limit=50'),
             fetch(`/api/luftentfeuchten/sensor-timeseries?hours=${hours}`)
         ]);
+
+        console.log('✅ Analytics geladen:', analytics);
+        console.log('✅ Events geladen:', events);
+        console.log('✅ Humidity Response:', humidityResponse.status);
 
         analyticsData = analytics;
         eventsData = events;
@@ -44,33 +51,44 @@ async function loadAllData() {
         // Prüfe Humidity-Response
         if (humidityResponse.ok) {
             humidityTimeseriesData = await humidityResponse.json();
+            console.log('✅ Humidity Daten geladen:', humidityTimeseriesData.count, 'Messungen');
         } else {
             const errorData = await humidityResponse.json();
-            console.error('Error loading humidity data:', errorData);
+            console.error('❌ Error loading humidity data:', errorData);
             humidityTimeseriesData = {
                 error: errorData.error || 'Unbekannter Fehler',
                 data: []
             };
         }
 
+        console.log('🎨 Rufe renderDashboard() auf');
         renderDashboard();
     } catch (error) {
-        console.error('Error loading analytics data:', error);
-        humidityTimeseriesData = {
-            error: error.message,
-            data: []
-        };
+        console.error('❌ Error loading analytics data:', error);
+        // Setze humidityTimeseriesData nur wenn es noch nicht gesetzt wurde
+        if (!humidityTimeseriesData) {
+            humidityTimeseriesData = {
+                error: error.message,
+                data: []
+            };
+        }
         renderDashboard();
     }
 }
 
 function renderDashboard() {
+    console.log('🎨 renderDashboard() gestartet');
+    // WICHTIG: Humidity-Diagramm wird IMMER angezeigt, unabhängig von Analytics-Daten
+    console.log('🎨 Rufe renderHumidityTimeseries() auf');
+    renderHumidityTimeseries();
+
     if (!analyticsData || !analyticsData.available) {
+        console.warn('⚠️ Keine Analytics-Daten verfügbar, zeige showNoData()');
         showNoData();
         return;
     }
 
-    renderHumidityTimeseries();
+    console.log('✅ Analytics verfügbar, rendere alle Charts');
     renderLearningStatus();
     renderStatistics();
     renderPrediction();
@@ -472,10 +490,14 @@ async function optimizeNow() {
 
 // Render Live Humidity Timeseries
 function renderHumidityTimeseries() {
+    console.log('📊 renderHumidityTimeseries() gestartet');
     const chartContainer = document.getElementById('humidity-chart');
+    console.log('📊 chartContainer:', chartContainer);
+    console.log('📊 humidityTimeseriesData:', humidityTimeseriesData);
 
     // Prüfe auf Fehler
     if (humidityTimeseriesData && humidityTimeseriesData.error) {
+        console.error('❌ Humidity data error:', humidityTimeseriesData.error);
         let errorMessage = '';
         let helpText = '';
 
@@ -504,7 +526,9 @@ function renderHumidityTimeseries() {
     }
 
     // Prüfe ob Daten vorhanden
+    console.log('📊 Prüfe Daten:', !humidityTimeseriesData, !humidityTimeseriesData?.data, humidityTimeseriesData?.data?.length);
     if (!humidityTimeseriesData || !humidityTimeseriesData.data || humidityTimeseriesData.data.length === 0) {
+        console.warn('⚠️ Keine Daten vorhanden, zeige Platzhalter');
         chartContainer.innerHTML = `
             <div style="text-align: center; padding: 40px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db;">
                 <div style="font-size: 1.2em; font-weight: 600; color: #6b7280; margin-bottom: 10px;">
@@ -518,13 +542,16 @@ function renderHumidityTimeseries() {
         return;
     }
 
+    console.log('📊 Hole Canvas Element');
     const canvas = document.getElementById('humidity-canvas');
     if (!canvas) {
-        console.error('Canvas element not found');
+        console.error('❌ Canvas element not found');
         return;
     }
+    console.log('📊 Canvas gefunden, hole Context');
     const ctx = canvas.getContext('2d');
 
+    console.log('📊 Setze Canvas-Größe');
     // Setze Canvas-Größe
     canvas.width = canvas.parentElement.clientWidth;
     canvas.height = 300;
@@ -534,22 +561,56 @@ function renderHumidityTimeseries() {
     const chartHeight = canvas.height - 2 * padding;
 
     const data = humidityTimeseriesData.data;
+    console.log('📊 Starte Zeichnung mit', data.length, 'Datenpunkten');
 
     // Extrahiere Werte
+    console.log('📊 Extrahiere Werte');
     const values = data.map(d => parseFloat(d.value));
+    const showerValues = data.map(d => d.shower_value ? parseFloat(d.shower_value) : null).filter(v => v !== null);
     const timestamps = data.map(d => new Date(d.timestamp));
+    console.log('📊 Values:', values.length, 'Min:', Math.min(...values), 'Max:', Math.max(...values));
+    console.log('📊 Shower Values:', showerValues.length, showerValues.length > 0 ? `Min: ${Math.min(...showerValues)}, Max: ${Math.max(...showerValues)}` : 'keine Daten');
 
-    // Finde Min/Max
-    const maxValue = Math.max(...values);
-    const minValue = Math.min(...values);
+    // Moving Average Glättung (5-Punkt)
+    const smoothedValues = values.map((val, idx) => {
+        const window = 5;
+        const start = Math.max(0, idx - Math.floor(window / 2));
+        const end = Math.min(values.length, idx + Math.ceil(window / 2));
+        const slice = values.slice(start, end);
+        return slice.reduce((sum, v) => sum + v, 0) / slice.length;
+    });
+    
+    // Glätte auch Duschsensor-Werte
+    const smoothedShowerValues = data.map((d, idx) => {
+        if (!d.shower_value) return null;
+        const window = 5;
+        const start = Math.max(0, idx - Math.floor(window / 2));
+        const end = Math.min(data.length, idx + Math.ceil(window / 2));
+        const validValues = [];
+        for (let i = start; i < end; i++) {
+            if (data[i].shower_value) validValues.push(parseFloat(data[i].shower_value));
+        }
+        return validValues.length > 0 ? validValues.reduce((sum, v) => sum + v, 0) / validValues.length : null;
+    });
+    
+    console.log('📊 Smoothed values:', smoothedValues.length);
+    console.log('📊 Smoothed shower values:', smoothedShowerValues.filter(v => v !== null).length);
+
+    // Finde Min/Max (beide Sensoren berücksichtigen)
+    const allValues = [...smoothedValues, ...smoothedShowerValues.filter(v => v !== null)];
+    const maxValue = Math.max(...allValues);
+    const minValue = Math.min(...allValues);
     const range = maxValue - minValue;
     const yMin = Math.max(0, minValue - range * 0.1);
     const yMax = maxValue + range * 0.1;
+    console.log('📊 Y-Achse: Min=', yMin, 'Max=', yMax);
 
     // Clear canvas
+    console.log('📊 Lösche Canvas');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Zeichne Achsen
+    console.log('📊 Zeichne Achsen');
     ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 1;
 
@@ -565,6 +626,7 @@ function renderHumidityTimeseries() {
     ctx.lineTo(canvas.width - padding, canvas.height - padding);
     ctx.stroke();
 
+    console.log('📊 Zeichne Gitterlinien');
     // Zeichne Gitterlinien und Y-Labels
     ctx.strokeStyle = '#f3f4f6';
     ctx.fillStyle = '#6b7280';
@@ -582,6 +644,7 @@ function renderHumidityTimeseries() {
         ctx.fillText(value.toFixed(0) + '%', padding - 10, y + 4);
     }
 
+    console.log('📊 Zeichne X-Labels');
     // X-Labels (Zeit)
     const numXLabels = 6;
     for (let i = 0; i <= numXLabels; i++) {
@@ -606,9 +669,24 @@ function renderHumidityTimeseries() {
         return padding + (chartWidth / (data.length - 1)) * index;
     };
 
-    // Zeichne Linie
+    // Zeichne Linie (geglättete Werte)
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2;
+    ctx.beginPath();
+    smoothedValues.forEach((value, i) => {
+        const x = getX(i);
+        const y = getY(value);
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+    ctx.stroke();
+
+    // Zeichne Originaldaten transparent im Hintergrund
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.2)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     values.forEach((value, i) => {
         const x = getX(i);
@@ -620,9 +698,50 @@ function renderHumidityTimeseries() {
         }
     });
     ctx.stroke();
+    
+    // Zeichne Duschsensor (geglättet) in Lila/Pink
+    if (smoothedShowerValues.some(v => v !== null)) {
+        ctx.strokeStyle = '#a855f7';  // Lila
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let firstPoint = true;
+        smoothedShowerValues.forEach((value, i) => {
+            if (value === null) return;
+            const x = getX(i);
+            const y = getY(value);
+            if (firstPoint) {
+                ctx.moveTo(x, y);
+                firstPoint = false;
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+        
+        // Duschsensor Originaldaten transparent
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        firstPoint = true;
+        data.forEach((d, i) => {
+            if (!d.shower_value) return;
+            const x = getX(i);
+            const y = getY(parseFloat(d.shower_value));
+            if (firstPoint) {
+                ctx.moveTo(x, y);
+                firstPoint = false;
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+    }
 
-    // Zeichne Datenpunkte
-    values.forEach((value, i) => {
+    // Zeichne Datenpunkte (nur geglättete Werte)
+    smoothedValues.forEach((value, i) => {
+        // Nur jeden 10. Punkt zeichnen für bessere Performance
+        if (i % 10 !== 0) return;
+        
         const x = getX(i);
         const y = getY(value);
 
@@ -631,12 +750,162 @@ function renderHumidityTimeseries() {
         ctx.arc(x, y, 3, 0, 2 * Math.PI);
         ctx.fill();
     });
+    
+    // Duschsensor Datenpunkte
+    if (smoothedShowerValues.some(v => v !== null)) {
+        smoothedShowerValues.forEach((value, i) => {
+            if (value === null || i % 10 !== 0) return;
+            
+            const x = getX(i);
+            const y = getY(value);
+
+            ctx.fillStyle = '#a855f7';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+    }
+
+    // Zeichne Entfeuchter-Perioden (grüner Bereich am unteren Rand)
+    if (humidityTimeseriesData.dehumidifier_periods && humidityTimeseriesData.dehumidifier_periods.length > 0) {
+        console.log('📊 Zeichne', humidityTimeseriesData.dehumidifier_periods.length, 'Entfeuchter-Perioden');
+        
+        humidityTimeseriesData.dehumidifier_periods.forEach(period => {
+            const periodStart = new Date(period.start);
+            const periodEnd = new Date(period.end);
+            
+            // Finde Index der nächstliegenden Zeitstempel
+            const startIdx = timestamps.findIndex(t => t >= periodStart);
+            const endIdx = timestamps.findIndex(t => t >= periodEnd);
+            
+            if (startIdx >= 0) {
+                const startX = getX(startIdx);
+                const endX = endIdx >= 0 ? getX(endIdx) : getX(data.length - 1);
+                
+                // Zeichne grünen Balken am unteren Rand
+                const barHeight = 8;
+                const barY = canvas.height - padding - barHeight;
+                
+                ctx.fillStyle = '#10b981';
+                ctx.fillRect(startX, barY, endX - startX, barHeight);
+                
+                // Rahmen
+                ctx.strokeStyle = '#059669';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(startX, barY, endX - startX, barHeight);
+            }
+        });
+        
+        // Legende für Entfeuchter-Balken
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(padding + 10, canvas.height - padding + 25, 20, 8);
+        ctx.strokeStyle = '#059669';
+        ctx.strokeRect(padding + 10, canvas.height - padding + 25, 20, 8);
+        ctx.fillStyle = '#1f2937';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('Entfeuchter aktiv', padding + 35, canvas.height - padding + 32);
+    }
+
+    // Zeichne Event-Markierungen (Dusch-Events)
+    if (humidityTimeseriesData.events && humidityTimeseriesData.events.length > 0) {
+        console.log('📊 Zeichne', humidityTimeseriesData.events.length, 'Event-Marker');
+        humidityTimeseriesData.events.forEach(event => {
+            const eventStart = new Date(event.start_time);
+            const eventEnd = event.end_time ? new Date(event.end_time) : eventStart;
+            
+            // Finde Index der nächstliegenden Zeitstempel
+            const startIdx = timestamps.findIndex(t => t >= eventStart);
+            const endIdx = timestamps.findIndex(t => t >= eventEnd);
+            
+            if (startIdx >= 0) {
+                const startX = getX(startIdx);
+                const endX = endIdx >= 0 ? getX(endIdx) : startX;
+                
+                // Zeichne farbigen Bereich
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+                ctx.fillRect(startX, padding, endX - startX, chartHeight);
+                
+                // Zeichne vertikale Linien
+                ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(startX, padding);
+                ctx.lineTo(startX, canvas.height - padding);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+                // Label
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🚿 Dusche', startX, padding - 10);
+            }
+        });
+    }
+
+    // Schwellwert-Linie (High Threshold)
+    if (humidityTimeseriesData.threshold_high) {
+        const thresholdY = getY(humidityTimeseriesData.threshold_high);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.moveTo(padding, thresholdY);
+        ctx.lineTo(canvas.width - padding, thresholdY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Entfeuchter EIN: ${humidityTimeseriesData.threshold_high}%`, canvas.width - padding - 10, thresholdY - 5);
+    }
+    
+    // Schwellwert-Linie (Low Threshold)
+    if (humidityTimeseriesData.threshold_low) {
+        const thresholdY = getY(humidityTimeseriesData.threshold_low);
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.moveTo(padding, thresholdY);
+        ctx.lineTo(canvas.width - padding, thresholdY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = '#10b981';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Entfeuchter AUS: ${humidityTimeseriesData.threshold_low}%`, canvas.width - padding - 10, thresholdY + 15);
+    }
 
     // Legende
     ctx.fillStyle = '#1f2937';
     ctx.font = '14px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText(`Aktuelle Luftfeuchtigkeit: ${values[values.length - 1].toFixed(1)}%`, padding + 10, padding + 20);
+    
+    // Badezimmer-Sensor
+    ctx.fillStyle = '#3b82f6';
+    ctx.fillRect(padding + 10, padding + 10, 15, 3);
+    ctx.fillStyle = '#1f2937';
+    ctx.fillText(`Badezimmer: ${smoothedValues[smoothedValues.length - 1].toFixed(1)}%`, padding + 32, padding + 15);
+    
+    // Duschsensor
+    if (smoothedShowerValues.some(v => v !== null)) {
+        const lastShowerValue = smoothedShowerValues.filter(v => v !== null).pop();
+        ctx.fillStyle = '#a855f7';
+        ctx.fillRect(padding + 10, padding + 30, 15, 3);
+        ctx.fillStyle = '#1f2937';
+        ctx.fillText(`Duschsensor: ${lastShowerValue.toFixed(1)}%`, padding + 32, padding + 35);
+    }
+    
+    // Zusätzliche Legende für Glättung
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '11px Arial';
+    ctx.fillText(`Durchgezogene Linien: geglättete Werte (5-Punkt Moving Average)`, padding + 10, padding + 52);
+    ctx.fillText(`Transparente Linien: Rohdaten`, padding + 10, padding + 65);
 }
 
 // === CHART MARKIER-FUNKTIONALITÄT ===
@@ -1016,21 +1285,28 @@ function renderWeeklyHeatmap(actualByDayHour, predictionsByDay) {
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
+    // Lade Daten - IMMER als erstes
     loadAllData();
 
-    // Event Listener für Optimierungs-Button
-    document.getElementById('optimize-now').addEventListener('click', optimizeNow);
+    // Event Listener für Optimierungs-Button (optional)
+    const optimizeBtn = document.getElementById('optimize-now');
+    if (optimizeBtn) {
+        optimizeBtn.addEventListener('click', optimizeNow);
+    }
 
-    // Event Listener für Hours-Selector
+    // Event Listener für Hours-Selector (optional)
     const hoursSelector = document.getElementById('hours-selector');
     if (hoursSelector) {
         hoursSelector.addEventListener('change', loadAllData);
     }
 
-    // Event Listener für Markier-Modus
-    document.getElementById('toggle-marking-mode').addEventListener('click', toggleMarkingMode);
+    // Event Listener für Markier-Modus (optional)
+    const toggleBtn = document.getElementById('toggle-marking-mode');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', toggleMarkingMode);
+    }
 
-    // Canvas Event Listeners - nur wenn Canvas existiert
+    // Canvas Event Listeners - nur wenn Canvas existiert (optional)
     const canvas = document.getElementById('humidity-canvas');
     if (canvas) {
         canvas.addEventListener('mousedown', handleCanvasMouseDown);
@@ -1043,13 +1319,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Selection Confirm Event Listeners
-    document.getElementById('confirm-selection').addEventListener('click', confirmSelection);
-    document.getElementById('cancel-selection').addEventListener('click', () => {
-        clearSelection();
-        toggleMarkingMode();
-    });
-    document.getElementById('adjust-selection').addEventListener('click', clearSelection);
+    // Selection Confirm Event Listeners (optional)
+    const confirmBtn = document.getElementById('confirm-selection');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', confirmSelection);
+    }
+    
+    const cancelBtn = document.getElementById('cancel-selection');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            clearSelection();
+            toggleMarkingMode();
+        });
+    }
+    
+    const adjustBtn = document.getElementById('adjust-selection');
+    if (adjustBtn) {
+        adjustBtn.addEventListener('click', clearSelection);
+    }
 
     // Auto-Refresh alle 30 Sekunden
     setInterval(loadAllData, 30000);

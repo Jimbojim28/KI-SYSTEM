@@ -392,7 +392,7 @@ def get_humidity_history():
         
         # Hole Daten aus der Datenbank
         query = """
-            SELECT timestamp, humidity, shower_humidity
+            SELECT timestamp, humidity, temperature, shower_humidity
             FROM bathroom_continuous_measurements
             WHERE datetime(timestamp) > datetime('now', '-' || ? || ' hours')
             ORDER BY timestamp ASC
@@ -408,7 +408,7 @@ def get_humidity_history():
                 # Datenbank gibt Dicts zurück
                 timestamp = row.get('timestamp') if isinstance(row, dict) else row[0]
                 main_humidity = row.get('humidity') if isinstance(row, dict) else row[1]
-                shower_humidity = row.get('shower_humidity') if isinstance(row, dict) else row[2]
+                shower_humidity = row.get('shower_humidity') if isinstance(row, dict) else (row[3] if len(row) > 3 else None)
                 
                 if main_humidity is not None:
                     main_data.append({

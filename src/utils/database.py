@@ -1259,6 +1259,8 @@ class Database:
 
         Diese Methode ist speziell für die Live-Anzeige von Badezimmer-Luftfeuchtigkeit gedacht
         und nutzt die kontinuierlichen Messungen (alle 60s), nicht die sensor_data Tabelle.
+        
+        Returns: Liste mit dicts: [{'timestamp': ..., 'value': ..., 'unit': '%', 'shower_value': ...}, ...]
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -1269,7 +1271,8 @@ class Database:
             SELECT
                 timestamp,
                 humidity as value,
-                '%' as unit
+                '%' as unit,
+                shower_humidity as shower_value
             FROM bathroom_continuous_measurements
             WHERE timestamp >= ?
               AND humidity IS NOT NULL
