@@ -2004,11 +2004,15 @@ async function loadHumidityChart(hours = 12) {
             return;
         }
         
+        // Hole auch Entfeuchter-Daten von der sensor-timeseries API
+        const timeseriesData = await fetchJSON(`/api/luftentfeuchten/sensor-timeseries?hours=${hours}`);
+        
         // Verstecke Loading, zeige Chart
         if (loadingElement) loadingElement.style.display = 'none';
         if (containerElement) containerElement.style.display = 'block';
         
         renderHumidityChart(data);
+        renderHumidityStats(data, timeseriesData);
         
     } catch (error) {
         console.error('Error loading humidity chart:', error);
@@ -2176,4 +2180,110 @@ function initHumidityChartButtons() {
             loadHumidityChart(period);
         });
     });
+}
+
+/**
+ * Rendert die Statistik-Tabelle mit Entfeuchter-Laufzeit
+ */
+function renderHumidityStats(data, timeseriesData) {
+    const tableBody = document.getElementById('humidity-stats-table');
+    if (!tableBody) return;
+    
+    const mainSensorData = data.main_sensor?.data || [];
+    const showerSensorData = data.shower_sensor?.data || [];
+    
+    // Berechne Entfeuchter-Laufzeit (in Minuten)
+    let dehumidifierMinutes = 0;
+    if (timeseriesData && timeseriesData.dehumidifier_periods) {
+        timeseriesData.dehumidifier_periods.forEach(period => {
+            const start = new Date(period.start);
+            const end = new Date(period.end);
+            const minutes = (end - start) / 1000 / 60;
+            dehumidifierMinutes += minutes;
+        });
+    }
+    
+    // Formatiere Laufzeit
+    const formatRuntime = (minutes) => {
+        if (minutes === 0) return '<span style="color: #6b7280;">Nicht aktiv</span>';
+        const hours = Math.floor(minutes / 60);
+        const mins = Math.round(minutes % 60);
+        if (hours > 0) {
+            return `<span style="color: #10b981; font-weight: 600;">${hours}h ${mins}min</span>`;
+        }
+        return `<span style="color: #10b981; font-weight: 600;">${mins}min</span>`;
+    };
+    
+    // Berechne Statistiken für Hauptsensor
+    const mainStats = calculateSensorStats(mainSensorData);
+    
+    // Berechne Statistiken für Duschsensor
+    const showerStats = calculateSensorStats(showerSensorData);
+    
+    let html = '';
+    
+    // Hauptsensor Zeile
+    html += `
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 12px; height: 12px; background: #3b82f6; border-radius: 50%;"></div>
+                    <span style="font-weight: 500;">Hauptsensor</span>
+                </div>
+            </td>
+            <td style="padding: 12px; text-align: center; font-weight: 600; color: #1f2937;">${mainStats.current}%</td>
+            <td style="padding: 12px; text-align: center; color: #6b7280;">${mainStats.min}%</td>
+            <td style="padding: 12px; text-align: center; color: #6b7280;">${mainStats.max}%</td>
+            <td style="padding: 12px; text-align: center; color: #6b7280;">${mainStats.avg}%</td>
+            <td style="padding: 12px; text-align: center;">${formatRuntime(dehumidifierMinutes)}</td>
+        </tr>
+    `;
+    
+    // Duschsensor Zeile (nur wenn Daten vorhanden)
+    if (showerSensorData.length > 0) {
+        html += `
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 12px; height: 12px; background: #10b981; border-radius: 50%;"></div>
+                        <span style="font-weight: 500;">Duschsensor</span>
+                    </div>
+                </td>
+                <td style="padding: 12px; text-align: center; font-weight: 600; color: #1f2937;">${showerStats.current}%</td>
+                <td style="padding: 12px; text-align: center; color: #6b7280;">${showerStats.min}%</td>
+                <td style="padding: 12px; text-align: center; color: #6b7280;">${showerStats.max}%</td>
+                <td style="padding: 12px; text-align: center; color: #6b7280;">${showerStats.avg}%</td>
+                <td style="padding: 12px; text-align: center; color: #9ca3af;">-</td>
+            </tr>
+        `;
+    }
+    
+    tableBody.innerHTML = html;
+}
+
+/**
+ * Berechnet Statistiken für Sensordaten
+ */
+function calculateSensorStats(sensorData) {
+    if (!sensorData || sensorData.length === 0) {
+        return {
+            current: '-',
+            min: '-',
+            max: '-',
+            avg: '-'
+        };
+    }
+    
+    const values = sensorData.map(d => d.humidity);
+    const current = values[values.length - 1];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+    
+    return {
+        current: current.toFixed(1),
+        min: min.toFixed(1),
+        max: max.toFixed(1),
+        avg: avg.toFixed(1)
+    };
 }
