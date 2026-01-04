@@ -541,33 +541,53 @@ class WebInterface:
                     }
                 
                 try:
-                    # Prüfe ob Collector ein Thread ist
-                    is_thread_alive = False
-                    if hasattr(collector, 'is_alive'):
-                        is_thread_alive = collector.is_alive()
-                    elif hasattr(collector, '_thread') and collector._thread:
-                        is_thread_alive = collector._thread.is_alive()
-                    
-                    # Prüfe interne running-Flag
+                    # Prüfe interne running-Flag (verschiedene Varianten)
                     is_running = False
                     if hasattr(collector, 'running'):
-                        is_running = collector.running
+                        is_running = bool(collector.running)
                     elif hasattr(collector, '_running'):
-                        is_running = collector._running
+                        is_running = bool(collector._running)
+                    elif hasattr(collector, 'is_running') and callable(collector.is_running):
+                        is_running = collector.is_running()
                     
-                    # Bestimme Status basierend auf Thread und Running-Flag
-                    if is_thread_alive and is_running:
-                        status = 'running'
-                        message = 'Läuft'
-                    elif is_thread_alive and not is_running:
-                        status = 'warning'
-                        message = 'Thread läuft, aber Collector pausiert'
-                    elif not is_thread_alive and is_running:
-                        status = 'warning'
-                        message = 'Collector aktiv, aber Thread nicht mehr aktiv'
+                    # Prüfe ob Thread existiert und läuft
+                    is_thread_alive = False
+                    thread_obj = None
+                    
+                    # Suche Thread-Objekt
+                    if hasattr(collector, 'thread'):
+                        thread_obj = collector.thread
+                    elif hasattr(collector, '_thread'):
+                        thread_obj = collector._thread
+                    
+                    # Prüfe ob Collector selbst ein Thread ist
+                    if thread_obj is None and isinstance(collector, threading.Thread):
+                        thread_obj = collector
+                    
+                    # Prüfe Thread-Status
+                    if thread_obj is not None:
+                        try:
+                            is_thread_alive = thread_obj.is_alive()
+                        except:
+                            is_thread_alive = False
+                    
+                    # Bestimme Status
+                    # Für die meisten Collectors: running=True bedeutet sie laufen
+                    # Thread-Check ist nur zusätzliche Validierung
+                    if is_running:
+                        if is_thread_alive or thread_obj is None:
+                            status = 'running'
+                            message = 'Läuft'
+                        else:
+                            status = 'warning'
+                            message = 'Running-Flag gesetzt, aber Thread gestoppt'
                     else:
-                        status = 'stopped'
-                        message = 'Gestoppt'
+                        if is_thread_alive:
+                            status = 'warning'
+                            message = 'Thread läuft, aber Running-Flag nicht gesetzt'
+                        else:
+                            status = 'stopped'
+                            message = 'Gestoppt'
                     
                     return {
                         'name': name,
