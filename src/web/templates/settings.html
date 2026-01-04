@@ -519,9 +519,14 @@
             <div class="ha-entities-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h4 style="margin: 0;">📋 Gespeicherte Entitäten</h4>
-                    <button id="refresh-ha-entities" class="btn btn-secondary btn-sm">
-                        🔄 Status aktualisieren
-                    </button>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="sync-all-ha-entities" class="btn btn-primary btn-sm">
+                            🔄 Alle Entitäten synchronisieren
+                        </button>
+                        <button id="refresh-ha-entities" class="btn btn-secondary btn-sm">
+                            🔄 Status aktualisieren
+                        </button>
+                    </div>
                 </div>
                 
                 <div id="ha-entities-list" style="min-height: 100px;">
@@ -1651,4 +1656,5 @@ input[type="checkbox"]:checked {
 
 <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
 <script src="{{ url_for('static', filename='js/device-mapping.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bathroom-sensors.js') }}"></script>
 {% endblock %}
