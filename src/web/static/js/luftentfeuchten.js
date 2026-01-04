@@ -497,6 +497,8 @@ function updateSliderValue(sliderId) {
     } else if (sliderId === 'heating-boost-delta') {
         suffix = '°C';
         value = '+' + value; // Plus-Zeichen für Erhöhung
+    } else if (sliderId === 'rate-threshold-luftentfeuchten') {
+        suffix = ' %/min';
     }
 
     valueSpan.textContent = value + suffix;
@@ -504,7 +506,16 @@ function updateSliderValue(sliderId) {
 
 // Setup Slider-Listeners
 function setupSliders() {
-    const sliders = ['humidity-high', 'humidity-low', 'target-temperature', 'dehumidifier-delay', 'heating-boost-delta', 'max-dehumidifier-runtime', 'force-off-humidity'];
+    const sliders = [
+        'humidity-high', 
+        'humidity-low', 
+        'target-temperature', 
+        'dehumidifier-delay', 
+        'heating-boost-delta', 
+        'max-dehumidifier-runtime', 
+        'force-off-humidity',
+        'rate-threshold-luftentfeuchten'
+    ];
     sliders.forEach(sliderId => {
         const slider = document.getElementById(sliderId);
         if (slider) {
