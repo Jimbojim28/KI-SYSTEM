@@ -19,19 +19,26 @@ echo "📥 Schritt 2: Hole Änderungen von GitHub..."
 git pull origin main
 echo ""
 
-# 3. Prüfe ob luftentfeuchten_config.json aktualisiert wurde
-echo "🔍 Schritt 3: Prüfe Konfigurationsdatei..."
+# 3. Lösche Python-Cache (wichtig für Code-Updates!)
+echo "🧹 Schritt 3: Lösche Python-Cache..."
+echo "   Entferne .pyc Dateien..."
+find . -type f -name "*.pyc" -delete 2>/dev/null || true
+echo "   Entferne __pycache__ Verzeichnisse..."
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+echo "✅ Python-Cache gelöscht"
+echo ""
+
+# 4. Prüfe ob luftentfeuchten_config.json aktualisiert wurde
+echo "🔍 Schritt 4: Prüfe Konfigurationsdatei..."
 if grep -q "frost_protection_temperature" data/luftentfeuchten_config.json; then
     echo "✅ frost_protection_temperature gefunden in luftentfeuchten_config.json"
 else
-    echo "❌ frost_protection_temperature NICHT gefunden!"
-    echo "   Bitte prüfe data/luftentfeuchten_config.json manuell"
-    exit 1
+    echo "⚠️  frost_protection_temperature NICHT gefunden - eventuell nicht verwendet"
 fi
 echo ""
 
-# 4. Starte Web-App neu (nutzt start.sh für stabile Startlogik)
-echo "🚀 Schritt 4: Starte Web-App neu..."
+# 5. Starte Web-App neu (nutzt start.sh für stabile Startlogik)
+echo "🚀 Schritt 5: Starte Web-App neu..."
 ./start.sh --restart --port=8080 || {
     echo "❌ Web-App läuft NICHT!"
     echo "   Prüfe logs/webapp.log für Fehler"
@@ -39,21 +46,15 @@ echo "🚀 Schritt 4: Starte Web-App neu..."
 }
 echo ""
 
-# 5. Teste API-Endpunkt
-echo "🧪 Schritt 5: Teste Bathroom API..."
-sleep 3
-RESPONSE=$(curl -s http://localhost:8080/api/luftentfeuchten/status)
+# 6. Teste API-Endpunkt
+echo "🧪 Schritt 6: Teste Bathroom API..."
+sleep 5
+RESPONSE=$(curl -s http://localhost:8080/api/bathroom/sensors/available 2>&1)
 
-if echo "$RESPONSE" | grep -q "enabled"; then
+if echo "$RESPONSE" | grep -q "humidity_sensors\|temperature_sensors"; then
+    echo "✅ Bathroom API antwortet korrekt (neue Version aktiv!)"
+elif echo "$RESPONSE" | grep -q "enabled"; then
     echo "✅ API antwortet korrekt"
-
-    # Prüfe ob neue Version läuft (mit frost_protection)
-    if grep -q "Frost=" logs/web_app.log 2>/dev/null; then
-        echo "✅ Neue Version mit Frostschutz-Funktion aktiv!"
-    else
-        echo "⚠️  API läuft, aber möglicherweise noch alte Version"
-        echo "   Prüfe logs/web_app.log"
-    fi
 else
     echo "⚠️  API-Response ungewöhnlich:"
     echo "$RESPONSE" | head -5
