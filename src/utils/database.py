@@ -1078,23 +1078,41 @@ class Database:
         conn.commit()
 
     def add_bathroom_continuous_measurement(self, humidity: float = None,
-                                           temperature: float = None):
+                                           temperature: float = None,
+                                           shower_humidity: float = None,
+                                           shower_temperature: float = None):
         """
         Fügt eine kontinuierliche Badezimmer-Messung hinzu (alle 60s)
         Unabhängig von Events - für Langzeit-Analyse
+        Neu: Unterstützt auch Duschsensor-Werte für verbesserte Analyse
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
-            INSERT INTO bathroom_continuous_measurements
-            (timestamp, humidity, temperature)
-            VALUES (?, ?, ?)
-        """, (
-            datetime.now(),
-            humidity,
-            temperature
-        ))
+        # Prüfe ob Tabelle die neuen Spalten hat (für Abwärtskompatibilität)
+        try:
+            cursor.execute("""
+                INSERT INTO bathroom_continuous_measurements
+                (timestamp, humidity, temperature, shower_humidity, shower_temperature)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                datetime.now(),
+                humidity,
+                temperature,
+                shower_humidity,
+                shower_temperature
+            ))
+        except Exception as e:
+            # Fallback: Alte Struktur ohne Duschsensor-Felder
+            cursor.execute("""
+                INSERT INTO bathroom_continuous_measurements
+                (timestamp, humidity, temperature)
+                VALUES (?, ?, ?)
+            """, (
+                datetime.now(),
+                humidity,
+                temperature
+            ))
 
         conn.commit()
 
