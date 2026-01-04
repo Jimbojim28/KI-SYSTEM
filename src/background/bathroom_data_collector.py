@@ -41,6 +41,15 @@ class BathroomDataCollector:
         self.config = None
         self.automation: Optional[BathroomAutomation] = None
         self._config_hash = None
+        
+        # Robustheit-Features
+        self._consecutive_errors = 0
+        self._max_consecutive_errors = 10
+        self._error_backoff = 1  # Sekunden
+        self._max_backoff = 300  # Max 5 Minuten
+        self._last_successful_collection = None
+        self._collection_count = 0
+        self._error_count = 0
 
         # Lade Badezimmer-Konfiguration
         self._load_config()
@@ -100,24 +109,66 @@ class BathroomDataCollector:
         logger.info("BathroomDataCollector stopped")
 
     def _run_loop(self):
-        """Haupt-Loop des Background-Prozesses"""
+        """Haupt-Loop des Background-Prozesses mit robustem Error-Handling"""
+        logger.info("BathroomDataCollector: Starting main loop")
+        
         while self.running:
             try:
                 # Reload config alle 5 Minuten (falls geändert)
                 if self._should_reload_config():
                     self._load_config()
 
+                # Prüfe Verbindung zum Platform
+                if not self._check_platform_connection():
+                    logger.warning("Platform connection lost - waiting before retry")
+                    self._consecutive_errors += 1
+                    time.sleep(min(self._error_backoff * self._consecutive_errors, self._max_backoff))
+                    continue
+
                 # Datensammlung
                 if self._should_collect_now():
-                    self._collect_data()
-                    self.last_collection = datetime.now()
+                    success = self._collect_data()
+                    
+                    if success:
+                        self.last_collection = datetime.now()
+                        self._last_successful_collection = datetime.now()
+                        self._consecutive_errors = 0
+                        self._error_backoff = 1
+                        self._collection_count += 1
+                        
+                        # Health-Check alle 100 Collections
+                        if self._collection_count % 100 == 0:
+                            logger.info(f"BathroomDataCollector health: {self._collection_count} collections, {self._error_count} errors")
+                    else:
+                        self._consecutive_errors += 1
+                        self._error_count += 1
+                        
+                        # Bei wiederholten Fehlern: exponentielles Backoff
+                        if self._consecutive_errors >= 3:
+                            backoff_time = min(self._error_backoff * (2 ** (self._consecutive_errors - 3)), self._max_backoff)
+                            logger.warning(f"Multiple collection failures ({self._consecutive_errors}x) - backing off for {backoff_time}s")
+                            time.sleep(backoff_time)
+                            continue
+                
+                # Bei zu vielen aufeinanderfolgenden Fehlern: Warnung
+                if self._consecutive_errors >= self._max_consecutive_errors:
+                    logger.error(f"BathroomDataCollector: {self._consecutive_errors} consecutive errors - collector may need attention")
+                    # Reset counter um weiteres Logging zu vermeiden
+                    self._consecutive_errors = self._max_consecutive_errors - 1
 
                 # Warte interval_seconds Sekunden
                 time.sleep(self.interval_seconds)
 
+            except KeyboardInterrupt:
+                logger.info("BathroomDataCollector: Received interrupt signal")
+                break
             except Exception as e:
-                logger.error(f"Error in BathroomDataCollector loop: {e}")
-                time.sleep(self.interval_seconds)
+                logger.error(f"Unexpected error in BathroomDataCollector loop: {e}", exc_info=True)
+                self._consecutive_errors += 1
+                self._error_count += 1
+                time.sleep(min(self._error_backoff * self._consecutive_errors, self._max_backoff))
+        
+        logger.info("BathroomDataCollector: Main loop ended")
 
     def _should_collect_now(self) -> bool:
         """Prüft ob jetzt Daten gesammelt werden sollen"""
@@ -135,17 +186,46 @@ class BathroomDataCollector:
         minutes_since_last = (datetime.now() - self._last_config_load).seconds / 60
         return minutes_since_last >= 5
 
-    def _collect_data(self):
-        """Sammelt aktuelle Badezimmer-Daten"""
+    def _check_platform_connection(self) -> bool:
+        """Prüft ob die Platform-Verbindung funktioniert"""
+        try:
+            if not self.engine or not self.engine.platform:
+                logger.debug("No engine/platform available")
+                return False
+            
+            # Versuche ein einfaches get_state als Connection-Check
+            # Nutze einen bekannten Sensor falls konfiguriert
+            test_sensor = None
+            if self.config:
+                test_sensor = self.config.get('humidity_sensor_id') or self.config.get('temperature_sensor_id')
+            
+            if test_sensor:
+                state = self.engine.platform.get_state(test_sensor)
+                return state is not None
+            
+            # Wenn kein Sensor konfiguriert, gehe davon aus dass Platform OK ist
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Platform connection check failed: {e}")
+            return False
+
+    def _collect_data(self) -> bool:
+        """
+        Sammelt aktuelle Badezimmer-Daten
+        
+        Returns:
+            bool: True wenn erfolgreich, False bei Fehler
+        """
         try:
             # Prüfe ob Konfiguration vorhanden
             if not self.config:
                 logger.debug("No bathroom config - skipping data collection")
-                return
+                return False
 
             if not self.engine or not self.engine.platform:
                 logger.debug("No engine/platform available for data collection")
-                return
+                return False
 
             # Hole Sensor-Werte
             humidity_sensor_id = self.config.get('humidity_sensor_id')
@@ -153,7 +233,7 @@ class BathroomDataCollector:
 
             if not humidity_sensor_id and not temp_sensor_id:
                 logger.debug("No sensors configured - skipping data collection")
-                return
+                return False
 
             humidity = None
             temperature = None
@@ -238,11 +318,15 @@ class BathroomDataCollector:
                     )
                 else:
                     logger.debug("Bathroom automation disabled in config")
+                
+                return True  # Erfolg
             else:
                 logger.debug("No sensor values available")
+                return False  # Keine Daten
 
         except Exception as e:
-            logger.error(f"Error collecting bathroom data: {e}")
+            logger.error(f"Error collecting bathroom data: {e}", exc_info=True)
+            return False  # Fehler
 
     def _run_automation(self, humidity: Optional[float], temperature: Optional[float]):
         """Startet die Badezimmer-Automationslogik und führt resultierende Aktionen aus"""
@@ -321,12 +405,32 @@ class BathroomDataCollector:
 
     def get_status(self) -> dict:
         """Gibt den aktuellen Status zurück"""
+        uptime_hours = None
+        if self._last_successful_collection and self.last_collection:
+            uptime_seconds = (datetime.now() - self.last_collection).total_seconds()
+            uptime_hours = round(uptime_seconds / 3600, 2)
+        
+        health_status = "healthy"
+        if self._consecutive_errors >= 5:
+            health_status = "degraded"
+        elif self._consecutive_errors >= self._max_consecutive_errors:
+            health_status = "critical"
+        
         return {
             'running': self.running,
+            'health': health_status,
             'last_collection': self.last_collection.isoformat() if self.last_collection else None,
+            'last_successful_collection': self._last_successful_collection.isoformat() if self._last_successful_collection else None,
             'interval_seconds': self.interval_seconds,
             'config_loaded': self.config is not None,
             'humidity_sensor': self.config.get('humidity_sensor_id') if self.config else None,
             'temperature_sensor': self.config.get('temperature_sensor_id') if self.config else None,
-            'automation_active': bool(self.automation) if self.config else False
+            'automation_active': bool(self.automation) if self.config else False,
+            'statistics': {
+                'total_collections': self._collection_count,
+                'total_errors': self._error_count,
+                'consecutive_errors': self._consecutive_errors,
+                'success_rate': round((self._collection_count / (self._collection_count + self._error_count) * 100), 2) if (self._collection_count + self._error_count) > 0 else 0,
+                'uptime_hours': uptime_hours
+            }
         }
