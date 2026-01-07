@@ -2926,6 +2926,15 @@ class Database:
         """Destructor - schließt Verbindung"""
         self.close()
 
+    def __enter__(self):
+        """Context manager entry - returns self for use in 'with' statements"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures connection is closed"""
+        self.close()
+        return False  # Don't suppress exceptions
+
     def optimize(self, enable_auto_vacuum: bool = True) -> Dict[str, Any]:
         """
         Optimiert die Datenbank für bessere Performance

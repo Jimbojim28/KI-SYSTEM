@@ -5872,10 +5872,9 @@ class WebInterface:
         def api_bathroom_events():
             """API: Badezimmer Events (Historie) mit Event-Typ-Klassifikation"""
             try:
-                from src.utils.database import Database
                 from src.decision_engine.bathroom_analyzer import BathroomAnalyzer
 
-                db = Database()
+                db = self.db
                 analyzer = BathroomAnalyzer(db=db)
                 days_back = int(request.args.get('days', 30))
                 limit = int(request.args.get('limit', 100))
