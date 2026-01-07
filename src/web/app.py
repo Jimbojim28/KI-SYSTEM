@@ -6442,7 +6442,7 @@ class WebInterface:
                 threshold_high = None
                 threshold_low = None
                 try:
-                    from src.bathroom.bathroom_optimizer import BathroomOptimizer
+                    from src.background.bathroom_optimizer import BathroomOptimizer
                     optimizer = BathroomOptimizer(self.db, ha_api=self.ha_api, homey_api=self.homey_api)
                     threshold_high = optimizer.high_threshold
                     threshold_low = optimizer.low_threshold
