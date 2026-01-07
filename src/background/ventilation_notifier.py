@@ -1383,9 +1383,18 @@ class VentilationNotifier:
                 logger.error(f"Error loading sensor mapping: {e}")
         return {}
 
-    def _get_sensor_value_by_id(self, entity_id: str) -> Optional[float]:
+    def _get_sensor_value_by_id(self, entity_id: str, capability_hint: str = None) -> Optional[float]:
         """Hole den aktuellen Wert eines Sensors anhand der ID
-        
+
+        Unterstützt:
+        - Homey Device-IDs (UUID format): automatische Capability-Erkennung
+        - Homey mit Capability: homey:device_id:capability
+        - Home Assistant Entity-IDs: sensor.xxx
+
+        Args:
+            entity_id: Die Sensor/Device ID
+            capability_hint: Optional hint für gewünschte Capability ('temperature', 'humidity', 'co2')
+
         Gibt None zurück wenn:
         - entity_id leer ist
         - entity_id == 'none' (explizit kein Sensor gewünscht)
@@ -1393,35 +1402,74 @@ class VentilationNotifier:
         """
         if not entity_id or entity_id == 'none':
             return None
-            
+
         try:
-            if entity_id.startswith('homey:'):
-                # Homey Sensor: homey:device_id:capability
-                parts = entity_id.split(':')
-                if len(parts) >= 3:
-                    device_id = parts[1]
-                    capability = f'measure_{parts[2]}'
-                    
+            # Check if it's a Homey Device ID (UUID format: 8-4-4-4-12 characters)
+            is_homey_uuid = (len(entity_id) == 36 and
+                           entity_id.count('-') == 4 and
+                           all(c in '0123456789abcdefABCDEF-' for c in entity_id))
+
+            if entity_id.startswith('homey:') or is_homey_uuid:
+                device_id = None
+                specific_capability = None
+
+                if entity_id.startswith('homey:'):
+                    # Homey Sensor: homey:device_id:capability
+                    parts = entity_id.split(':')
+                    if len(parts) >= 2:
+                        device_id = parts[1]
+                        if len(parts) >= 3:
+                            specific_capability = f'measure_{parts[2]}'
+                else:
+                    # Pure Homey Device ID
+                    device_id = entity_id
+
+                if device_id:
                     platform = self._platform
                     if platform:
                         # Versuche direkten Zugriff oder Cache
                         device = None
                         if hasattr(platform, 'get_device'):
                             device = platform.get_device(device_id)
-                        
+
                         if not device and hasattr(platform, '_device_cache'):
                             if isinstance(platform._device_cache, dict):
                                 device = platform._device_cache.get(device_id)
-                        
+
                         if not device and hasattr(platform, 'get_all_devices'):
                              all_devices = platform.get_all_devices()
                              if isinstance(all_devices, dict):
                                  device = all_devices.get(device_id)
-                            
+
                         if device:
                             caps_obj = device.get('capabilitiesObj', {})
-                            if capability in caps_obj:
-                                return caps_obj[capability].get('value')
+
+                            # If specific capability was provided, use it
+                            if specific_capability and specific_capability in caps_obj:
+                                return caps_obj[specific_capability].get('value')
+
+                            # If capability hint was provided, try it first
+                            if capability_hint:
+                                hint_cap = f'measure_{capability_hint}'
+                                if hint_cap in caps_obj:
+                                    val = caps_obj[hint_cap].get('value')
+                                    if val is not None:
+                                        return val
+
+                            # Otherwise, try to find relevant measurement capability
+                            # Priority: temperature > humidity > co2 > any measure_
+                            for cap_name in ['measure_temperature', 'measure_humidity', 'measure_co2', 'measure_pm25']:
+                                if cap_name in caps_obj:
+                                    val = caps_obj[cap_name].get('value')
+                                    if val is not None:
+                                        return val
+
+                            # Fallback: return first measure_ capability found
+                            for cap_name, cap_data in caps_obj.items():
+                                if cap_name.startswith('measure_'):
+                                    val = cap_data.get('value')
+                                    if val is not None:
+                                        return val
             else:
                 # Home Assistant Sensor
                 if self.engine and hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
@@ -1479,9 +1527,9 @@ class VentilationNotifier:
                 logger.debug(f"Skipping room '{room_name}': sensors explicitly disabled")
                 continue
             
-            temp = self._get_sensor_value_by_id(temp_sensor_id)
-            humidity = self._get_sensor_value_by_id(humidity_sensor_id)
-            co2 = self._get_sensor_value_by_id(sensors.get('co2'))
+            temp = self._get_sensor_value_by_id(temp_sensor_id, 'temperature')
+            humidity = self._get_sensor_value_by_id(humidity_sensor_id, 'humidity')
+            co2 = self._get_sensor_value_by_id(sensors.get('co2'), 'co2')
             
             if temp is not None or humidity is not None or co2 is not None:
                 if room_name not in rooms_data:
@@ -1582,7 +1630,7 @@ class VentilationNotifier:
         temp_sensor = outdoor_sensors.get('temperature')
         
         if temp_sensor:
-            val = self._get_sensor_value_by_id(temp_sensor)
+            val = self._get_sensor_value_by_id(temp_sensor, 'temperature')
             if val is not None:
                 return val
                 
