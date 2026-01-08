@@ -409,8 +409,10 @@ def get_bathroom_config() -> dict:
                 config['shower_humidity_sensor'] = shower_sensors.get('humidity_sensor', '')
                 config['shower_temperature_sensor'] = shower_sensors.get('temperature_sensor', '')
                 config['enable_rate_detection'] = shower_sensors.get('enable_rate_detection', True)
-                config['rate_threshold'] = shower_sensors.get('rate_threshold', 2.0)
-                logger.debug(f"Shower sensors loaded: humidity={config.get('shower_humidity_sensor')}, temp={config.get('shower_temperature_sensor')}")
+                config['rate_threshold'] = shower_sensors.get('rate_threshold', 1.2)  # Neuer Standard: 1.2%/min
+                config['shower_sensor_min_humidity'] = shower_sensors.get('min_humidity', 45.0)  # Neuer Parameter
+                config['shower_sensor_predictive'] = shower_sensors.get('enable_predictive', True)  # Neuer Parameter
+                logger.debug(f"Shower sensors loaded: humidity={config.get('shower_humidity_sensor')}, temp={config.get('shower_temperature_sensor')}, rate_threshold={config.get('rate_threshold')}, min_humidity={config.get('shower_sensor_min_humidity')}, predictive={config.get('shower_sensor_predictive')}")
     except Exception as e:
         logger.warning(f"Error loading shower sensors from YAML: {e}")
     

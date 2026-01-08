@@ -81,10 +81,10 @@ class BathroomAutomation:
         
         # Duschsensor-Historie (zusätzlicher Sensor direkt an der Dusche)
         self.shower_sensor_history = []
-        self.shower_sensor_enabled = False
-        self.shower_sensor_rate_threshold = 1.2  # Standard: 1.2% pro Minute (niedriger für schnellere Reaktion)
-        self.shower_sensor_min_humidity = 45.0  # Mindest-Luftfeuchtigkeit für Duscherkennung via Duschsensor (niedriger als Hauptsensor)
-        self.shower_sensor_predictive = True  # Aktiviert prädiktive Einschaltung bei Duschsensor-Anstieg
+        self.shower_sensor_enabled = bool(config.get('shower_humidity_sensor'))  # Aktiviert wenn Sensor konfiguriert
+        self.shower_sensor_rate_threshold = config.get('rate_threshold', 1.2)  # Standard: 1.2% pro Minute (niedriger für schnellere Reaktion)
+        self.shower_sensor_min_humidity = config.get('shower_sensor_min_humidity', 45.0)  # Mindest-Luftfeuchtigkeit für Duscherkennung via Duschsensor
+        self.shower_sensor_predictive = config.get('shower_sensor_predictive', True)  # Aktiviert prädiktive Einschaltung bei Duschsensor-Anstieg
 
         # Datenbank für Lernsystem
         self.db = Database() if enable_learning else None
@@ -98,7 +98,12 @@ class BathroomAutomation:
         if self.db and enable_learning:
             self._load_learned_parameters()
 
-        logger.info(f"Bathroom automation initialized: High={self.humidity_high}%, Low={self.humidity_low}%, ForceOff={self.force_off_humidity}%, MaxRuntime={self.max_dehumidifier_runtime_minutes}min, Target={self.target_temp}°C, Frost={self.frost_protection_temp}°C, HeatingControl={self.heating_boost_enabled}, Learning={enable_learning}, MoldPrevention={self.mold_prevention is not None}, VentilationOptimizer={self.ventilation is not None}, ShowerPredictor={self.shower_predictor is not None}")
+        # Log Initialisierung
+        shower_sensor_info = ""
+        if self.shower_sensor_enabled:
+            shower_sensor_info = f", ShowerSensor(rate={self.shower_sensor_rate_threshold}%/min, min={self.shower_sensor_min_humidity}%, predictive={self.shower_sensor_predictive})"
+
+        logger.info(f"Bathroom automation initialized: High={self.humidity_high}%, Low={self.humidity_low}%, ForceOff={self.force_off_humidity}%, MaxRuntime={self.max_dehumidifier_runtime_minutes}min, Target={self.target_temp}°C, Frost={self.frost_protection_temp}°C, HeatingControl={self.heating_boost_enabled}, Learning={enable_learning}, MoldPrevention={self.mold_prevention is not None}, VentilationOptimizer={self.ventilation is not None}, ShowerPredictor={self.shower_predictor is not None}{shower_sensor_info}")
 
     def process(self, platform, current_state: Dict) -> List[Dict]:
         """
