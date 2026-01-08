@@ -82,7 +82,9 @@ class BathroomAutomation:
         # Duschsensor-Historie (zusätzlicher Sensor direkt an der Dusche)
         self.shower_sensor_history = []
         self.shower_sensor_enabled = False
-        self.shower_sensor_rate_threshold = 2.0  # Standard: 2% pro Minute
+        self.shower_sensor_rate_threshold = 1.2  # Standard: 1.2% pro Minute (niedriger für schnellere Reaktion)
+        self.shower_sensor_min_humidity = 45.0  # Mindest-Luftfeuchtigkeit für Duscherkennung via Duschsensor (niedriger als Hauptsensor)
+        self.shower_sensor_predictive = True  # Aktiviert prädiktive Einschaltung bei Duschsensor-Anstieg
 
         # Datenbank für Lernsystem
         self.db = Database() if enable_learning else None
@@ -176,6 +178,20 @@ class BathroomAutomation:
         # === DUSCHEN ERKENNUNG ===
         shower_active = self._detect_shower(humidity, motion_detected, door_closed, platform)
 
+        # NEUE PRÄDIKTIVE AKTIVIERUNG: Duschsensor-Frühwarnung
+        # Auch wenn noch keine volle Duscherkennung, aber Duschsensor zeigt Anstieg
+        shower_sensor_warning = False
+        if self.shower_sensor_enabled and self.shower_sensor_predictive:
+            shower_sensor_humidity = self._get_shower_sensor_humidity(platform)
+            if (shower_sensor_humidity and
+                len(self.shower_sensor_history) >= 2 and
+                shower_sensor_humidity > 50.0):  # Mindestens 50% am Duschsensor
+                # Prüfe ob es einen Trend nach oben gibt
+                old_val = self.shower_sensor_history[-2]['value']
+                if shower_sensor_humidity > old_val + 0.8:  # Mindestens +0.8% Anstieg
+                    shower_sensor_warning = True
+                    logger.debug(f"🔔 Shower sensor early warning: {shower_sensor_humidity}% (trend up from {old_val}%)")
+
         if shower_active and not self.shower_detected:
             logger.info("🚿 Shower detected! Starting dehumidifier...")
             self.shower_detected = True
@@ -187,9 +203,10 @@ class BathroomAutomation:
             self._record_measurement(platform)
 
         # === LUFTENTFEUCHTER STEUERUNG ===
+        # Übergebe auch shower_sensor_warning für prädiktive Aktivierung
         dehumidifier_action = self._control_dehumidifier(
             humidity,
-            shower_active,
+            shower_active or shower_sensor_warning,  # Auch bei Frühwarnung aktivieren!
             motion_detected,
             platform  # Für Logging
         )
@@ -331,28 +348,33 @@ class BathroomAutomation:
 
         return None
 
-    def configure_shower_sensors(self, humidity_sensor: str = None, temperature_sensor: str = None, 
-                                 enable_rate_detection: bool = True, rate_threshold: float = 2.0):
+    def configure_shower_sensors(self, humidity_sensor: str = None, temperature_sensor: str = None,
+                                 enable_rate_detection: bool = True, rate_threshold: float = 1.2,
+                                 min_humidity: float = 45.0, enable_predictive: bool = True):
         """
         Konfiguriere zusätzliche Duschsensoren für verbesserte Erkennung
-        
+
         Args:
             humidity_sensor: Entity ID des Luftfeuchtigkeitssensors an der Dusche
-            temperature_sensor: Entity ID des Temperatursensors an der Dusche  
+            temperature_sensor: Entity ID des Temperatursensors an der Dusche
             enable_rate_detection: Aktiviert Steigungserkennung
-            rate_threshold: Schwellwert für Anstieg in %/Minute
+            rate_threshold: Schwellwert für Anstieg in %/Minute (Standard: 1.2)
+            min_humidity: Mindest-Luftfeuchtigkeit für Duscherkennung (Standard: 45%)
+            enable_predictive: Aktiviert prädiktive Einschaltung (Standard: True)
         """
         if humidity_sensor:
             self.config['shower_humidity_sensor'] = humidity_sensor
             self.shower_sensor_enabled = True
             logger.info(f"Shower humidity sensor configured: {humidity_sensor}")
-        
+
         if temperature_sensor:
             self.config['shower_temperature_sensor'] = temperature_sensor
             logger.info(f"Shower temperature sensor configured: {temperature_sensor}")
-        
+
         self.shower_sensor_rate_threshold = rate_threshold
-        logger.info(f"Shower sensor rate detection: enabled={enable_rate_detection}, threshold={rate_threshold}%/min")
+        self.shower_sensor_min_humidity = min_humidity
+        self.shower_sensor_predictive = enable_predictive
+        logger.info(f"Shower sensor detection: rate_threshold={rate_threshold}%/min, min_humidity={min_humidity}%, predictive={enable_predictive}")
 
 
     def _check_motion(self, platform) -> bool:
@@ -482,16 +504,17 @@ class BathroomAutomation:
                 if len(self.shower_sensor_history) > 10:
                     self.shower_sensor_history.pop(0)
                 
-                # Prüfe schnellen Anstieg beim Duschsensor
-                if len(self.shower_sensor_history) >= 3:
-                    old_measurement = self.shower_sensor_history[-3]
+                # Prüfe schnellen Anstieg beim Duschsensor (schon nach 2 Messungen!)
+                if len(self.shower_sensor_history) >= 2:
+                    # Vergleiche mit vorletzter Messung für schnellere Reaktion
+                    old_measurement = self.shower_sensor_history[-2]
                     time_diff = (now - old_measurement['time']).seconds / 60
-                    
-                    if time_diff >= 1.0:
+
+                    if time_diff >= 0.5:  # Schon nach 30 Sekunden prüfen
                         humidity_diff = shower_sensor_humidity - old_measurement['value']
                         rate_per_minute = humidity_diff / time_diff
-                        
-                        # Duschsensor ist sensibler - nutze konfigurierten Schwellwert
+
+                        # Duschsensor ist sensibler - nutze konfigurierten niedrigeren Schwellwert
                         if rate_per_minute > self.shower_sensor_rate_threshold:
                             shower_sensor_rising_fast = True
                             logger.info(f"🚿 Shower sensor: Fast rise detected! +{humidity_diff:.1f}% in {time_diff:.1f}min (rate: {rate_per_minute:.1f}%/min, threshold: {self.shower_sensor_rate_threshold}%/min)")
@@ -531,12 +554,17 @@ class BathroomAutomation:
                 motion_ok = False
 
         # === ENTSCHEIDUNGS-LOGIK (PRIORISIERT DUSCHSENSOR) ===
-        
+
         # HÖCHSTE PRIORITÄT: Duschsensor zeigt schnellen Anstieg
         if shower_sensor_rising_fast:
             # Duschsensor ist sehr verlässlich - wenn dort schneller Anstieg erkannt wird, ist es sehr wahrscheinlich Duschen
-            if shower_sensor_humidity and shower_sensor_humidity > 60:  # Mindestens 60% Luftfeuchtigkeit
-                logger.info(f"🚿 Shower detected via shower sensor! (humidity: {shower_sensor_humidity}%, main: {humidity}%)")
+            # VERBESSERT: Niedrigerer Schwellwert (konfigurierbar, Standard: 45%)
+            if shower_sensor_humidity and shower_sensor_humidity > self.shower_sensor_min_humidity:
+                logger.info(f"🚿 Shower detected via shower sensor! (shower: {shower_sensor_humidity}%, main: {humidity}%, threshold: {self.shower_sensor_min_humidity}%)")
+                return True
+            # ALTERNATIV: Auch bei niedrigerer Luftfeuchtigkeit, wenn Hauptsensor bereits erhöht ist
+            elif shower_sensor_humidity and humidity > 55:  # Hauptsensor zeigt auch Anstieg
+                logger.info(f"🚿 Shower detected via shower sensor (combined)! (shower: {shower_sensor_humidity}%, main: {humidity}%)")
                 return True
         
         # Option A: Hohe Luftfeuchtigkeit UND (schneller Anstieg ODER Bewegung)
