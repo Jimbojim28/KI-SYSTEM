@@ -113,6 +113,37 @@
         </div>
     </div>
 
+    <!-- Live-Luftfeuchtigkeit Card -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div>
+                <h3>💧 Live-Luftfeuchtigkeit</h3>
+                <p style="color: #6b7280; font-size: 0.9em; margin-top: 5px;">
+                    Echtzeit-Anzeige mit Schwellwerten und Entfeuchter-Aktivität
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <select id="live-hours-selector" class="form-select" style="padding: 6px 12px;">
+                    <option value="3">3 Stunden</option>
+                    <option value="6" selected>6 Stunden</option>
+                    <option value="12">12 Stunden</option>
+                    <option value="24">24 Stunden</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="live-humidity-chart-loading" style="text-align: center; padding: 40px; color: #6b7280;">
+            Lade Daten...
+        </div>
+        <div id="live-humidity-chart-container" style="display: none; position: relative; height: 350px;">
+            <canvas id="live-humidity-canvas"></canvas>
+        </div>
+
+        <div style="margin-top: 10px; font-size: 0.85em; color: #6b7280;">
+            Aktualisiert alle 30 Sekunden. Zeigt die tatsächlichen Sensor-Werte mit Schwellwerten und Entfeuchter-Perioden.
+        </div>
+    </div>
+
     <!-- Energie & Kosten Card -->
     <div class="card energy-card" id="energy-card">
         <h3>⚡ Energie & Kosten (letzte 30 Tage)</h3>
