@@ -58,15 +58,19 @@ data/sensor_config.json
 data/ha_entities.json
 data/presence_history.json
 data/automations.json
+data/ventilation_stats.json
 models/*.pkl
 models/*.h5
 models/*.joblib
+models/versions/
 
 # Backups
 data/backups/
 .backup/
 *.backup
 *.bak
+*.pre_restore
+.env.backup.*
 
 # Logs
 logs/
@@ -80,6 +84,9 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+test_*.py
+test_*.html
+debug_*.py
 
 # Temporary files
 *.tmp
