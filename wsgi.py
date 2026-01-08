@@ -11,11 +11,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from loguru import logger
-from src.web.app import SmartHomeWeb
+from src.web.app import WebInterface
 
 # Erstelle die Anwendung
-logger.info("Initializing SmartHomeWeb for Gunicorn...")
-smart_home = SmartHomeWeb()
+logger.info("Initializing WebInterface for Gunicorn...")
+smart_home = WebInterface()
 
 # Flask app für Gunicorn
 app = smart_home.app

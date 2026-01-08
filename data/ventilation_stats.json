@@ -19,6 +19,13 @@
           "temp": 0.0,
           "humidity": 0
         }
+      },
+      {
+        "timestamp": "2026-01-03T11:13:21.014902",
+        "duration": 26,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
       }
     ],
     "Wohnzimmer": [
@@ -32,10 +39,109 @@
           "humidity": -0.5399999999999991,
           "co2": 0
         }
+      },
+      {
+        "timestamp": "2026-01-02T16:08:57.366072",
+        "duration": 39,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-01-03T11:13:20.669688",
+        "duration": 12,
+        "score": 75,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-01-04T09:29:46.144307",
+        "duration": 2,
+        "score": 30,
+        "energy_saved": null,
+        "climate_change": {}
+      }
+    ],
+    "Schlafzimmer (Doppelbett)": [
+      {
+        "timestamp": "2026-01-02T12:51:56.480051",
+        "duration": 4,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-01-02T16:06:53.139164",
+        "duration": 24,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-01-03T08:02:34.920224",
+        "duration": 5,
+        "score": 73,
+        "energy_saved": 0.003,
+        "climate_change": {
+          "temp": -0.40000000000000213,
+          "humidity": 3,
+          "co2": -247
+        }
+      },
+      {
+        "timestamp": "2026-01-03T11:19:34.541744",
+        "duration": 19,
+        "score": 87,
+        "energy_saved": 0.028,
+        "climate_change": {
+          "temp": -1.1000000000000014,
+          "humidity": -4,
+          "co2": -1036
+        }
+      },
+      {
+        "timestamp": "2026-01-03T16:55:33.402044",
+        "duration": 28,
+        "score": 71,
+        "energy_saved": 0.045,
+        "climate_change": {
+          "temp": -1.799999999999999,
+          "humidity": -1,
+          "co2": -253
+        }
+      },
+      {
+        "timestamp": "2026-01-04T08:55:26.316472",
+        "duration": 24,
+        "score": 93,
+        "energy_saved": 0.048,
+        "climate_change": {
+          "temp": -1.8999999999999986,
+          "humidity": -9,
+          "co2": -1883
+        }
+      }
+    ],
+    "Badezimmer": [
+      {
+        "timestamp": "2026-01-03T08:02:35.202419",
+        "duration": 15,
+        "score": 75,
+        "energy_saved": null,
+        "climate_change": {}
       }
     ]
   },
   "last_ventilation": {
-    "Wohnzimmer": "2025-12-14T11:27:53.857198"
+    "Schlafzimmer (Doppelbett)": "2026-01-04T08:55:26.316475",
+    "Wohnzimmer": "2026-01-04T09:29:46.144314"
   }
 }
