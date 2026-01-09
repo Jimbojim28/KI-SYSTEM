@@ -6405,37 +6405,74 @@ class WebInterface:
                         'event_type': row[3]
                     })
                 
-                # Hole Entfeuchter-Status aus bathroom_measurements
+                # Hole Entfeuchter-Status aus bathroom_device_actions
+                # Diese Tabelle enthält explizite turn_on/turn_off Aktionen
                 cursor.execute('''
-                    SELECT timestamp, dehumidifier_on
-                    FROM bathroom_measurements
+                    SELECT timestamp, action
+                    FROM bathroom_device_actions
                     WHERE timestamp >= ?
+                      AND device_type = 'dehumidifier'
                     ORDER BY timestamp ASC
                 ''', (time_threshold,))
-                
+
                 dehumidifier_periods = []
                 current_start = None
                 for row in cursor.fetchall():
                     timestamp = row[0]
-                    is_on = row[1]
-                    
-                    if is_on and current_start is None:
+                    action = row[1]
+
+                    if action == 'turn_on' and current_start is None:
                         # Entfeuchter startet
                         current_start = timestamp
-                    elif not is_on and current_start is not None:
+                    elif action == 'turn_off' and current_start is not None:
                         # Entfeuchter stoppt
                         dehumidifier_periods.append({
                             'start': current_start,
                             'end': timestamp
                         })
                         current_start = None
-                
-                # Falls Entfeuchter am Ende noch läuft
+
+                # Falls Entfeuchter am Ende noch läuft, prüfe aktuellen Status
                 if current_start is not None:
-                    dehumidifier_periods.append({
-                        'start': current_start,
-                        'end': datetime.now().isoformat()
-                    })
+                    # Hole aktuellen Status aus dem letzten bekannten Zustand
+                    try:
+                        # Hole letzten Status aus bathroom_measurements oder platform
+                        cursor.execute('''
+                            SELECT dehumidifier_on
+                            FROM bathroom_measurements
+                            ORDER BY timestamp DESC
+                            LIMIT 1
+                        ''')
+                        last_status = cursor.fetchone()
+
+                        if last_status and last_status[0]:
+                            # Läuft noch - verwende jetzt als Ende
+                            dehumidifier_periods.append({
+                                'start': current_start,
+                                'end': datetime.now().isoformat()
+                            })
+                        else:
+                            # Wurde ausgeschaltet aber nicht in device_actions erfasst
+                            # Verwende letzten bekannten Zeitstempel
+                            cursor.execute('''
+                                SELECT timestamp
+                                FROM bathroom_measurements
+                                ORDER BY timestamp DESC
+                                LIMIT 1
+                            ''')
+                            last_time = cursor.fetchone()
+                            if last_time:
+                                dehumidifier_periods.append({
+                                    'start': current_start,
+                                    'end': last_time[0]
+                                })
+                    except Exception as e:
+                        logger.warning(f"Error checking dehumidifier status: {e}")
+                        # Fallback: verwende jetzt als Ende
+                        dehumidifier_periods.append({
+                            'start': current_start,
+                            'end': datetime.now().isoformat()
+                        })
                 
                 # Hole Schwellwerte aus Konfiguration
                 threshold_high = None

@@ -2607,26 +2607,47 @@ function renderLiveHumidityTimeseries() {
         liveHumidityTimeseriesData.dehumidifier_periods.forEach(period => {
             const periodStart = new Date(period.start);
             const periodEnd = new Date(period.end);
+            const now = new Date();
 
             // Finde Index der nächstliegenden Zeitstempel
             const startIdx = timestamps.findIndex(t => t >= periodStart);
-            const endIdx = timestamps.findIndex(t => t >= periodEnd);
+            let endIdx = timestamps.findIndex(t => t >= periodEnd);
+
+            // Prüfe ob die Periode noch läuft (End-Zeit ist sehr nahe an "jetzt")
+            const isStillRunning = Math.abs(periodEnd - now) < 60000; // weniger als 1 Minute Differenz
 
             if (startIdx >= 0) {
                 const startX = getX(startIdx);
-                const endX = endIdx >= 0 ? getX(endIdx) : getX(data.length - 1);
+                let endX;
+
+                // Wenn kein End-Index gefunden wurde oder läuft noch
+                if (endIdx < 0 || isStillRunning) {
+                    // Verwende letzten Datenpunkt
+                    endX = getX(data.length - 1);
+                } else {
+                    endX = getX(endIdx);
+                }
 
                 // Zeichne grünen Balken am unteren Rand
                 const barHeight = 8;
                 const barY = canvas.height - padding - barHeight;
 
-                ctx.fillStyle = '#10b981';
+                // Wenn noch läuft, verwende halbtransparente Farbe
+                if (isStillRunning) {
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.6)'; // Halbtransparent
+                } else {
+                    ctx.fillStyle = '#10b981'; // Vollfarbe
+                }
                 ctx.fillRect(startX, barY, endX - startX, barHeight);
 
-                // Rahmen
+                // Rahmen (gestrichelt wenn noch läuft)
                 ctx.strokeStyle = '#059669';
                 ctx.lineWidth = 1;
+                if (isStillRunning) {
+                    ctx.setLineDash([4, 4]);
+                }
                 ctx.strokeRect(startX, barY, endX - startX, barHeight);
+                ctx.setLineDash([]); // Reset
             }
         });
 
@@ -2638,7 +2659,17 @@ function renderLiveHumidityTimeseries() {
         ctx.fillStyle = '#1f2937';
         ctx.font = '11px Arial';
         ctx.textAlign = 'left';
-        ctx.fillText('Entfeuchter aktiv', padding + 35, canvas.height - padding + 32);
+        ctx.fillText('Entfeuchter war aktiv', padding + 35, canvas.height - padding + 32);
+
+        // Zusätzliche Legende für "läuft noch"
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.6)';
+        ctx.fillRect(padding + 160, canvas.height - padding + 25, 20, 8);
+        ctx.strokeStyle = '#059669';
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(padding + 160, canvas.height - padding + 25, 20, 8);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#1f2937';
+        ctx.fillText('Läuft aktuell', padding + 185, canvas.height - padding + 32);
     }
 
     // Zeichne Event-Markierungen (Dusch-Events)
