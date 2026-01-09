@@ -7752,6 +7752,15 @@ class WebInterface:
 
                 deleted_counts = self.db.cleanup_old_data(retention_days=retention_days)
 
+                # Speichere Zeitstempel für manuelle Cleanup
+                from datetime import datetime
+                now = datetime.now()
+                self.db.set_system_status('last_maintenance_cleanup', now.isoformat())
+
+                # Update db_maintenance wenn verfügbar
+                if self.db_maintenance:
+                    self.db_maintenance.last_cleanup = now
+
                 return jsonify({
                     'success': True,
                     'deleted_rows': sum(deleted_counts.values()),
@@ -7778,6 +7787,15 @@ class WebInterface:
                 after_size = after_info['file_size_mb']
 
                 freed_mb = before_size - after_size
+
+                # Speichere Zeitstempel für manuelles VACUUM
+                from datetime import datetime
+                now = datetime.now()
+                self.db.set_system_status('last_maintenance_vacuum', now.isoformat())
+
+                # Update db_maintenance wenn verfügbar
+                if self.db_maintenance:
+                    self.db_maintenance.last_vacuum = now
 
                 return jsonify({
                     'success': True,

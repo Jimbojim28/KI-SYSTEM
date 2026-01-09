@@ -26,12 +26,34 @@ class DatabaseMaintenanceJob:
             self.run_time = run_time
         else:
             self.run_time = f"{run_hour:02d}:00"
-        
+
         self.retention_days = retention_days
         self.db = Database()
-        self.last_run = None
         self._stop_event = threading.Event()
         self._thread = None
+
+        # Lade letzten Wartungslauf aus der Datenbank
+        self.last_run = None
+        self.last_cleanup = None
+        self.last_vacuum = None
+        try:
+            status = self.db.get_system_status('last_maintenance_run')
+            if status and status.get('value'):
+                self.last_run = datetime.fromisoformat(status['value'])
+                logger.info(f"Loaded last maintenance run from database: {self.last_run}")
+
+            cleanup_status = self.db.get_system_status('last_maintenance_cleanup')
+            if cleanup_status and cleanup_status.get('value'):
+                self.last_cleanup = datetime.fromisoformat(cleanup_status['value'])
+
+            vacuum_status = self.db.get_system_status('last_maintenance_vacuum')
+            if vacuum_status and vacuum_status.get('value'):
+                self.last_vacuum = datetime.fromisoformat(vacuum_status['value'])
+        except Exception as e:
+            logger.warning(f"Could not load last maintenance run from database: {e}")
+            self.last_run = None
+            self.last_cleanup = None
+            self.last_vacuum = None
         
     def run_maintenance(self):
         """Führt Datenbank-Wartung aus"""
@@ -62,8 +84,21 @@ class DatabaseMaintenanceJob:
             logger.info(f"   Saved: {result.get('saved_mb', 0)} MB")
             logger.info(f"   Duration: {result.get('duration_seconds', 0):.2f}s")
             logger.info(f"   Operations: {len(result.get('operations', []))}")
-            
-            self.last_run = datetime.now()
+
+            # Speichere Wartungslauf-Zeitstempel in Datenbank
+            now = datetime.now()
+            self.last_run = now
+            self.last_cleanup = now
+            self.last_vacuum = now
+
+            try:
+                self.db.set_system_status('last_maintenance_run', now.isoformat())
+                self.db.set_system_status('last_maintenance_cleanup', now.isoformat())
+                self.db.set_system_status('last_maintenance_vacuum', now.isoformat())
+                logger.info(f"Saved maintenance timestamp to database: {now.isoformat()}")
+            except Exception as e:
+                logger.warning(f"Could not save maintenance timestamp to database: {e}")
+
             return True
             
         except Exception as e:
@@ -100,8 +135,8 @@ class DatabaseMaintenanceJob:
         """Gibt den aktuellen Status des Maintenance-Jobs zurück"""
         return {
             'running': self._thread is not None and self._thread.is_alive(),
-            'last_cleanup': self.last_run.isoformat() if self.last_run else None,
-            'last_vacuum': self.last_run.isoformat() if self.last_run else None,
+            'last_cleanup': self.last_cleanup.isoformat() if self.last_cleanup else None,
+            'last_vacuum': self.last_vacuum.isoformat() if self.last_vacuum else None,
             'retention_days': self.retention_days,
             'run_hour': int(self.run_time.split(':')[0])
         }
