@@ -186,6 +186,16 @@
                 <small id="edit-humidity-preview" class="sensor-preview"></small>
             </div>
 
+            <!-- Duschsensor: Nur für Badezimmer-Räume sichtbar -->
+            <div class="form-group" id="shower-sensor-group" style="display:none; background:#e8f4fd; border-radius:8px; padding:10px; border-left:3px solid #2196F3;">
+                <label>🚿 Duschsensor (separater Feuchtigkeitssensor):</label>
+                <select id="edit-shower-sensor">
+                    <option value="">-- Kein separater Duschsensor --</option>
+                </select>
+                <small style="color:#555; display:block; margin-top:4px;">Wähle den Sensor direkt an der Dusche für präzise Duscherkennung. Alle verfügbaren Homey-Feuchtigkeitssensoren werden angezeigt.</small>
+                <small id="edit-shower-preview" class="sensor-preview"></small>
+            </div>
+
             <div class="form-group">
                 <label>💧 Luftentfeuchter (Smart Plug):</label>
                 <select id="edit-dehumidifier">
@@ -2070,6 +2080,90 @@ function openRoomModal(room) {
     tempSelect.innerHTML = buildGroupedOptions(tempSensorsThisRoom, tempSensorsOther, 'temperature', config.temperature, '-- Automatisch --', true);
     humiditySelect.innerHTML = buildGroupedOptions(humiditySensorsThisRoom, humiditySensorsOther, 'humidity', config.humidity, '-- Automatisch --', true);
     
+    // === Duschsensor: Nur für Badezimmer-Räume ===
+    const showerGroup = document.getElementById('shower-sensor-group');
+    const showerSelect = document.getElementById('edit-shower-sensor');
+    const showerPreview = document.getElementById('edit-shower-preview');
+    
+    const isBathroom = () => {
+        const r = room.toLowerCase();
+        return r.includes('bad') || r.includes('bath') || r.includes('dusch') || r.includes('shower');
+    };
+    
+    if (isBathroom()) {
+        showerGroup.style.display = 'block';
+        
+        // Helfer: prüft ob ein Sensor zum aktuellen Raum gehört (Fuzzy-Matching wie bei Tür-Sensoren)
+        const sensorBelongsToRoom = (s, savedId) => {
+            if (s.device_id === savedId) return true; // gespeicherter Sensor immer anzeigen
+            const sRoom = (s.room || '').toLowerCase();
+            const currentRoom = room.toLowerCase();
+            const sName = (s.name || '').toLowerCase();
+            
+            if (sRoom === currentRoom) return true;
+            if (sRoom && sRoom !== 'unbekannt' && (currentRoom.includes(sRoom) || sRoom.includes(currentRoom))) return true;
+            if (sName.includes(currentRoom)) return true;
+            // Häufige Abkürzungen
+            if (currentRoom === 'badezimmer' && (sName.includes('bad') || sRoom.includes('bad'))) return true;
+            if (currentRoom === 'bad' && (sName.includes('bad') || sRoom.includes('bad'))) return true;
+            return false;
+        };
+        
+        // Zuerst gespeicherten Sensor laden, dann Dropdown aufbauen
+        fetch('/api/bathroom/sensors/config').then(r => r.json()).then(data => {
+            const savedSensor = data.shower_sensors?.humidity_sensor || '';
+            
+            const allHumiditySensors = allSensors.filter(s => s.type === 'humidity' && !s.ignored);
+            // Nur Sensoren dieses Raums + ggf. den gespeicherten
+            const roomSensors = allHumiditySensors.filter(s => sensorBelongsToRoom(s, savedSensor));
+            
+            let showerHtml = '<option value="">-- Kein separater Duschsensor --</option>';
+            
+            if (roomSensors.length > 0) {
+                roomSensors.forEach(s => {
+                    const val = s.current_value !== null ? ` (${Math.round(s.current_value)}%)` : '';
+                    const selected = savedSensor === s.device_id ? ' selected' : '';
+                    showerHtml += `<option value="${s.device_id}"${selected}>${s.name}${val}</option>`;
+                });
+            }
+            
+            // Falls gespeicherter Sensor nicht in der Liste ist (anderer Raum), trotzdem anzeigen
+            if (savedSensor && !roomSensors.find(s => s.device_id === savedSensor)) {
+                const found = allSensors.find(s => s.device_id === savedSensor);
+                const label = found ? `${found.name} (${found.room || 'anderer Raum'})` : savedSensor;
+                showerHtml += `<option value="${savedSensor}" selected>⚠️ ${label}</option>`;
+            }
+            
+            showerSelect.innerHTML = showerHtml;
+            
+            if (savedSensor) {
+                const found = allSensors.find(s => s.device_id === savedSensor);
+                showerPreview.textContent = found && found.current_value !== null
+                    ? `Aktuell: ${Math.round(found.current_value)}%`
+                    : (found ? `Gespeichert: ${found.name}` : '');
+            }
+        }).catch(() => {
+            // Fallback ohne gespeicherten Wert
+            const allHumiditySensors = allSensors.filter(s => s.type === 'humidity' && !s.ignored);
+            const roomSensors = allHumiditySensors.filter(s => sensorBelongsToRoom(s, ''));
+            let showerHtml = '<option value="">-- Kein separater Duschsensor --</option>';
+            roomSensors.forEach(s => {
+                const val = s.current_value !== null ? ` (${Math.round(s.current_value)}%)` : '';
+                showerHtml += `<option value="${s.device_id}">${s.name}${val}</option>`;
+            });
+            showerSelect.innerHTML = showerHtml;
+        });
+        
+        showerSelect.onchange = () => {
+            const selId = showerSelect.value;
+            const found = allSensors.find(s => s.device_id === selId);
+            showerPreview.textContent = found && found.current_value !== null ? `Aktuell: ${Math.round(found.current_value)}%` : '';
+        };
+    } else {
+        showerGroup.style.display = 'none';
+        showerSelect.value = '';
+    }
+    
     // Debug: Zeige gespeicherte Werte
     console.log(`Room ${room} (${roomId}): temp=${config.temperature}, humidity=${config.humidity}`);
     
@@ -2891,6 +2985,34 @@ async function saveRoomEdit(event) {
         }
     } catch (e) {
         console.log('Window calibration save error:', e);
+    }
+    
+    // Duschsensor speichern (nur für Badezimmer-Räume)
+    const showerSensorGroup = document.getElementById('shower-sensor-group');
+    if (showerSensorGroup && showerSensorGroup.style.display !== 'none') {
+        const showerSensorId = document.getElementById('edit-shower-sensor').value;
+        try {
+            // Lade aktuelle Badezimmer-Config, dann aktualisiere nur shower_sensors
+            const currentCfgRes = await fetch('/api/bathroom/sensors/config');
+            const currentCfg = await currentCfgRes.json();
+            const existingShower = currentCfg.shower_sensors || {};
+            
+            await fetch('/api/bathroom/sensors/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shower_sensors: {
+                        humidity_sensor: showerSensorId,
+                        temperature_sensor: existingShower.temperature_sensor || '',
+                        enable_rate_detection: existingShower.enable_rate_detection !== undefined ? existingShower.enable_rate_detection : true,
+                        rate_threshold: existingShower.rate_threshold || 2.0
+                    }
+                })
+            });
+            console.log('Shower sensor saved:', showerSensorId);
+        } catch (e) {
+            console.log('Shower sensor save error:', e);
+        }
     }
     
     try {

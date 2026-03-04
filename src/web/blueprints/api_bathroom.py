@@ -157,117 +157,147 @@ def get_available_sensors():
     """
     GET /api/bathroom/sensors/available
     
-    Liefert alle verfügbaren Sensoren von Home Assistant
-    Filtert nach humidity und temperature Sensoren
-    
-    Response:
-    {
-        "humidity_sensors": [
-            {"entity_id": "sensor.dusche_luftfeuchtigkeit", "name": "Dusche Luftfeuchtigkeit", "state": "52.99"},
-            {"entity_id": "sensor.bathroom_humidity", "name": "Badezimmer Luftfeuchtigkeit", "state": "65.0"}
-        ],
-        "temperature_sensors": [
-            {"entity_id": "sensor.dusche_temperatur", "name": "Dusche Temperatur", "state": "19.14"},
-            {"entity_id": "sensor.bathroom_temperature", "name": "Badezimmer Temperatur", "state": "22.5"}
-        ]
-    }
+    Liefert alle verfügbaren Feuchtigkeits- und Temperatursensoren
+    Unterstützt sowohl Home Assistant als auch Homey Pro
+    Zeigt ALLE Sensoren (nicht nur mit "Dusche" im Namen)
     """
     try:
         humidity_sensors = []
         temperature_sensors = []
         
-        # Versuche Sensoren von Home Assistant zu holen
-        try:
-            from src.data_collector.ha_collector import HomeAssistantCollector
-            
-            # Hole Config
-            ha_url = None
-            ha_token = None
-            
-            if _config:
-                ha_url = _config.get('homeassistant', {}).get('url')
-                ha_token = _config.get('homeassistant', {}).get('token')
-            elif _engine and hasattr(_engine, 'config'):
-                ha_url = _engine.config.get('homeassistant', {}).get('url')
-                ha_token = _engine.config.get('homeassistant', {}).get('token')
-            
-            if ha_url and ha_token:
-                logger.info(f"Fetching sensors from Home Assistant: {ha_url}")
-                collector = HomeAssistantCollector(ha_url, ha_token)
-                
-                # Hole alle States (nicht nur IDs)
-                all_states = collector._make_request("states")
-                
-                if not all_states:
-                    logger.warning("No states returned from Home Assistant")
-                    return jsonify({'humidity_sensors': [], 'temperature_sensors': []})
-                
-                logger.info(f"Found {len(all_states)} entities from Home Assistant")
-                
-                for state_data in all_states:
-                    entity_id = state_data.get('entity_id', '')
-                    
-                    if not entity_id.startswith('sensor.'):
-                        continue
-                    
-                    state = state_data.get('state', '')
-                    attributes = state_data.get('attributes', {})
-                    name = attributes.get('friendly_name', entity_id)
-                    unit = attributes.get('unit_of_measurement', '')
-                    device_class = attributes.get('device_class', '')
-                    
-                    # NUR Sensoren mit "dusche" im Namen anzeigen
-                    has_dusche = (
-                        'dusche' in entity_id.lower() or 
-                        'dusche' in name.lower() or
-                        'shower' in entity_id.lower() or
-                        'shower' in name.lower()
-                    )
-                    
-                    if not has_dusche:
-                        continue
-                    
-                    # Überspringe Batterie-Sensoren und andere nicht relevante Sensoren
-                    if any(word in entity_id.lower() for word in ['batterie', 'battery', 'druck', 'pressure']):
-                        continue
-                    if any(word in name.lower() for word in ['batterie', 'battery', 'druck', 'pressure']):
-                        continue
-                    
-                    # Filtere nach Typ - mehrere Kriterien
-                    is_humidity = (
-                        (unit == '%' and device_class == 'humidity') or
-                        'luftfeuchtigkeit' in entity_id.lower() or 
-                        'humidity' in entity_id.lower()
-                    )
-                    
-                    is_temperature = (
-                        unit in ['°C', '°F'] or 
-                        device_class == 'temperature' or
-                        'temperatur' in entity_id.lower() or
-                        'temperature' in entity_id.lower()
-                    )
-                    
-                    if is_humidity:
-                        humidity_sensors.append({
-                            'entity_id': entity_id,
-                            'name': name,
-                            'state': state,
-                            'unit': unit or '%'
-                        })
-                    elif is_temperature:
-                        temperature_sensors.append({
-                            'entity_id': entity_id,
-                            'name': name,
-                            'state': state,
-                            'unit': unit or '°C'
-                        })
-                
-                logger.info(f"Filtered: {len(humidity_sensors)} humidity, {len(temperature_sensors)} temperature sensors")
-            else:
-                logger.warning("Home Assistant URL or token not configured")
+        # Plattform-Typ ermitteln
+        platform_type = None
+        if _config:
+            platform_type = _config.get('platform', {}).get('type') or _config.get('platform.type')
+        if not platform_type and _engine:
+            try:
+                platform_type = _engine.config.get('platform.type') or _engine.config.get('platform', {}).get('type')
+            except Exception:
+                pass
         
-        except Exception as e:
-            logger.error(f"Error fetching HA entities: {e}", exc_info=True)
+        # Versuche Sensoren über die aktive Engine-Plattform zu holen
+        if _engine and hasattr(_engine, 'platform') and _engine.platform:
+            try:
+                devices = _engine.platform.get_all_devices()
+                if devices:
+                    logger.info(f"Fetching sensors via engine platform ({platform_type}): {len(devices)} devices")
+                    for device in devices:
+                        if not isinstance(device, dict):
+                            continue
+                        
+                        device_id = device.get('id', '')
+                        name = device.get('name', device_id)
+                        caps = device.get('capabilities', [])
+                        if isinstance(caps, dict):
+                            caps = list(caps.keys())
+                        caps_obj = device.get('capabilitiesObj', {}) or {}
+                        
+                        # Feuchtigkeitssensor (Homey: measure_humidity, HA: humidity device_class)
+                        if 'measure_humidity' in caps or device.get('attributes', {}).get('device_class') == 'humidity':
+                            current_val = None
+                            if caps_obj.get('measure_humidity'):
+                                current_val = caps_obj['measure_humidity'].get('value')
+                            elif 'measure_humidity' in caps:
+                                state = _engine.platform.get_state(device_id)
+                                if state:
+                                    try:
+                                        current_val = float(state.get('state', 0))
+                                    except (ValueError, TypeError):
+                                        pass
+                            humidity_sensors.append({
+                                'entity_id': device_id,
+                                'name': name,
+                                'state': str(current_val) if current_val is not None else 'N/A',
+                                'unit': '%',
+                                'zone': device.get('zoneName', '')
+                            })
+                        
+                        # Temperatursensor (Homey: measure_temperature)
+                        if 'measure_temperature' in caps or device.get('attributes', {}).get('device_class') == 'temperature':
+                            current_val = None
+                            if caps_obj.get('measure_temperature'):
+                                current_val = caps_obj['measure_temperature'].get('value')
+                            temperature_sensors.append({
+                                'entity_id': device_id,
+                                'name': name,
+                                'state': str(current_val) if current_val is not None else 'N/A',
+                                'unit': '°C',
+                                'zone': device.get('zoneName', '')
+                            })
+                    
+                    logger.info(f"Found via platform: {len(humidity_sensors)} humidity, {len(temperature_sensors)} temperature sensors")
+            except Exception as e:
+                logger.warning(f"Could not fetch sensors via engine platform: {e}")
+        
+        # Fallback: Home Assistant direkt abfragen (falls Plattform HA ist oder Engine nicht verfügbar)
+        if not humidity_sensors and not temperature_sensors:
+            try:
+                from src.data_collector.ha_collector import HomeAssistantCollector
+                
+                ha_url = None
+                ha_token = None
+                
+                if _config:
+                    ha_url = _config.get('homeassistant', {}).get('url')
+                    ha_token = _config.get('homeassistant', {}).get('token')
+                elif _engine and hasattr(_engine, 'config'):
+                    ha_url = _engine.config.get('homeassistant', {}).get('url')
+                    ha_token = _engine.config.get('homeassistant', {}).get('token')
+                
+                if ha_url and ha_token:
+                    logger.info(f"Fallback: Fetching sensors from Home Assistant: {ha_url}")
+                    collector = HomeAssistantCollector(ha_url, ha_token)
+                    all_states = collector._make_request("states")
+                    
+                    if all_states:
+                        for state_data in all_states:
+                            entity_id = state_data.get('entity_id', '')
+                            if not entity_id.startswith('sensor.'):
+                                continue
+                            
+                            state = state_data.get('state', '')
+                            attributes = state_data.get('attributes', {})
+                            name = attributes.get('friendly_name', entity_id)
+                            unit = attributes.get('unit_of_measurement', '')
+                            device_class = attributes.get('device_class', '')
+                            
+                            # Überspringe Batterie/Druck-Sensoren
+                            skip_words = ['battery', 'batterie', 'druck', 'pressure', 'signal', 'rssi']
+                            if any(w in entity_id.lower() or w in name.lower() for w in skip_words):
+                                continue
+                            
+                            is_humidity = (
+                                device_class == 'humidity' or
+                                (unit == '%' and ('humid' in entity_id.lower() or 'feucht' in entity_id.lower() or 'humid' in name.lower() or 'feucht' in name.lower()))
+                            )
+                            is_temperature = (
+                                device_class == 'temperature' or
+                                unit in ['°C', '°F'] or
+                                'temperatur' in entity_id.lower() or 'temperature' in entity_id.lower()
+                            )
+                            
+                            if is_humidity:
+                                humidity_sensors.append({
+                                    'entity_id': entity_id,
+                                    'name': name,
+                                    'state': state,
+                                    'unit': unit or '%'
+                                })
+                            elif is_temperature:
+                                temperature_sensors.append({
+                                    'entity_id': entity_id,
+                                    'name': name,
+                                    'state': state,
+                                    'unit': unit or '°C'
+                                })
+            except Exception as e:
+                logger.error(f"HA fallback sensor fetch failed: {e}", exc_info=True)
+        
+        # Sortiere nach Name
+        humidity_sensors.sort(key=lambda x: x['name'])
+        temperature_sensors.sort(key=lambda x: x['name'])
+        
+        logger.info(f"Total available sensors: {len(humidity_sensors)} humidity, {len(temperature_sensors)} temperature")
         
         return jsonify({
             'humidity_sensors': humidity_sensors,
