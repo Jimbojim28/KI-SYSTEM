@@ -229,122 +229,175 @@ class WindowDataCollector:
         return room_name if room_name else device_name.strip()
 
     def _get_room_climate(self, room_name: str) -> Dict:
-        """Holt aktuelle Klimadaten für einen Raum
-        
+        """Holt aktuelle Klimadaten für einen Raum.
+
+        Priorität:
+        1. Sensor-Mapping (ventilation_sensor_mapping.json) – nutzt den explizit gespeicherten Sensor
+        2. Zone-basierte Auto-Discovery – Fallback wenn kein Mapping vorhanden
+
         CO2-Werte werden nur gesammelt wenn der Raum einen CO2-Sensor im Sensor-Mapping hat.
         """
         climate = {'temp': None, 'humidity': None, 'co2': None}
-        
+
         if not room_name or not self.engine or not self.engine.platform:
             return climate
-        
+
         # Prüfe ob dieser Raum einen CO2-Sensor im Mapping hat
         rooms_with_co2 = self._get_rooms_with_co2_sensors()
         room_has_co2_sensor = room_name.lower() in rooms_with_co2
-            
+
         try:
-            # Hole alle Geräte
+            # Hole alle Geräte (einmalig für beide Strategien)
             if hasattr(self.engine.platform, '_device_cache'):
                 self.engine.platform._refresh_device_cache()
                 devices = list(self.engine.platform._device_cache.values()) if isinstance(
                     self.engine.platform._device_cache, dict) else self.engine.platform._device_cache
             else:
                 devices = self.engine.platform.get_states() or []
-            
+
+            # Lookup-Dict: device_id → device (für Mapping-Strategie)
+            device_lookup = {d.get('id', ''): d for d in devices if isinstance(d, dict)}
+
+            # ── Strategie 1: Sensor-Mapping bevorzugen ─────────────────────────────
+            try:
+                if self._sensor_mapping_file.exists():
+                    with open(self._sensor_mapping_file, 'r') as f:
+                        mapping_data = json.load(f)
+
+                    room_lower = room_name.lower()
+                    mapped_sensors = None
+
+                    # Suche Raum im Mapping anhand des 'name'-Felds (exakter Match)
+                    for _room_id, sensors in mapping_data.get('rooms', {}).items():
+                        if sensors.get('name', '').lower() == room_lower:
+                            mapped_sensors = sensors
+                            break
+
+                    if mapped_sensors:
+                        # Temperatur aus Mapping
+                        temp_id = mapped_sensors.get('temperature', '')
+                        if temp_id and temp_id not in ('', 'none') and temp_id in device_lookup:
+                            dev = device_lookup[temp_id]
+                            caps = dev.get('capabilitiesObj', {})
+                            val = caps.get('measure_temperature', {}).get('value')
+                            if val is not None and -20 < val < 45:
+                                climate['temp'] = val
+                                logger.debug(f"Mapped temp für '{room_name}': {val}°C von '{dev.get('name')}'")
+                            elif val is not None:
+                                logger.warning(
+                                    f"Mapping-Sensor '{dev.get('name')}' meldet {val}°C für '{room_name}' – implausibel, ignoriert"
+                                )
+
+                        # Luftfeuchtigkeit aus Mapping
+                        hum_id = mapped_sensors.get('humidity', '')
+                        if hum_id and hum_id not in ('', 'none') and hum_id in device_lookup:
+                            dev = device_lookup[hum_id]
+                            caps = dev.get('capabilitiesObj', {})
+                            val = caps.get('measure_humidity', {}).get('value')
+                            if val is not None and 0 <= val <= 100:
+                                climate['humidity'] = val
+                                logger.debug(f"Mapped humidity für '{room_name}': {val}% von '{dev.get('name')}'")
+
+                        # CO2 aus Mapping (nur wenn Raum CO2-Sensor hat)
+                        if room_has_co2_sensor:
+                            co2_id = mapped_sensors.get('co2', '')
+                            if co2_id and co2_id not in ('', 'none') and co2_id in device_lookup:
+                                dev = device_lookup[co2_id]
+                                caps = dev.get('capabilitiesObj', {})
+                                val = caps.get('measure_co2', {}).get('value')
+                                if val is not None and 200 < val < 10000:
+                                    climate['co2'] = val
+
+                        # Wenn alle benötigten Werte per Mapping gefunden → fertig
+                        if climate['temp'] is not None and climate['humidity'] is not None:
+                            return climate
+            except Exception as e:
+                logger.debug(f"Sensor-Mapping-Lookup für '{room_name}' fehlgeschlagen: {e}")
+
+            # ── Strategie 2: Zone-basierte Auto-Discovery ───────────────────────────
+            # (nur für Felder die per Mapping noch nicht gefunden wurden)
+
             # Hole Zone-Mapping
             zones = {}
             try:
                 zone_dict = self.engine.platform.get_zones() or {}
-                # Homey API gibt {zone_id: zone_data, ...} zurück
                 if isinstance(zone_dict, dict):
                     for zone_id, zone_data in zone_dict.items():
                         if isinstance(zone_data, dict):
                             zones[zone_id] = zone_data.get('name', '')
             except:
                 pass
-            
+
             room_lower = room_name.lower()
-            
-            # Suche Sensoren im Raum (mehrere Matching-Strategien)
+
             for device in devices:
                 if not isinstance(device, dict):
                     continue
-                
-                # Strategie 1: Zone-Name stimmt überein
+
                 zone_id = device.get('zone')
                 device_room = zones.get(zone_id, '').lower()
-                
-                # Strategie 2: Gerätename enthält Raumnamen
                 device_name = device.get('name', '').lower()
-                
-                # Prüfe ob das Gerät zum Raum passt
+
                 room_match = (
-                    room_lower in device_room or 
+                    room_lower in device_room or
                     device_room in room_lower or
                     room_lower in device_name
                 )
-                
+
                 if not room_match:
                     continue
-                    
+
                 caps = device.get('capabilitiesObj', {})
-                
-                # Temperatur
+
+                # Temperatur – nur wenn noch nicht per Mapping gefunden
                 if climate['temp'] is None and 'measure_temperature' in caps:
                     val = caps['measure_temperature'].get('value')
-                    if val is not None and -40 < val < 60:  # Plausibilitätsprüfung
+                    if val is not None and -20 < val < 45:
                         climate['temp'] = val
-                
-                # Luftfeuchtigkeit
+                    elif val is not None and val >= 45:
+                        logger.debug(f"Auto-Discovery: {val}°C von '{device.get('name')}' in '{room_name}' abgelehnt (Chip-Temp)")
+
+                # Luftfeuchtigkeit – nur wenn noch nicht per Mapping gefunden
                 if climate['humidity'] is None and 'measure_humidity' in caps:
                     val = caps['measure_humidity'].get('value')
                     if val is not None and 0 <= val <= 100:
                         climate['humidity'] = val
-                
-                # CO2 - NUR sammeln wenn der Raum einen CO2-Sensor im Mapping hat
-                # Dies verhindert falsche CO2-Zuordnungen von anderen Räumen
+
+                # CO2 – NUR sammeln wenn der Raum einen CO2-Sensor im Mapping hat
                 if room_has_co2_sensor and climate['co2'] is None and 'measure_co2' in caps:
-                    # Raum-Match: Zone enthält Raumnamen ODER Raum enthält Zone-Namen
-                    # z.B. "schlafzimmer" matches "schlafzimmer (doppelbett)"
-                    # WICHTIG: Leere Strings ausschließen und Mindestlänge prüfen
                     co2_room_match = False
-                    if device_room and len(device_room) >= 3:  # Zone muss mindestens 3 Zeichen haben
+                    if device_room and len(device_room) >= 3:
                         co2_room_match = (
-                            device_room == room_lower or  # Exaktes Zone-Match
-                            room_lower in device_room or  # Raum ist Teil der Zone
-                            (len(device_room) >= 3 and device_room in room_lower)  # Zone ist Teil des Raums
+                            device_room == room_lower or
+                            room_lower in device_room or
+                            (len(device_room) >= 3 and device_room in room_lower)
                         )
-                    # Alternativ: CO2-Monitor mit explizitem Raumnamen im Gerätenamen
                     if not co2_room_match and 'co2' in device_name.lower():
                         co2_room_match = room_lower in device_name
-                    
+
                     if co2_room_match:
                         val = caps['measure_co2'].get('value')
-                        if val is not None and 200 < val < 10000:  # Plausibilitätsprüfung
+                        if val is not None and 200 < val < 10000:
                             climate['co2'] = val
-                            logger.debug(f"CO2 for '{room_name}' from device '{device.get('name')}' in zone '{device_room}': {val} ppm")
-            
-            # Wenn CO2 noch nicht gefunden UND Raum hat CO2-Sensor im Mapping,
-            # suche nach CO2-Sensor mit passendem Namen
+                            logger.debug(f"CO2 für '{room_name}' von '{device.get('name')}' (Zone '{device_room}'): {val} ppm")
+
+            # Wenn CO2 noch nicht gefunden, suche nach CO2-Gerät mit Raumnamen im Gerätenamen
             if room_has_co2_sensor and climate['co2'] is None:
                 for device in devices:
                     if not isinstance(device, dict):
                         continue
                     device_name = device.get('name', '').lower()
                     caps = device.get('capabilitiesObj', {})
-                    
-                    # Suche nach CO2-Monitor der zum Raum passt
-                    if 'co2' in device_name and room_lower in device_name:
-                        if 'measure_co2' in caps:
-                            val = caps['measure_co2'].get('value')
-                            if val is not None and 200 < val < 10000:
-                                climate['co2'] = val
-                                logger.debug(f"CO2 for '{room_name}' from device by name '{device.get('name')}': {val} ppm")
-                                break
-                    
+                    if 'co2' in device_name and room_lower in device_name and 'measure_co2' in caps:
+                        val = caps['measure_co2'].get('value')
+                        if val is not None and 200 < val < 10000:
+                            climate['co2'] = val
+                            logger.debug(f"CO2 für '{room_name}' von '{device.get('name')}' (Namens-Match): {val} ppm")
+                            break
+
         except Exception as e:
             logger.debug(f"Error getting room climate for {room_name}: {e}")
-            
+
         return climate
 
     def _get_outdoor_climate(self) -> Dict:

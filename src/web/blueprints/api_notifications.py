@@ -58,6 +58,8 @@ def init_notifications_blueprint(engine, db, config):
                     'enabled': config.get('openai', {}).get('enabled', False),
                     'api_key': '***' if config.get('openai', {}).get('api_key') else '',
                     'model': config.get('openai', {}).get('model', 'gpt-4o-mini'),
+                    'daily_call_limit': config.get('openai', {}).get('daily_call_limit', 10),
+                    'cache_ttl_seconds': config.get('openai', {}).get('cache_ttl_seconds', 3600),
                     'has_credentials': bool(config.get('openai', {}).get('api_key'))
                 },
                 'default_priority': config.get('default_priority', 0),
@@ -113,6 +115,11 @@ def init_notifications_blueprint(engine, db, config):
                 
                 if data['openai'].get('api_key') and data['openai']['api_key'] != '***':
                     config['openai']['api_key'] = data['openai']['api_key']
+                
+                if 'daily_call_limit' in data['openai']:
+                    config['openai']['daily_call_limit'] = int(data['openai']['daily_call_limit'])
+                if 'cache_ttl_seconds' in data['openai']:
+                    config['openai']['cache_ttl_seconds'] = int(data['openai']['cache_ttl_seconds'])
             
             # Update andere Einstellungen
             if 'default_priority' in data:

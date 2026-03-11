@@ -978,7 +978,9 @@ class Database:
     # === BADEZIMMER AUTOMATISIERUNG - METHODEN ===
 
     def start_bathroom_event(self, humidity: float, temperature: float,
-                            motion: bool, door_closed: bool) -> int:
+                            motion: bool, door_closed: bool,
+                            shower_start_humidity: float = None,
+                            detected_by_shower_sensor: bool = False) -> int:
         """Startet ein neues Badezimmer-Event (z.B. Duschen)"""
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -988,8 +990,9 @@ class Database:
         cursor.execute("""
             INSERT INTO bathroom_events
             (start_time, start_humidity, avg_temperature, motion_detected,
-             door_closed, day_of_week, hour_of_day, event_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'shower')
+             door_closed, day_of_week, hour_of_day, event_type,
+             shower_start_humidity, detected_by_shower_sensor)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'shower', ?, ?)
         """, (
             now,
             humidity,
@@ -997,7 +1000,9 @@ class Database:
             motion,
             door_closed,
             now.weekday(),  # 0=Monday, 6=Sunday
-            now.hour
+            now.hour,
+            shower_start_humidity,
+            detected_by_shower_sensor
         ))
 
         conn.commit()

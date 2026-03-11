@@ -2348,6 +2348,8 @@ async function loadNotificationConfig() {
             document.getElementById('chatgpt-style').value = config.chatgpt_style || 'freundlich';
             document.getElementById('chatgpt-max-length').value = config.max_text_length || 100;
             document.getElementById('chatgpt-custom-prompt').value = config.custom_prompt || '';
+            document.getElementById('chatgpt-daily-limit').value = config.openai?.daily_call_limit ?? 10;
+            document.getElementById('chatgpt-cache-ttl').value = config.openai?.cache_ttl_seconds ?? 3600;
             
             // Einstellungen
             document.getElementById('default-priority').value = config.default_priority || 0;
@@ -2533,7 +2535,9 @@ async function saveNotificationConfig() {
             openai: {
                 enabled: document.getElementById('openai-enabled').checked,
                 api_key: document.getElementById('openai-api-key').value,
-                model: document.getElementById('openai-model').value
+                model: document.getElementById('openai-model').value,
+                daily_call_limit: parseInt(document.getElementById('chatgpt-daily-limit').value),
+                cache_ttl_seconds: parseInt(document.getElementById('chatgpt-cache-ttl').value)
             },
             default_priority: parseInt(document.getElementById('default-priority').value),
             quiet_hours_start: document.getElementById('quiet-hours-start').value,

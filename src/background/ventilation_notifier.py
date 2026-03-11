@@ -936,6 +936,10 @@ class VentilationNotifier:
                     
                     temp = data.get('temp')
                     if temp:
+                        # Zweite Plausibilitätsprüfung: unrealistische Werte nie alarmieren
+                        if not (-20 < temp < 45):
+                            logger.debug(f"Skipping temperature alert for '{room}': unrealistic value {temp}°C")
+                            continue
                         # Prüfe auf extreme Temperaturen oder große Abweichung vom Komfortbereich
                         # Komfortbereich: 18-23°C
                         comfort_min = 18
@@ -1512,7 +1516,10 @@ class VentilationNotifier:
 
         # Daten aus Mapping holen
         for room_id, sensors in room_mapping.items():
-            room_name = room_names.get(room_id, room_id)
+            # Nutze 'name'-Feld aus dem Mapping als primäre Quelle für den Anzeigenamen
+            # room_names hat UUID-Keys, Mapping hat String-Keys → Mismatch vermeiden
+            pretty_name = sensors.get('name', '')
+            room_name = room_names.get(room_id) or pretty_name or room_id
             
             # Überspringe versteckte Räume (z.B. "Heim" = Außenbereich)
             if room_id in hidden_rooms or room_name in hidden_rooms:
@@ -1530,6 +1537,12 @@ class VentilationNotifier:
             temp = self._get_sensor_value_by_id(temp_sensor_id, 'temperature')
             humidity = self._get_sensor_value_by_id(humidity_sensor_id, 'humidity')
             co2 = self._get_sensor_value_by_id(sensors.get('co2'), 'co2')
+
+            # Plausibilitätsprüfung: Chip-Eigentemperaturen (>45°C) von
+            # Luftqualitätssensoren (PM2.5 etc.) als ungültig markieren
+            if temp is not None and not (-20 < temp < 45):
+                logger.warning(f"Unrealistic temperature {temp}°C from mapped sensor in '{room_name}' – discarding (likely chip temp)")
+                temp = None
             
             if temp is not None or humidity is not None or co2 is not None:
                 if room_name not in rooms_data:
@@ -1551,11 +1564,16 @@ class VentilationNotifier:
             temp_id = sensors.get('temperature', '')
             humidity_id = sensors.get('humidity', '')
             co2_id = sensors.get('co2', '')
-            
+
             if temp_id or humidity_id or co2_id:
-                room_display_name = room_names.get(room_id, room_id)
+                # room_names nutzt UUID-Keys, Mapping nutzt String-Keys → nutze 'name'-Feld als Quelle
+                pretty_name = sensors.get('name', '')
+                room_display_name = room_names.get(room_id) or pretty_name or room_id
                 mapped_rooms_lower.add(room_display_name.lower())
                 mapped_rooms_lower.add(room_id.lower())
+                # Auch den Pretty-Name aus dem Mapping-Entry hinzufügen (sichert korrekte Zone-Filterung)
+                if pretty_name:
+                    mapped_rooms_lower.add(pretty_name.lower())
         
         platform = self._platform
         if platform:
@@ -1602,7 +1620,7 @@ class VentilationNotifier:
                     # Temperatur - NUR wenn kein Mapping existiert
                     if 'measure_temperature' in caps and 'temp' not in rooms_data[room_name]:
                         val = caps['measure_temperature'].get('value')
-                        if val is not None and -40 < val < 60:
+                        if val is not None and -20 < val < 45:  # >45°C = Chip-Eigentemp
                             rooms_data[room_name]['temp'] = val
                     
                     # Luftfeuchtigkeit - NUR wenn kein Mapping existiert

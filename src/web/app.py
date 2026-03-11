@@ -4793,11 +4793,19 @@ class WebInterface:
                         continue
                     
                     # Suche Mapping (versuche verschiedene Keys)
-                    normalized_name = room_name.lower().replace(' ', '_').replace('(', '_').replace(')', '')
+                    # Normalisierung: Klammern entfernen, Leerzeichen → _ , doppelte __ zusammenfassen
+                    # z.B. "Schlafzimmer (Einzelbett)" → "schlafzimmer_einzelbett"
+                    import re as _re
+                    normalized_name = _re.sub(r'_+', '_', 
+                        room_name.lower().replace('(', '').replace(')', '').replace(' ', '_')
+                    ).strip('_')
                     config = (room_mapping.get(room_id) or 
                               room_mapping.get(normalized_name) or 
                               room_mapping.get(room_name.lower()) or
-                              room_mapping.get(room_name))
+                              room_mapping.get(room_name) or
+                              # Fallback: match über 'name'-Feld im Mapping-Eintrag
+                              next((s for s in room_mapping.values() 
+                                    if s.get('name', '').lower() == room_name.lower()), None))
                     
                     room_data = {
                         'id': room_id,
@@ -6083,6 +6091,20 @@ class WebInterface:
                             'available': state.get('attributes', {}).get('available', state.get('available', True))
                         }
 
+                # Shower Sensor (Duschsensor - für prädiktive Frühwarnung)
+                if config.get('shower_humidity_sensor'):
+                    sensor_id = config['shower_humidity_sensor']
+                    state = self.engine.platform.get_state(sensor_id)
+                    if state:
+                        devices_status['shower_sensor'] = {
+                            'id': sensor_id,
+                            'name': state.get('attributes', {}).get('friendly_name', state.get('name', sensor_id)),
+                            'value': self.engine._extract_humidity_value(state),
+                            'unit': '%',
+                            'available': state.get('available', True),
+                            'predictive': config.get('shower_sensor_predictive', True)
+                        }
+
                 return jsonify({'devices': devices_status})
 
             except Exception as e:
@@ -6538,6 +6560,105 @@ class WebInterface:
             except Exception as e:
                 logger.error(f"Error creating manual bathroom event: {e}")
                 return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/bathroom/stats')
+        def api_bathroom_stats_compat():
+            """Kompatibilitäts-Endpunkt: Dusch-Statistiken für /luftentfeuchten JS"""
+            try:
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+
+                days_back = int(request.args.get('days', 30))
+                cutoff = f"datetime('now', '-{days_back} days')"
+
+                cursor.execute(f"""
+                    SELECT COUNT(*), AVG(duration_minutes), AVG(peak_humidity - start_humidity)
+                    FROM bathroom_events
+                    WHERE start_time >= {cutoff}
+                      AND duration_minutes IS NOT NULL
+                """)
+                row = cursor.fetchone()
+                total = row[0] or 0
+                avg_duration = round(row[1], 1) if row[1] else None
+                avg_increase = round(row[2], 1) if row[2] else None
+
+                return jsonify({
+                    'success': True,
+                    'total_showers': total,
+                    'avg_duration_minutes': avg_duration,
+                    'avg_humidity_increase': avg_increase
+                })
+            except Exception as e:
+                logger.error(f"Error fetching bathroom stats: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/bathroom/sensors/available')
+        def api_bathroom_sensors_available():
+            """Kompatibilitäts-Endpunkt: Verfügbare Sensoren für Dusch-Konfiguration"""
+            try:
+                sensors = []
+                if self.engine and self.engine.platform:
+                    all_devices = self.engine.platform.get_all_devices()
+                    for device in all_devices:
+                        caps = device.get('capabilitiesObj', {}) or {}
+                        if 'measure_humidity' in caps or 'measure_temperature' in caps:
+                            sensors.append({
+                                'id': device.get('id'),
+                                'name': device.get('name', 'Unbekannt'),
+                                'zone': device.get('zoneName', device.get('zone', '')),
+                                'has_humidity': 'measure_humidity' in caps,
+                                'has_temperature': 'measure_temperature' in caps,
+                                'current_humidity': caps.get('measure_humidity', {}).get('value'),
+                                'current_temperature': caps.get('measure_temperature', {}).get('value'),
+                            })
+                return jsonify({'success': True, 'sensors': sensors})
+            except Exception as e:
+                logger.error(f"Error fetching available sensors: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/bathroom/sensors/config', methods=['GET', 'POST'])
+        def api_bathroom_sensors_config():
+            """Kompatibilitäts-Endpunkt: Dusch-Sensor-Konfiguration lesen/schreiben"""
+            import yaml
+            config_path = Path('config/config.yaml')
+
+            if request.method == 'GET':
+                try:
+                    cfg = {}
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            cfg = yaml.safe_load(f) or {}
+                    shower_sensors = cfg.get('collectors', {}).get('bathroom', {}).get('shower_sensors', {})
+                    return jsonify({'success': True, 'shower_sensors': shower_sensors})
+                except Exception as e:
+                    logger.error(f"Error reading shower sensor config: {e}")
+                    return jsonify({'error': str(e)}), 500
+
+            elif request.method == 'POST':
+                try:
+                    data = request.json or {}
+                    shower_sensors = data.get('shower_sensors', {})
+
+                    cfg = {}
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            cfg = yaml.safe_load(f) or {}
+
+                    if 'collectors' not in cfg:
+                        cfg['collectors'] = {}
+                    if 'bathroom' not in cfg['collectors']:
+                        cfg['collectors']['bathroom'] = {}
+                    cfg['collectors']['bathroom']['shower_sensors'] = shower_sensors
+
+                    config_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(config_path, 'w') as f:
+                        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+                    logger.info("Shower sensor config saved via /api/bathroom/sensors/config")
+                    return jsonify({'success': True, 'message': 'Sensor-Konfiguration gespeichert'})
+                except Exception as e:
+                    logger.error(f"Error saving shower sensor config: {e}")
+                    return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/luftentfeuchten/data-stats')
         def api_bathroom_data_stats():

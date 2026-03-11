@@ -1077,6 +1077,27 @@
                         </div>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label for="chatgpt-daily-limit">💰 Tageslimit (ChatGPT-Aufrufe):</label>
+                    <select id="chatgpt-daily-limit">
+                        <option value="0">♾️ Unbegrenzt</option>
+                        <option value="5">5 Aufrufe/Tag</option>
+                        <option value="10">10 Aufrufe/Tag (empfohlen)</option>
+                        <option value="20">20 Aufrufe/Tag</option>
+                        <option value="50">50 Aufrufe/Tag</option>
+                    </select>
+                    <small>Schützt vor unerwarteten Kosten. 0 = kein Limit.</small>
+                </div>
+                <div class="form-group">
+                    <label for="chatgpt-cache-ttl">🔄 Cache-Dauer (Texte wiederverwenden):</label>
+                    <select id="chatgpt-cache-ttl">
+                        <option value="1800">30 Minuten</option>
+                        <option value="3600">1 Stunde (Standard)</option>
+                        <option value="7200">2 Stunden</option>
+                        <option value="86400">24 Stunden</option>
+                    </select>
+                    <small>Gleiche Events in diesem Zeitraum werden nicht neu generiert.</small>
+                </div>
                 <div id="openai-status" style="margin: 10px 0; padding: 10px; border-radius: 6px; display: none;"></div>
             </form>
         </div>

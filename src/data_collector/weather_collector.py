@@ -149,13 +149,28 @@ class WeatherCollector:
         """
         Hauptmethode - holt OUTDOOR-Wetterdaten
         NUR von konfigurierten Außensensoren!
+        Ergänzt fehlende Details (Wind, Druck, Gefühlt) von OpenWeatherMap.
         """
         # NUR konfigurierte Außensensoren nutzen!
         weather = self.get_configured_outdoor_sensors(platform_collector)
         if weather:
             logger.info(f"Weather data from configured outdoor sensors: {weather.get('temperature')}°C")
+            # Ergänze fehlende Details von OpenWeatherMap (Wind, Luftdruck, Gefühlt, Bewölkung)
+            if self.api_key:
+                owm = self.get_openweathermap_data()
+                if owm:
+                    # Sensor-Temperatur/Feuchte behalten, Details von OWM übernehmen
+                    weather.setdefault('feels_like', owm.get('feels_like'))
+                    weather.setdefault('wind_speed', owm.get('wind_speed'))
+                    weather.setdefault('pressure', owm.get('pressure'))
+                    weather.setdefault('clouds', owm.get('clouds'))
+                    if weather.get('weather_condition') == 'unknown':
+                        weather['weather_condition'] = owm.get('weather_condition', 'unknown')
+                    if not weather.get('weather_description') or weather.get('weather_description', '').startswith('Daten von'):
+                        weather['weather_description'] = owm.get('weather_description', '')
+                    logger.info(f"Weather details enriched from OpenWeatherMap: wind={owm.get('wind_speed')}m/s, pressure={owm.get('pressure')}hPa")
             return weather
-        
+
         logger.warning("No configured outdoor sensors found - no weather data available")
         return None
     

@@ -36,6 +36,16 @@ class NotificationService:
         self.openai_model = openai_config.get('model', 'gpt-4o-mini')
         self.max_text_length = notifications_config.get('max_text_length', 100)
         self.custom_prompt = notifications_config.get('custom_prompt', '')
+
+        # Kosten-Begrenzung: Cache + Tageslimit
+        # Cache: (event_type, cache_key) -> (text, timestamp)
+        self._gpt_cache: Dict[str, tuple] = {}
+        # Tageslimit: max. Anzahl ChatGPT-Aufrufe pro Tag (0 = unbegrenzt)
+        self._gpt_daily_limit = openai_config.get('daily_call_limit', 10)
+        self._gpt_calls_today = 0
+        self._gpt_calls_date = datetime.now().date()
+        # Cache-TTL: wie lange ein generierter Text wiederverwendet wird (Sekunden)
+        self._gpt_cache_ttl = openai_config.get('cache_ttl_seconds', 3600)  # 1 Stunde default
         
         # Notification Preferences
         self.default_priority = notifications_config.get('default_priority', 0)
@@ -90,12 +100,33 @@ class NotificationService:
         """
         if not self.openai_enabled:
             return self._get_fallback_text(event_type, context)
-        
+
+        # Tageslimit zurücksetzen wenn neuer Tag
+        today = datetime.now().date()
+        if today != self._gpt_calls_date:
+            self._gpt_calls_today = 0
+            self._gpt_calls_date = today
+
+        # Tageslimit prüfen
+        if self._gpt_daily_limit > 0 and self._gpt_calls_today >= self._gpt_daily_limit:
+            logger.info(f"ChatGPT daily limit ({self._gpt_daily_limit}) reached – using fallback text")
+            return self._get_fallback_text(event_type, context)
+
+        # Cache-Key aus Event-Typ + wichtigsten Kontext-Werten (Raum, grobe Temp)
+        cache_key = self._build_cache_key(event_type, context)
+        cached = self._gpt_cache.get(cache_key)
+        if cached:
+            cached_text, cached_at = cached
+            age = (datetime.now() - cached_at).total_seconds()
+            if age < self._gpt_cache_ttl:
+                logger.debug(f"ChatGPT cache hit ({int(age)}s old): {cache_key}")
+                return cached_text
+
         try:
             # Baue Prompt basierend auf Event-Typ
             system_prompt = self._build_system_prompt(style)
             user_prompt = self._build_user_prompt(event_type, context)
-            
+
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
@@ -108,44 +139,48 @@ class NotificationService:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "max_tokens": 150,
+                    "max_tokens": 80,
                     "temperature": 0.7
                 },
                 timeout=10
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 generated_text = data['choices'][0]['message']['content'].strip()
-                logger.debug(f"ChatGPT generated: {generated_text}")
+                # Im Cache speichern + Zähler erhöhen
+                self._gpt_cache[cache_key] = (generated_text, datetime.now())
+                self._gpt_calls_today += 1
+                logger.debug(f"ChatGPT generated ({self._gpt_calls_today}/{self._gpt_daily_limit or 'unlimited'}/day): {generated_text}")
                 return generated_text
             else:
                 logger.warning(f"OpenAI API error: {response.status_code}")
                 return self._get_fallback_text(event_type, context)
-                
+
         except Exception as e:
             logger.error(f"Error generating text with ChatGPT: {e}")
             return self._get_fallback_text(event_type, context)
+
+    def _build_cache_key(self, event_type: str, context: Dict[str, Any]) -> str:
+        """Baut einen Cache-Key aus Event-Typ und den wichtigsten Kontext-Werten.
+        Temperatur wird auf ganze Grad gerundet damit ähnliche Werte den gleichen Key erzeugen."""
+        room = str(context.get('room', context.get('window_name', '')))
+        temp = context.get('current_temp') or context.get('indoor_temp')
+        temp_rounded = str(round(temp)) if temp is not None else ''
+        status = str(context.get('status', ''))
+        return f"{event_type}:{room}:{temp_rounded}:{status}"
     
     def _build_system_prompt(self, style: str) -> str:
-        """Baut den System-Prompt für ChatGPT"""
-        # Basis-Styles mit Längenbeschränkung
-        max_chars = self.max_text_length
-        length_hint = f"Maximal {max_chars} Zeichen."
-        
+        """Baut den System-Prompt für ChatGPT (kurz gehalten um Input-Tokens zu sparen)"""
         styles = {
-            "freundlich": f"Du bist ein freundlicher Smart-Home-Assistent. Schreibe kurze, hilfreiche Benachrichtigungen auf Deutsch. {length_hint}",
-            "kurz": f"Schreibe sehr kurze Smart-Home-Benachrichtigungen auf Deutsch. Maximal 1 Satz, keine Emojis. {length_hint}",
-            "technisch": f"Schreibe präzise, technische Smart-Home-Benachrichtigungen auf Deutsch. Verwende genaue Werte. {length_hint}",
-            "witzig": f"Du bist ein witziger Smart-Home-Assistent. Schreibe humorvolle aber informative Benachrichtigungen auf Deutsch. {length_hint}"
+            "freundlich": "Kurze Smart-Home-Benachrichtigung auf Deutsch. Max 1-2 Sätze.",
+            "kurz": "Sehr kurze Smart-Home-Meldung auf Deutsch. 1 Satz, kein Emoji.",
+            "technisch": "Technische Smart-Home-Meldung auf Deutsch mit genauen Werten. Max 2 Sätze.",
+            "witzig": "Witzige Smart-Home-Meldung auf Deutsch. Max 2 Sätze."
         }
-        
         base_prompt = styles.get(style, styles["freundlich"])
-        
-        # Füge benutzerdefinierten Prompt hinzu
         if self.custom_prompt:
-            base_prompt += f" Zusätzliche Anweisungen: {self.custom_prompt}"
-        
+            base_prompt += f" {self.custom_prompt}"
         return base_prompt
     
     def _build_user_prompt(self, event_type: str, context: Dict[str, Any]) -> str:

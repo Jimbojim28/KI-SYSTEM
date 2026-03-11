@@ -258,6 +258,12 @@ class ConfigLoader:
             if 'weather' not in self.config['external_data']:
                 self.config['external_data']['weather'] = {}
             self.config['external_data']['weather']['api_key'] = weather_key
+            # Auch platforms.weather.api_key setzen (wird von der Engine zuerst gelesen)
+            if 'platforms' not in self.config:
+                self.config['platforms'] = {}
+            if 'weather' not in self.config['platforms']:
+                self.config['platforms']['weather'] = {}
+            self.config['platforms']['weather']['api_key'] = weather_key
 
         # Energy API
         current_energy_key = self.config.get('external_data', {}).get('energy_prices', {}).get('api_key')

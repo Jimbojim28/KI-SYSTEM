@@ -81,6 +81,7 @@ class BathroomAutomation:
         
         # Duschsensor-Historie (zusätzlicher Sensor direkt an der Dusche)
         self.shower_sensor_history = []
+        self.last_shower_sensor_humidity = None  # Letzter bekannter Duschsensor-Wert
         self.shower_sensor_enabled = bool(config.get('shower_humidity_sensor'))  # Aktiviert wenn Sensor konfiguriert
         self.shower_sensor_rate_threshold = config.get('rate_threshold', 1.2)  # Standard: 1.2% pro Minute (niedriger für schnellere Reaktion)
         self.shower_sensor_min_humidity = config.get('shower_sensor_min_humidity', 45.0)  # Mindest-Luftfeuchtigkeit für Duscherkennung via Duschsensor
@@ -196,6 +197,17 @@ class BathroomAutomation:
                 if shower_sensor_humidity > old_val + 0.8:  # Mindestens +0.8% Anstieg
                     shower_sensor_warning = True
                     logger.debug(f"🔔 Shower sensor early warning: {shower_sensor_humidity}% (trend up from {old_val}%)")
+
+            # ShowerPredictor: Tiefere Analyse des Duschsensor-Trends
+            if self.shower_predictor and len(self.shower_sensor_history) >= 2:
+                signal = self.shower_predictor.check_pre_shower_signal(
+                    self.shower_sensor_history,
+                    min_humidity=self.shower_sensor_min_humidity,
+                    min_rate=self.shower_sensor_rate_threshold
+                )
+                if signal.get('shower_imminent') and not shower_sensor_warning:
+                    shower_sensor_warning = True
+                    logger.debug(f"🔔 ShowerPredictor Frühwarnung: {signal['reason']}")
 
         if shower_active and not self.shower_detected:
             logger.info("🚿 Shower detected! Starting dehumidifier...")
@@ -565,12 +577,18 @@ class BathroomAutomation:
             # Duschsensor ist sehr verlässlich - wenn dort schneller Anstieg erkannt wird, ist es sehr wahrscheinlich Duschen
             # VERBESSERT: Niedrigerer Schwellwert (konfigurierbar, Standard: 45%)
             if shower_sensor_humidity and shower_sensor_humidity > self.shower_sensor_min_humidity:
+                self.last_shower_sensor_humidity = shower_sensor_humidity
                 logger.info(f"🚿 Shower detected via shower sensor! (shower: {shower_sensor_humidity}%, main: {humidity}%, threshold: {self.shower_sensor_min_humidity}%)")
                 return True
             # ALTERNATIV: Auch bei niedrigerer Luftfeuchtigkeit, wenn Hauptsensor bereits erhöht ist
             elif shower_sensor_humidity and humidity > 55:  # Hauptsensor zeigt auch Anstieg
+                self.last_shower_sensor_humidity = shower_sensor_humidity
                 logger.info(f"🚿 Shower detected via shower sensor (combined)! (shower: {shower_sensor_humidity}%, main: {humidity}%)")
                 return True
+
+        # Duschsensor-Wert for Logging merken (auch wenn kein schneller Anstieg)
+        if shower_sensor_humidity is not None:
+            self.last_shower_sensor_humidity = shower_sensor_humidity
         
         # Option A: Hohe Luftfeuchtigkeit UND (schneller Anstieg ODER Bewegung)
         if high_humidity and (humidity_rising_fast or motion):
@@ -968,11 +986,20 @@ class BathroomAutomation:
             motion = self._check_motion(platform)
             door_closed = self._check_door(platform)
 
+            # Prüfe ob Event via Duschsensor erkannt wurde
+            detected_by_shower = (
+                self.shower_sensor_enabled and
+                self.last_shower_sensor_humidity is not None and
+                self.last_shower_sensor_humidity > self.shower_sensor_min_humidity
+            )
+
             self.current_event_id = self.db.start_bathroom_event(
                 humidity=humidity,
                 temperature=temperature,
                 motion=motion,
-                door_closed=door_closed
+                door_closed=door_closed,
+                shower_start_humidity=self.last_shower_sensor_humidity,
+                detected_by_shower_sensor=detected_by_shower
             )
 
             self.event_start_time = datetime.now()

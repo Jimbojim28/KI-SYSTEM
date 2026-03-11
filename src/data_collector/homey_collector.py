@@ -335,8 +335,8 @@ class HomeyCollector(SmartHomeCollector):
         # Mapping von Home Assistant Domains zu Homey Classes
         domain_mapping = {
             'light': ['light', 'socket'],
-            'sensor': ['sensor'],
-            'climate': ['thermostat', 'heater'],
+            'sensor': ['sensor', 'other'],
+            'climate': ['thermostat', 'heater', 'radiator', 'boiler'],
             'switch': ['socket', 'switch'],
             'binary_sensor': ['sensor']
         }
@@ -344,12 +344,23 @@ class HomeyCollector(SmartHomeCollector):
         for device in devices_list:
             device_id = device.get('id')
             device_class = device.get('class', '').lower()
+            capabilities = device.get('capabilitiesObj', {}) or {}
 
             if domain:
                 # Filter nach Domain
                 valid_classes = domain_mapping.get(domain, [])
                 if device_class not in valid_classes:
-                    continue
+                    # Fallback: Capability-basierte Erkennung für climate-Geräte
+                    if domain == 'climate' and (
+                        'target_temperature' in capabilities or
+                        'thermostat_mode' in capabilities
+                    ):
+                        pass  # Trotzdem aufnehmen
+                    # Fallback: temperature-Capability für sensor-Domain
+                    elif domain == 'sensor' and 'measure_temperature' in capabilities:
+                        pass  # Trotzdem aufnehmen
+                    else:
+                        continue
 
             entity_ids.append(device_id)
 

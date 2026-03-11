@@ -396,3 +396,104 @@ class ShowerPredictor:
                 'reason': 'Außerhalb des Vorheiz-Fensters',
                 'target_time': target_time.isoformat()
             }
+
+    def check_pre_shower_signal(self, shower_sensor_history: list,
+                                min_humidity: float = 50.0,
+                                min_rate: float = 0.8) -> Dict:
+        """
+        Wertet den aktuellen Duschsensor-Trend für Echtzeit-Frühwarnung aus.
+
+        Wenn der Duschsensor schnell ansteigt, deutet das auf eine beginnende
+        Dusche hin – unabhängig von der historischen Tageszeit-Vorhersage.
+
+        Args:
+            shower_sensor_history: Liste von {'time': datetime, 'value': float}
+            min_humidity:          Mindest-Feuchte am Duschsensor (Standard 50%)
+            min_rate:              Mindestanstieg %/min für Frühwarnung (Standard 0.8)
+
+        Returns:
+            Dict mit 'shower_imminent', 'confidence', 'reason', 'current_value'
+        """
+        if not shower_sensor_history or len(shower_sensor_history) < 2:
+            return {'shower_imminent': False, 'confidence': 0.0,
+                    'reason': 'Nicht genug Sensor-Daten', 'current_value': None}
+
+        current = shower_sensor_history[-1]
+        current_value = current['value']
+        current_time = current['time']
+
+        # Vergleiche mit ältestem verfügbaren Wert (max 5 Messungen zurück)
+        lookback = min(5, len(shower_sensor_history) - 1)
+        old = shower_sensor_history[-1 - lookback]
+        time_diff_minutes = max((current_time - old['time']).total_seconds() / 60, 0.1)
+        humidity_diff = current_value - old['value']
+        rate_per_minute = humidity_diff / time_diff_minutes
+
+        # Bewerte Signal
+        if current_value < min_humidity:
+            return {
+                'shower_imminent': False,
+                'confidence': 0.0,
+                'reason': f'Duschsensor zu niedrig ({current_value:.1f}% < {min_humidity}%)',
+                'current_value': current_value,
+                'rate_per_minute': round(rate_per_minute, 2)
+            }
+
+        if rate_per_minute < min_rate:
+            return {
+                'shower_imminent': False,
+                'confidence': 0.0,
+                'reason': f'Anstieg zu langsam ({rate_per_minute:.1f}%/min < {min_rate}%/min)',
+                'current_value': current_value,
+                'rate_per_minute': round(rate_per_minute, 2)
+            }
+
+        # Confidence steigt mit Rate und absolutem Wert
+        rate_factor = min(rate_per_minute / (min_rate * 3), 1.0)   # 0–1
+        humidity_factor = min((current_value - min_humidity) / 40.0, 1.0)  # 0–1
+        confidence = round((rate_factor * 0.6 + humidity_factor * 0.4), 2)
+
+        logger.info(
+            f"🚿 Dusch-Frühwarnung via ShowerPredictor: {current_value:.1f}% "
+            f"(Anstieg {rate_per_minute:.1f}%/min, Confidence {confidence:.0%})"
+        )
+
+        return {
+            'shower_imminent': True,
+            'confidence': confidence,
+            'reason': f'Duschsensor steigt schnell: {current_value:.1f}% (+{rate_per_minute:.1f}%/min)',
+            'current_value': current_value,
+            'rate_per_minute': round(rate_per_minute, 2)
+        }
+
+    def get_shower_sensor_stats(self, days_back: int = 30) -> Dict:
+        """
+        Analysiert historische Events: Wie häufig wurde via Duschsensor erkannt
+        und wie hoch war der Duschsensor-Wert beim Event-Start?
+
+        Returns:
+            Dict mit Statistiken zur Duschsensor-Effektivität
+        """
+        events = self.db.get_bathroom_events(days_back=days_back)
+        if not events:
+            return {'sufficient_data': False}
+
+        total = len(events)
+        detected_by_shower = [e for e in events if e.get('detected_by_shower_sensor')]
+        with_shower_humidity = [e for e in events
+                                if e.get('shower_start_humidity') is not None]
+
+        avg_shower_humidity = None
+        if with_shower_humidity:
+            avg_shower_humidity = round(
+                sum(e['shower_start_humidity'] for e in with_shower_humidity) / len(with_shower_humidity), 1
+            )
+
+        return {
+            'sufficient_data': True,
+            'total_events': total,
+            'detected_by_shower_sensor': len(detected_by_shower),
+            'detected_by_shower_sensor_pct': round(len(detected_by_shower) / total * 100, 1),
+            'avg_shower_start_humidity': avg_shower_humidity,
+            'events_with_shower_data': len(with_shower_humidity)
+        }
