@@ -301,13 +301,15 @@ class ForgottenLightDetector:
                 if state:
                     # Lampe ist an - tracke Zeit
                     if device_id not in self.light_on_times:
-                        self.light_on_times[device_id] = now
+                        # Echten Einschaltzeitpunkt aus DB holen (korrekter Wert nach Neustart)
+                        db_on_time = self._get_device_on_time_from_db(device_id)
+                        self.light_on_times[device_id] = db_on_time if db_on_time else now
                     
                     on_duration = now - self.light_on_times[device_id]
                     on_minutes = on_duration.total_seconds() / 60
                     
-                    # Minuten seit letzter Bewegung im Raum
-                    last_motion = self.last_motion_times.get(room_name)
+                    # Minuten seit letzter Bewegung im Raum (case-insensitiver Lookup)
+                    last_motion = self._get_last_motion_for_room(room_name)
                     minutes_since_motion = 0
                     if last_motion:
                         minutes_since_motion = (now - last_motion).total_seconds() / 60
@@ -365,6 +367,18 @@ class ForgottenLightDetector:
             return False, 0.0, []
         
         # ML-Vorhersage wenn Modell verfügbar
+        # Regelbasierte Prüfung (immer ausführen)
+        rule_reasons = self._check_forgotten_reasons(
+            device_id=device_id,
+            device_name=device_name,
+            room_name=room_name,
+            on_minutes=on_minutes,
+            presence_home=presence_home,
+            outdoor_light=outdoor_light,
+            now=now
+        )
+        rule_confidence = self._calculate_confidence(rule_reasons) if rule_reasons else 0.0
+
         if self.ml_model and self.ml_model.is_trained:
             conditions = {
                 'hour_of_day': now.hour,
@@ -377,38 +391,38 @@ class ForgottenLightDetector:
                 'room_name': room_name
             }
             
-            is_forgotten, confidence = self.ml_model.predict(conditions)
+            ml_forgotten, ml_confidence = self.ml_model.predict(conditions)
             
-            # Generiere Erklärungen für UI
-            reasons = []
-            if is_forgotten:
-                reasons.append("🤖 ML-Vorhersage")
-                if minutes_since_motion > 30:
-                    reasons.append(f"Keine Bewegung seit {int(minutes_since_motion)} Min.")
-                if not presence_home:
-                    reasons.append("Niemand zu Hause")
-                if on_minutes > 60:
-                    reasons.append(f"Seit {int(on_minutes)} Min. an")
+            # ML-Modell bestätigt: kombiniere mit Regelgründen
+            if ml_forgotten and ml_confidence >= 0.5:
+                reasons = ["🤖 ML-Vorhersage"] + rule_reasons
+                combined_confidence = min(1.0, ml_confidence * 0.6 + rule_confidence * 0.4)
+                return True, combined_confidence, reasons
             
-            return is_forgotten, confidence, reasons
+            # Regelbasiert übernehmen wenn ML unsicher aber Regeln eindeutig
+            if rule_confidence >= 0.5:
+                return True, rule_confidence, rule_reasons
+            
+            return False, 0.0, []
         
-        # Fallback: Regelbasiert
-        reasons = self._check_forgotten_reasons(
-            device_id=device_id,
-            device_name=device_name,
-            room_name=room_name,
-            on_minutes=on_minutes,
-            presence_home=presence_home,
-            outdoor_light=outdoor_light,
-            now=now
-        )
-        
-        if reasons:
-            confidence = self._calculate_confidence(reasons)
-            return True, confidence, reasons
+        # Kein ML-Modell: nur regelbasiert
+        if rule_reasons:
+            return True, rule_confidence, rule_reasons
         
         return False, 0.0, []
     
+    def _get_last_motion_for_room(self, room_name: str) -> Optional[datetime]:
+        """Sucht letzte Bewegung im Raum - case-insensitive und mit zone-ID Fallback"""
+        # Direkter Lookup
+        if room_name in self.last_motion_times:
+            return self.last_motion_times[room_name]
+        # Case-insensitive
+        room_lower = room_name.lower()
+        for key, value in self.last_motion_times.items():
+            if key.lower() == room_lower:
+                return value
+        return None
+
     def _check_forgotten_reasons(self, device_id: str, device_name: str, room_name: str,
                                   on_minutes: float, presence_home: bool, 
                                   outdoor_light: float, now: datetime) -> List[str]:
@@ -422,15 +436,22 @@ class ForgottenLightDetector:
         if on_minutes < self.min_on_duration_minutes:
             return []  # Noch nicht lange genug an
         
-        # 1. Keine Bewegung im Raum
-        last_motion = self.last_motion_times.get(room_name)
+        # 1. Keine Bewegung im Raum (mit case-insensitivem Lookup)
+        last_motion = self._get_last_motion_for_room(room_name)
+        has_motion_sensor = last_motion is not None or any(
+            v if isinstance(v, str) else True
+            for k, v in self.last_motion_times.items()
+        )
+        # Genauer: hat der Raum einen Bewegungssensor (je nach room_name in den letzten 24h)?
+        room_has_sensor = last_motion is not None  # Konservativ: nur wenn wir Daten haben
+        
         if last_motion:
             motion_ago = (now - last_motion).total_seconds() / 60
             if motion_ago > self.no_motion_threshold_minutes:
                 reasons.append(f"Keine Bewegung seit {int(motion_ago)} Min.")
-        elif on_minutes > 30:
-            # Keine Bewegungsdaten für diesen Raum, aber Lampe ist schon lange an
-            reasons.append("Keine Bewegungsdaten verfügbar")
+        elif on_minutes > 60:  # Kein Sensor + 60 Min an → verdächtig
+            # Raum hat keinen bekannten Bewegungssensor
+            reasons.append(f"Kein Bewegungssensor, seit {int(on_minutes)} Min. an")
         
         # 2. Niemand zu Hause
         if not presence_home:
@@ -439,16 +460,18 @@ class ForgottenLightDetector:
         # 3. Schlafenszeit
         hour = now.hour
         if self.sleep_hour_start <= hour or hour < self.sleep_hour_end:
-            if room_name.lower() not in ['schlafzimmer', 'bedroom']:
-                reasons.append(f"Schlafenszeit ({hour}:00)")
+            if room_name.lower() not in ['schlafzimmer', 'bedroom', 'schlafzimmer (einzelbett)']:
+                reasons.append(f"Schlafenszeit ({hour}:00 Uhr)")
         
         # 4. Tageslicht ausreichend
         if outdoor_light and outdoor_light > self.daylight_lux_threshold:
             reasons.append(f"Ausreichend Tageslicht ({outdoor_light:.0f} Lux)")
         
         # 5. Sehr lange an
-        if on_minutes > 120:  # Mehr als 2 Stunden
-            reasons.append(f"Seit {int(on_minutes)} Min. an")
+        if on_minutes > 180:  # Mehr als 3 Stunden = eindeutig verdächtig
+            reasons.append(f"Sehr lange an: {int(on_minutes)} Min.")
+        elif on_minutes > 90 and not last_motion:  # 1.5h ohne Bewegungssensor
+            reasons.append(f"Lange an ohne Sensor: {int(on_minutes)} Min.")
         
         return reasons
     
@@ -457,23 +480,28 @@ class ForgottenLightDetector:
         if not reasons:
             return 0.0
         
-        # Gewichtungen
+        # Gewichtungen (Summen können 1.0 überschreiten - wird am Ende geclamped)
         weights = {
-            'Niemand zu Hause': 0.4,
-            'Schlafenszeit': 0.25,
-            'Keine Bewegung': 0.2,
-            'Tageslicht': 0.15,
-            'Seit': 0.1
+            'Niemand zu Hause': 0.5,
+            'Schlafenszeit': 0.3,
+            'Keine Bewegung seit': 0.25,
+            'Tageslicht': 0.2,
+            'Sehr lange an': 0.4,          # 3h+ an
+            'Lange an ohne Sensor': 0.35,   # 1.5h+ ohne Bewegungssensor
+            'Kein Bewegungssensor': 0.3,    # Kein Sensor + 60 Min
+            'Seit': 0.15,
         }
         
         total_weight = 0.0
         for reason in reasons:
+            matched = False
             for key, weight in weights.items():
                 if key in reason:
                     total_weight += weight
+                    matched = True
                     break
-            else:
-                total_weight += 0.1  # Default
+            if not matched:
+                total_weight += 0.1  # Default für unbekannte Gründe
         
         return min(total_weight, 1.0)
     
@@ -827,7 +855,15 @@ class ForgottenLightDetector:
                 if device_id in self.light_on_times:
                     on_duration = (now - self.light_on_times[device_id]).total_seconds() / 60
                 else:
-                    self.light_on_times[device_id] = now
+                    # Echten Einschaltzeitpunkt aus DB holen
+                    db_on_time = self._get_device_on_time_from_db(device_id)
+                    self.light_on_times[device_id] = db_on_time if db_on_time else now
+                    if db_on_time:
+                        on_duration = (now - db_on_time).total_seconds() / 60
+                
+                # Mindestdauer einhalten bevor als vergessen markiert wird
+                if on_duration < self.away_min_duration:
+                    continue
                 
                 # Als vergessen markieren mit hoher Konfidenz
                 self._record_forgotten_prediction(
@@ -843,41 +879,113 @@ class ForgottenLightDetector:
         if lights_on > 0:
             logger.info(f"🏠 Abwesenheit: {lights_on} Lampe(n) noch an nach {int(away_minutes)} Min.")
     
+    def _get_device_on_time_from_db(self, device_id: str) -> Optional[datetime]:
+        """Holt den Startzeitpunkt des aktuellen ON-Streaks aus der DB.
+        
+        Strategie: Findet das erste ON-Event nach dem letzten OFF-Event.
+        Das ist der echte Einschaltbeginn auch nach Server-Neustarts.
+        """
+        try:
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
+            
+            # Letztes OFF-Event finden
+            cursor.execute("""
+                SELECT timestamp FROM lighting_events
+                WHERE device_id = ? AND state = 'off'
+                ORDER BY timestamp DESC LIMIT 1
+            """, (device_id,))
+            
+            last_off_row = cursor.fetchone()
+            
+            if last_off_row:
+                # Erstes ON-Event NACH dem letzten OFF finden (= echtes Einschalten)
+                cursor.execute("""
+                    SELECT MIN(timestamp) FROM lighting_events
+                    WHERE device_id = ? AND state = 'on' AND timestamp > ?
+                """, (device_id, last_off_row[0]))
+            else:
+                # Kein OFF-Event: Lampe war schon immer an → frühestes ON holen
+                cursor.execute("""
+                    SELECT MIN(timestamp) FROM lighting_events
+                    WHERE device_id = ? AND state = 'on'
+                """, (device_id,))
+            
+            row = cursor.fetchone()
+            if row and row[0]:
+                on_time = datetime.fromisoformat(row[0])
+                # Maximal 7 Tage zurückgehen (länger als das ist unrealistisch)
+                if (datetime.now() - on_time).total_seconds() < 7 * 86400:
+                    logger.debug(f"Restored on-time for {device_id} from DB: {on_time}")
+                    return on_time
+                    
+        except Exception as e:
+            logger.debug(f"Could not get on-time from DB for {device_id}: {e}")
+        return None
+
     def _update_motion_data(self):
         """Aktualisiert Bewegungsdaten aus DB"""
         try:
             conn = self.db._get_connection()
             cursor = conn.cursor()
             
-            # Letzte Bewegung pro Raum (aus sensor_data)
+            # Letzte Bewegung pro Zone - GROUP BY zone_id aus JSON (nicht ganzer JSON-String)
             # Nutze value >= 1 da value als REAL gespeichert ist (1.0 statt 1)
-            cursor.execute("""
-                SELECT metadata, MAX(timestamp) as last_motion
-                FROM sensor_data
-                WHERE sensor_type = 'motion' AND value >= 1
-                AND timestamp > datetime('now', '-2 hours')
-                GROUP BY metadata
-            """)
+            try:
+                # SQLite 3.38+ unterstützt json_extract
+                cursor.execute("""
+                    SELECT json_extract(metadata, '$.zone') as zone_id,
+                           MAX(timestamp) as last_motion
+                    FROM sensor_data
+                    WHERE sensor_type = 'motion' AND value >= 1
+                    AND timestamp > datetime('now', '-2 hours')
+                    AND json_extract(metadata, '$.zone') IS NOT NULL
+                    GROUP BY json_extract(metadata, '$.zone')
+                """)
+            except Exception:
+                # Fallback: GROUP BY metadata (altes Verhalten)
+                cursor.execute("""
+                    SELECT metadata, MAX(timestamp) as last_motion
+                    FROM sensor_data
+                    WHERE sensor_type = 'motion' AND value >= 1
+                    AND timestamp > datetime('now', '-2 hours')
+                    GROUP BY metadata
+                """)
             
             # Zone UUID zu Raumname Mapping aufbauen
             zone_to_room = self._get_zone_mapping()
             
+            # Gesammelte Daten: zone_id -> max_timestamp (dedupliziert)
+            zone_motion_times: Dict[str, datetime] = {}
+            
             for row in cursor.fetchall():
                 try:
-                    metadata = json.loads(row[0]) if row[0] else {}
-                    zone_id = metadata.get('zone', '')
+                    zone_id = row[0]
+                    motion_time = datetime.fromisoformat(row[1])
                     
-                    # Zuerst versuchen Zone-UUID in Raumnamen zu übersetzen
-                    if zone_id and zone_id in zone_to_room:
-                        room = zone_to_room[zone_id]
-                    else:
-                        # Fallback auf Gerätename oder Zone-ID
-                        room = metadata.get('name', zone_id or 'Unknown')
+                    # Wenn row[0] ein JSON-String ist (Fallback), parse ihn
+                    if zone_id and zone_id.startswith('{'):
+                        metadata = json.loads(zone_id)
+                        zone_id = metadata.get('zone', '')
                     
-                    if room:
-                        self.last_motion_times[room] = datetime.fromisoformat(row[1])
+                    if zone_id:
+                        # Nur neueste Zeit pro Zone behalten
+                        if zone_id not in zone_motion_times or motion_time > zone_motion_times[zone_id]:
+                            zone_motion_times[zone_id] = motion_time
                 except Exception as e:
-                    logger.debug(f"Error parsing motion metadata: {e}")
+                    logger.debug(f"Error parsing motion row: {e}")
+            
+            # Zone-IDs zu Raumnamen auflösen
+            for zone_id, motion_time in zone_motion_times.items():
+                if zone_id in zone_to_room:
+                    room_name = zone_to_room[zone_id]
+                    # Speichere unter echtem Raumnamen (für Lookup via device.zoneName)
+                    self.last_motion_times[room_name] = motion_time
+                    # Auch unter zone_id speichern als Fallback
+                    self.last_motion_times[zone_id] = motion_time
+                else:
+                    # Zone-UUID unbekannt - trotzdem unter UUID speichern
+                    self.last_motion_times[zone_id] = motion_time
                     
         except Exception as e:
             logger.debug(f"Could not update motion data: {e}")
@@ -1032,14 +1140,19 @@ class ForgottenLightDetector:
                 state = device.get('capabilitiesObj', {}).get('onoff', {}).get('value')
                 
                 if state:
-                    # Berechne wie lange an
+                    # Berechne wie lange an (aus light_on_times oder DB)
                     on_since = self.light_on_times.get(device_id)
+                    if not on_since:
+                        # Beim ersten Aufruf echten Zeitpunkt aus DB holen
+                        on_since = self._get_device_on_time_from_db(device_id)
+                        if on_since:
+                            self.light_on_times[device_id] = on_since
                     on_minutes = 0
                     if on_since:
                         on_minutes = (now - on_since).total_seconds() / 60
                     
-                    # Bewegung im Raum
-                    last_motion = self.last_motion_times.get(room_name)
+                    # Bewegung im Raum (case-insensitive lookup)
+                    last_motion = self._get_last_motion_for_room(room_name)
                     minutes_since_motion = None
                     if last_motion:
                         minutes_since_motion = (now - last_motion).total_seconds() / 60
@@ -1056,9 +1169,17 @@ class ForgottenLightDetector:
                         # Könnte als vergessen gelten
                         status = 'watched'
                         if minutes_since_motion is None:
-                            status_reasons.append("Kein Bewegungssensor im Raum")
+                            if on_minutes >= 60:
+                                status_reasons.append(f"Kein Bewegungssensor – {int(on_minutes)} Min. an")
+                            else:
+                                status_reasons.append("Kein Bewegungssensor im Raum")
                         else:
                             status_reasons.append(f"Keine Bewegung seit {int(minutes_since_motion)} Min.")
+                    
+                    # Prüfe ob bereits als vergessen erkannt
+                    is_forgotten = any(p['device_id'] == device_id for p in self.predictions)
+                    if is_forgotten:
+                        status = 'forgotten'
                     
                     # Prüfe ob bereits als vergessen erkannt
                     is_forgotten = any(p['device_id'] == device_id for p in self.predictions)

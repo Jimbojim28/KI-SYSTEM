@@ -48,6 +48,9 @@ class LightingDataCollector:
         self.device_types: Dict[str, str] = {}
         self._load_device_types()
         
+        # Letzten bekannten Zustand aus DB laden (verhindert False-Change-Events nach Neustart)
+        self._load_last_states_from_db()
+        
         # Platform-spezifische Collector basierend auf platform.type
         self.collectors = []
         platform_type = self.config.get('platform', {}).get('type', '').lower()
@@ -116,6 +119,43 @@ class LightingDataCollector:
         except Exception as e:
             logger.warning(f"Could not load device_types from rooms.json: {e}")
             self.device_types = {}
+
+    def _load_last_states_from_db(self):
+        """Lädt die zuletzt bekannten Gerätezustände aus der DB.
+        
+        Verhindert False-Change-Events nach Server-Neustart:
+        Ohne diesen Load würde der Collector alle aktuell eingeschalteten Lampen
+        als neue 'on'-Events erfassen, obwohl sich ihr Zustand nicht geändert hat.
+        """
+        try:
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
+            # Letzten Zustand pro Gerät aus den letzten 24h holen
+            cursor.execute("""
+                SELECT device_id, state, brightness, timestamp
+                FROM lighting_events
+                WHERE timestamp > datetime('now', '-24 hours')
+                AND id IN (
+                    SELECT MAX(id) FROM lighting_events
+                    WHERE timestamp > datetime('now', '-24 hours')
+                    GROUP BY device_id
+                )
+            """)
+            
+            count = 0
+            for row in cursor.fetchall():
+                device_id, state, brightness, timestamp = row
+                self.last_states[device_id] = {
+                    'state': state,
+                    'brightness': brightness,
+                    'timestamp': timestamp
+                }
+                count += 1
+            
+            if count > 0:
+                logger.info(f"Restored {count} device states from DB (prevents false-change events after restart)")
+        except Exception as e:
+            logger.warning(f"Could not load last states from DB: {e}")
     
     def _collection_loop(self):
         """Hauptloop für Datensammlung"""
