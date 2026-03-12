@@ -2,6 +2,11 @@
 # https://docs.gunicorn.org/en/stable/settings.html
 
 import multiprocessing
+import os
+
+# Sicherstellen dass das Arbeitsverzeichnis immer das Projektverzeichnis ist
+# (wichtig für alle relativen Pfade wie 'config/config.yaml', 'data/', etc.)
+chdir = os.path.dirname(os.path.abspath(__file__))
 
 # Server socket
 bind = "0.0.0.0:8080"

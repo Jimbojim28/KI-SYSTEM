@@ -11,6 +11,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from loguru import logger
+
+# Logging konfigurieren (wird sonst nur in main.py gemacht, nicht für Gunicorn)
+def _setup_logging():
+    log_path = 'logs/ki_system.log'
+    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+    )
+    logger.add(
+        log_path,
+        level="INFO",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
+        rotation="10 MB",
+        retention="7 days"
+    )
+
+_setup_logging()
+
 from src.web.app import WebInterface
 
 # Erstelle die Anwendung

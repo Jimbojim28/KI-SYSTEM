@@ -5,6 +5,10 @@ module.exports = {
     args: '-c gunicorn.conf.py wsgi:app',
     interpreter: 'none',  // Gunicorn ist bereits ein Python-Wrapper
 
+    // Arbeitsverzeichnis explizit auf das Projektverzeichnis setzen
+    // Dadurch werden alle relativen Pfade (config/, data/, logs/) korrekt aufgelöst
+    cwd: __dirname,
+
     // Instances (Gunicorn managt eigene Worker, PM2 nur 1 Instanz)
     instances: 1,
     exec_mode: 'fork',
