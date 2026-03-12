@@ -198,8 +198,7 @@ async function loadConfig() {
             document.getElementById('bathroom-enabled').checked = config.enabled || false;
         }
         
-        // Lade auch Duschsensor-Konfiguration
-        await loadShowerSensorConfig();
+
     } catch (error) {
         console.error('Error loading bathroom config:', error);
     }
@@ -250,9 +249,6 @@ async function saveConfig() {
         if (result.success) {
             showToast('✅ Konfiguration gespeichert!', 'success');
             selectedRoomId = roomId;
-            
-            // Speichere auch Duschsensor-Konfiguration
-            await saveShowerSensorConfig();
             
             loadStatus();
             // Energie-Stats neu laden
