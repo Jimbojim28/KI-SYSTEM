@@ -917,10 +917,13 @@ class BathroomAutomation:
                 logger.info(f"Loaded learned humidity_high: {learned_high}%")
 
             if learned_low:
-                # Sicherheitsgrenze: Luftentfeuchter darf nicht unter 50% weiterlaufen
-                if learned_low < 50.0:
-                    logger.warning(f"Learned humidity_low={learned_low}% is too low! Limiting to 50% (safety)")
-                    self.humidity_low = 50.0
+                # Sicherheitsgrenze: Gelernt darf nicht unter dem konfigurierten Wert liegen
+                # (Nutzer hat bewusst einen Wert eingestellt – Lernen darf nur höher gehen)
+                config_low = self.config.get('humidity_threshold_low', 60.0)
+                floor = max(50.0, config_low)
+                if learned_low < floor:
+                    logger.info(f"Learned humidity_low={learned_low}% is below configured {floor}% – using configured value")
+                    self.humidity_low = floor
                 else:
                     self.humidity_low = learned_low
                 logger.info(f"Loaded learned humidity_low: {self.humidity_low}%")
