@@ -1123,22 +1123,7 @@ def init_ventilation_blueprint(engine, db, config):
     def _get_ventilation_notification_config() -> dict:
         """Lade Lüftungs-Benachrichtigungseinstellungen"""
         import yaml
-        config_path = Path('config/config.yaml')
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                full_config = yaml.safe_load(f) or {}
-                return full_config.get('ventilation_notifications', {
-                    'enabled': False,
-                    'co2_high_alert': True,
-                    'co2_threshold': 1000,
-                    'humidity_high_alert': True,
-                    'humidity_threshold': 70,
-                    'ventilation_complete': False,
-                    'frost_warning': True,
-                    'frost_threshold': 2,
-                    'mold_warning': True
-                })
-        return {
+        defaults = {
             'enabled': False,
             'co2_high_alert': True,
             'co2_threshold': 1000,
@@ -1147,8 +1132,20 @@ def init_ventilation_blueprint(engine, db, config):
             'ventilation_complete': False,
             'frost_warning': True,
             'frost_threshold': 2,
-            'mold_warning': True
+            'mold_warning': True,
+            'window_opened_alert': True,
+            'window_closed_alert': True,
+            'night_ventilation_check': True,
+            'night_ventilation_min_temp': 3.0
         }
+        config_path = Path('config/config.yaml')
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+                stored = full_config.get('ventilation_notifications', {})
+                # Merge: defaults zuerst, dann gespeicherte Werte obendrauf
+                return {**defaults, **stored}
+        return defaults
     
     def _save_ventilation_notification_config(notification_config: dict):
         """Speichere Lüftungs-Benachrichtigungseinstellungen"""
@@ -1257,7 +1254,11 @@ def init_ventilation_blueprint(engine, db, config):
                 'ventilation_complete': data.get('ventilation_complete', False),
                 'frost_warning': data.get('frost_warning', True),
                 'frost_threshold': int(data.get('frost_threshold', 2)),
-                'mold_warning': data.get('mold_warning', True)
+                'mold_warning': data.get('mold_warning', True),
+                'window_opened_alert': data.get('window_opened_alert', True),
+                'window_closed_alert': data.get('window_closed_alert', True),
+                'night_ventilation_check': data.get('night_ventilation_check', True),
+                'night_ventilation_min_temp': float(data.get('night_ventilation_min_temp', 3.0))
             }
             
             _save_ventilation_notification_config(config)

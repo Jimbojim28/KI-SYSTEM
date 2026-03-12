@@ -578,7 +578,28 @@ class VentilationNotifier:
                     # Gekippt vs Offen - spezifischer Hinweis
                     if window_state == 'tilted' and outdoor_temp is not None and outdoor_temp < 10:
                         message_parts.append(f"\n\n📐 <i>Tipp: Bei {outdoor_temp:.0f}°C ist Stoßlüften (ganz öffnen) effektiver als Kippen!</i>")
-                    
+
+                    # === Nacht-Lüftungs-Empfehlung (16–19 Uhr) ===
+                    if config.get('night_ventilation_check', True) and 16 <= datetime.now().hour < 19:
+                        min_night_temp = float(config.get('night_ventilation_min_temp', 3.0))
+                        night_check = self._get_night_temperature_check(min_night_temp)
+                        if night_check:
+                            min_temp = night_check['min_temp']
+                            min_at = night_check['min_temp_at'].strftime('%H:%M')
+                            end_time = night_check['tonight_end'].strftime('%H:%M')
+                            if night_check['can_stay_open']:
+                                message_parts.append(
+                                    f"\n\n🌙 <b>Nacht-Lüftung bis {end_time} Uhr:</b> ✅ Sicher!"
+                                    f"\nTiefste Temp.: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)"
+                                    f"\n→ Fenster kann bis 07:00 Uhr offen/gekippt bleiben"
+                                )
+                            else:
+                                message_parts.append(
+                                    f"\n\n🌙 <b>Nacht-Lüftung bis {end_time} Uhr:</b> ⚠️ Zu kalt!"
+                                    f"\nTiefste Temp.: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)"
+                                    f"\n→ Unter {night_check['min_threshold']:.0f}°C erwartet – Fenster bitte schließen"
+                                )
+
                     # Titel mit Warnung wenn Heizung aktiv oder Luftqualität dringend
                     if heater_warning and heater_warning.get('is_heating'):
                         title = '🔥🪟 Fenster offen - Heizung aktiv!' if window_state != 'tilted' else '🔥📐 Fenster gekippt - Heizung aktiv!'
@@ -2314,7 +2335,55 @@ class VentilationNotifier:
         filled = int(percentage / 100 * width)
         empty = width - filled
         return '▓' * filled + '░' * empty
-    
+
+    def _get_night_temperature_check(self, min_night_temp: float = 3.0) -> Optional[Dict]:
+        """
+        Prüft Wettervorhersage von jetzt bis 07:00 Uhr nächsten Morgens.
+        Tiefsttemperatur muss >= min_night_temp bleiben für sicheres Nachtlüften.
+        Wird nur bei Fensteröffnung zwischen 16–19 Uhr aufgerufen.
+        """
+        try:
+            if not self.engine or not self.engine.weather:
+                return None
+
+            forecast_data = self.engine.weather.get_forecast()
+            if not forecast_data or not forecast_data.get('forecasts'):
+                return None
+
+            now = datetime.now()
+            # Ende: 07:00 Uhr nächsten Morgens
+            if now.hour < 7:
+                tonight_end = now.replace(hour=7, minute=0, second=0, microsecond=0)
+            else:
+                tonight_end = (now + timedelta(days=1)).replace(hour=7, minute=0, second=0, microsecond=0)
+
+            night_forecasts = []
+            for entry in forecast_data['forecasts']:
+                try:
+                    entry_time = datetime.strptime(entry['timestamp'], '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    try:
+                        entry_time = datetime.fromisoformat(entry['timestamp'])
+                    except ValueError:
+                        continue
+                if now <= entry_time <= tonight_end:
+                    night_forecasts.append({'time': entry_time, 'temp': entry['temperature']})
+
+            if not night_forecasts:
+                return None
+
+            min_entry = min(night_forecasts, key=lambda f: f['temp'])
+            return {
+                'min_temp': round(min_entry['temp'], 1),
+                'min_temp_at': min_entry['time'],
+                'can_stay_open': min_entry['temp'] >= min_night_temp,
+                'min_threshold': min_night_temp,
+                'tonight_end': tonight_end
+            }
+        except Exception as e:
+            logger.debug(f"Error in night temperature check: {e}")
+            return None
+
     def _get_seasonal_tip(self, outdoor_temp: float, window_state: str = 'open') -> str:
         """Gibt jahreszeit-spezifische Lüftungstipps"""
         month = datetime.now().month

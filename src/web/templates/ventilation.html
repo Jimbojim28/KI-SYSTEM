@@ -233,7 +233,28 @@
                     </div>
                     <p class="option-description">Warnung bei kritischen Bedingungen für Schimmelbildung</p>
                 </div>
-                
+
+                <!-- Nacht-Lüftungs-Empfehlung -->
+                <div class="notification-option">
+                    <div class="option-header">
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="night-ventilation-check" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="option-title">🌙 Nacht-Lüftungs-Empfehlung (16–19 Uhr)</span>
+                    </div>
+                    <p class="option-description">
+                        Wenn ein Fenster zwischen 16:00 und 19:00 Uhr geöffnet oder gekippt wird, prüft das System
+                        die Wettervorhersage bis 07:00 Uhr und zeigt in der Pushover-Benachrichtigung an,
+                        ob die Nacht warm genug ist um das Fenster offen zu lassen.
+                    </p>
+                    <div class="option-threshold">
+                        <label>Mindest-Nachttemperatur:</label>
+                        <input type="number" id="night-ventilation-min-temp" value="3" min="-5" max="15" step="0.5"> °C
+                        <span style="color:#6b7280; font-size:0.85em; margin-left:6px;">(unter diesem Wert → Warnung "Fenster schließen")</span>
+                    </div>
+                </div>
+
                 <div class="notification-actions">
                     <button class="btn-save" onclick="saveNotificationSettings()">💾 Speichern</button>
                     <div class="test-notifications">
@@ -2153,6 +2174,8 @@ async function loadNotificationSettings() {
             document.getElementById('frost-warning').checked = settings.frost_warning;
             document.getElementById('frost-threshold').value = settings.frost_threshold || 2;
             document.getElementById('mold-warning').checked = settings.mold_warning;
+            document.getElementById('night-ventilation-check').checked = settings.night_ventilation_check !== false;
+            document.getElementById('night-ventilation-min-temp').value = settings.night_ventilation_min_temp ?? 3.0;
             
             // Pushover Status
             const statusEl = document.getElementById('pushover-status');
@@ -2202,7 +2225,9 @@ async function saveNotificationSettings() {
         ventilation_complete: document.getElementById('ventilation-complete').checked,
         frost_warning: document.getElementById('frost-warning').checked,
         frost_threshold: parseInt(document.getElementById('frost-threshold').value),
-        mold_warning: document.getElementById('mold-warning').checked
+        mold_warning: document.getElementById('mold-warning').checked,
+        night_ventilation_check: document.getElementById('night-ventilation-check').checked,
+        night_ventilation_min_temp: parseFloat(document.getElementById('night-ventilation-min-temp').value)
     };
     
     try {
