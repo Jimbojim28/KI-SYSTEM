@@ -189,7 +189,16 @@ class NotificationScheduler:
             'forecast_low': None,
             'rain_probability': None,
             'weather_forecast': None,
-            'forecast_description': None
+            'forecast_description': None,
+            # Tagesauswertung 7–18 Uhr
+            'day_max_temp': None,
+            'day_min_temp': None,
+            'day_has_sun': False,
+            'day_has_rain': False,
+            'day_has_strong_wind': False,
+            'day_wind_max': None,
+            'clothing_tip': None,
+            'sun_protection_needed': False,
         }
         
         try:
@@ -498,6 +507,71 @@ class NotificationScheduler:
                         
                         context['forecast_description'] = ', '.join(forecast_parts)
                         logger.info(f"🌤️ Forecast: {context['forecast_description']}")
+                    
+                    # --- Tagesauswertung 7–18 Uhr ---
+                    daytime_forecasts = []
+                    for fc in today_forecasts:
+                        try:
+                            ts = fc.get('timestamp', '')
+                            if ' ' in ts:
+                                fc_time = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+                            else:
+                                fc_time = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                            if 7 <= fc_time.hour < 18:
+                                daytime_forecasts.append(fc)
+                        except Exception:
+                            continue
+                    
+                    # Falls keine Daytime-Einträge (z.B. früh morgens gestartet), alle nutzen
+                    if not daytime_forecasts:
+                        daytime_forecasts = today_forecasts
+                    
+                    # Tageshöchst-/Tiefsttemperatur 7–18 Uhr
+                    day_temps = [fc['temperature'] for fc in daytime_forecasts if fc.get('temperature') is not None]
+                    day_max_temp = round(max(day_temps), 1) if day_temps else context.get('forecast_high')
+                    day_min_temp = round(min(day_temps), 1) if day_temps else context.get('forecast_low')
+                    context['day_max_temp'] = day_max_temp
+                    context['day_min_temp'] = day_min_temp
+                    
+                    # Wetterzustände 7–18 Uhr
+                    day_conditions = [fc['weather'] for fc in daytime_forecasts if fc.get('weather')]
+                    rain_types = {'Rain', 'Drizzle', 'Thunderstorm', 'Snow'}
+                    context['day_has_sun'] = any(c == 'Clear' for c in day_conditions)
+                    context['day_has_rain'] = any(c in rain_types for c in day_conditions)
+                    
+                    # Starker Wind: > 10 m/s (≈ 36 km/h) gilt als stark
+                    day_winds = [fc['wind_speed'] for fc in daytime_forecasts if fc.get('wind_speed') is not None]
+                    context['day_has_strong_wind'] = any(w > 10 for w in day_winds) if day_winds else False
+                    context['day_wind_max'] = round(max(day_winds), 1) if day_winds else None
+                    
+                    # Kleidungsempfehlung basierend auf Tagesminimum 7–18 Uhr
+                    ref_temp = day_min_temp if day_min_temp is not None else context.get('outdoor_temp')
+                    if ref_temp is not None:
+                        if ref_temp < 2:
+                            context['clothing_tip'] = '❄️ Winterjacke, Mütze und Handschuhe sind ein Muss'
+                        elif ref_temp < 8:
+                            context['clothing_tip'] = '🧥 Warme Jacke und Schal empfohlen'
+                        elif ref_temp < 14:
+                            context['clothing_tip'] = '🧥 Jacke oder Pullover empfehlenswert'
+                        elif ref_temp < 18:
+                            context['clothing_tip'] = '🧣 Leichte Jacke für den Morgen mitnehmen'
+                        elif ref_temp < 23:
+                            context['clothing_tip'] = '👕 T-Shirt und leichte Kleidung ideal'
+                        else:
+                            context['clothing_tip'] = '🌞 Leichte Sommerkleidung empfohlen'
+                    
+                    # Sonnenschutz-Hinweis: Sommer + Sonne + warm
+                    current_month = datetime.now().month
+                    if (current_month in range(4, 10)
+                            and context.get('day_has_sun')
+                            and day_max_temp is not None and day_max_temp >= 22):
+                        context['sun_protection_needed'] = True
+                    else:
+                        context['sun_protection_needed'] = False
+                    
+                    logger.info(f"🌡️ Daytime (7-18): {day_min_temp}–{day_max_temp}°C, "
+                                f"sun={context['day_has_sun']}, rain={context['day_has_rain']}, "
+                                f"strong_wind={context['day_has_strong_wind']}")
             else:
                 logger.warning("❌ Could not fetch forecast data")
                 

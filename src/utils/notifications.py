@@ -239,13 +239,17 @@ class NotificationService:
                 - Höchsttemperatur heute: {context.get('forecast_high', '?')}°C
                 - Tiefsttemperatur heute: {context.get('forecast_low', '?')}°C
                 - Regenwahrscheinlichkeit: {context.get('rain_probability', '?')}%
+                - Tageswetter 7–18 Uhr: Sonne={'Ja' if context.get('day_has_sun') else 'Nein'}, Regen={'Ja' if context.get('day_has_rain') else 'Nein'}, Starker Wind={'Ja' if context.get('day_has_strong_wind') else 'Nein'}
+                - Tageshöchsttemperatur (7–18 Uhr): {context.get('day_max_temp', '?')}°C
+                - Kleidungsempfehlung: {context.get('clothing_tip', 'keine')}
+                - Sonnenschutz nötig: {'Ja – UV-Schutz empfohlen!' if context.get('sun_protection_needed') else 'Nein'}
                 - Offene Fenster: {context.get('open_windows', 0)}
                 - Luftfeuchtigkeit: {context.get('humidity_avg', '?')}%
                 - Höchster CO2-Wert: {context.get('co2_max', '-')} ppm ({context.get('co2_max_room', '')})
                 - Heizung aktiv: {'Ja' if context.get('heating_active') else 'Nein'}
                 - Energie-Tipp: {context.get('energy_tip', 'keiner')}
-                Erstelle eine freundliche, informative Morgen-Begrüßung mit Wettervorhersage.
-                Erwähne ob man einen Regenschirm braucht und wie man sich kleiden sollte.
+                Erstelle eine freundliche, informative Morgen-Begrüßung mit Wettervorhersage für 7–18 Uhr.
+                Erwähne ob man einen Regenschirm braucht, wie man sich kleiden sollte und ob Sonnenschutz nötig ist.
             """,
             
             "heating_recommendation": f"""
@@ -290,6 +294,28 @@ class NotificationService:
                 if context.get('rain_probability') and context.get('rain_probability') >= 30:
                     temp_part += f" ☔ Regen: {int(context.get('rain_probability'))}%"
                 parts.append(temp_part)
+            
+            # Wetter 7–18 Uhr
+            weather_icons = []
+            if context.get('day_has_sun'):
+                weather_icons.append('☀️ Sonne')
+            if context.get('day_has_rain'):
+                weather_icons.append('🌧️ Regen')
+            if context.get('day_has_strong_wind'):
+                wind_str = f"💨 Starker Wind"
+                if context.get('day_wind_max'):
+                    wind_str += f" ({context.get('day_wind_max')} m/s)"
+                weather_icons.append(wind_str)
+            if weather_icons:
+                parts.append(f"Tagsüber (7–18 Uhr): {', '.join(weather_icons)}")
+            
+            # Kleidung
+            if context.get('clothing_tip'):
+                parts.append(context.get('clothing_tip'))
+            
+            # Sonnenschutz
+            if context.get('sun_protection_needed'):
+                parts.append('🕶️ Sonnenschutz empfohlen!')
             
             if context.get('energy_tip'):
                 parts.append(f"💡 {context.get('energy_tip')}")

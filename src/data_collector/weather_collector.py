@@ -82,7 +82,8 @@ class WeatherCollector:
                     'timestamp': item['dt_txt'],
                     'temperature': item['main']['temp'],
                     'weather': item['weather'][0]['main'],
-                    'rain_probability': item.get('pop', 0) * 100  # Probability of precipitation
+                    'rain_probability': item.get('pop', 0) * 100,  # Probability of precipitation
+                    'wind_speed': item.get('wind', {}).get('speed')  # m/s
                 })
 
             return {
