@@ -1815,7 +1815,27 @@ async function loadAvailableShowerSensors() {
         }
         
         console.log('Loading available shower sensors:', data);
-        
+
+        // API gibt entweder { sensors: [...] } (neues Format) oder
+        // { humidity_sensors: [...], temperature_sensors: [...] } (altes Format)
+        const allSensors = data.sensors || [];
+        const humiditySensors = data.humidity_sensors ||
+            allSensors.filter(s => s.has_humidity).map(s => ({
+                entity_id: s.id,
+                name: s.name,
+                state: s.current_humidity != null ? s.current_humidity.toString() : 'N/A',
+                unit: '%',
+                zone: s.zone || ''
+            }));
+        const temperatureSensors = data.temperature_sensors ||
+            allSensors.filter(s => s.has_temperature).map(s => ({
+                entity_id: s.id,
+                name: s.name,
+                state: s.current_temperature != null ? s.current_temperature.toString() : 'N/A',
+                unit: '°C',
+                zone: s.zone || ''
+            }));
+
         // Füllt Humidity-Sensor Dropdown
         const humiditySelect = document.getElementById('shower-humidity-sensor-luftentfeuchten');
         if (humiditySelect) {
@@ -1827,7 +1847,7 @@ async function loadAvailableShowerSensors() {
             humiditySelect.innerHTML = '';
             humiditySelect.appendChild(firstOption);
             
-            data.humidity_sensors.forEach(sensor => {
+            humiditySensors.forEach(sensor => {
                 const option = document.createElement('option');
                 option.value = sensor.entity_id;
                 option.textContent = `${sensor.name} (${sensor.state} ${sensor.unit || ''})`;
@@ -1839,7 +1859,7 @@ async function loadAvailableShowerSensors() {
                 humiditySelect.value = currentValue;
             }
             
-            console.log(`Loaded ${data.humidity_sensors.length} humidity sensors`);
+            console.log(`Loaded ${humiditySensors.length} humidity sensors`);
         }
         
         // Füllt Temperature-Sensor Dropdown
@@ -1851,7 +1871,7 @@ async function loadAvailableShowerSensors() {
             tempSelect.innerHTML = '';
             tempSelect.appendChild(firstOption);
             
-            data.temperature_sensors.forEach(sensor => {
+            temperatureSensors.forEach(sensor => {
                 const option = document.createElement('option');
                 option.value = sensor.entity_id;
                 option.textContent = `${sensor.name} (${sensor.state} ${sensor.unit || ''})`;
@@ -1862,7 +1882,7 @@ async function loadAvailableShowerSensors() {
                 tempSelect.value = currentValue;
             }
             
-            console.log(`Loaded ${data.temperature_sensors.length} temperature sensors`);
+            console.log(`Loaded ${temperatureSensors.length} temperature sensors`);
         }
     } catch (error) {
         console.error('Error loading available shower sensors:', error);
