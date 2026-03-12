@@ -6000,14 +6000,14 @@ class WebInterface:
                     state = self.engine.platform.get_state(sensor_id)
                     if state:
                         # alarm_contact: true = closed (contact made), false = open (contact broken)
-                        caps = state.get('capabilitiesObj', {})
+                        caps = state.get('capabilitiesObj', {}) or state.get('attributes', {}).get('capabilities', {})
                         alarm_contact = caps.get('alarm_contact', {}).get('value', False)
                         devices_status['door_sensor'] = {
                             'id': sensor_id,
-                            'name': state.get('name', sensor_id),
+                            'name': state.get('attributes', {}).get('friendly_name', sensor_id),
                             'value': 'closed' if alarm_contact else 'open',
                             'is_open': not alarm_contact,
-                            'available': state.get('available', True)
+                            'available': state.get('attributes', {}).get('available', state.get('available', True))
                         }
 
                 # Window Sensor
@@ -6016,14 +6016,14 @@ class WebInterface:
                     state = self.engine.platform.get_state(sensor_id)
                     if state:
                         # alarm_contact: true = open, false = closed
-                        caps = state.get('capabilitiesObj', {})
+                        caps = state.get('capabilitiesObj', {}) or state.get('attributes', {}).get('capabilities', {})
                         alarm_contact = caps.get('alarm_contact', {}).get('value', False)
                         devices_status['window_sensor'] = {
                             'id': sensor_id,
-                            'name': state.get('name', sensor_id),
+                            'name': state.get('attributes', {}).get('friendly_name', sensor_id),
                             'value': 'open' if alarm_contact else 'closed',
                             'is_open': alarm_contact,
-                            'available': state.get('available', True)
+                            'available': state.get('attributes', {}).get('available', state.get('available', True))
                         }
 
                 # Motion Sensor
@@ -6032,15 +6032,15 @@ class WebInterface:
                     state = self.engine.platform.get_state(sensor_id)
                     if state:
                         # alarm_motion oder alarm_presence: true = motion/presence detected
-                        caps = state.get('capabilitiesObj', {})
+                        caps = state.get('capabilitiesObj', {}) or state.get('attributes', {}).get('capabilities', {})
                         alarm_motion = caps.get('alarm_motion', {}).get('value', False) or \
                                        caps.get('alarm_presence', {}).get('value', False)
                         devices_status['motion_sensor'] = {
                             'id': sensor_id,
-                            'name': state.get('name', sensor_id),
+                            'name': state.get('attributes', {}).get('friendly_name', sensor_id),
                             'value': 'detected' if alarm_motion else 'clear',
                             'motion_detected': alarm_motion,
-                            'available': state.get('available', True)
+                            'available': state.get('attributes', {}).get('available', state.get('available', True))
                         }
 
                 # Dehumidifier
@@ -6048,14 +6048,14 @@ class WebInterface:
                     device_id = config['dehumidifier_id']
                     state = self.engine.platform.get_state(device_id)
                     if state:
-                        caps = state.get('capabilitiesObj', {})
+                        caps = state.get('capabilitiesObj', {}) or state.get('attributes', {}).get('capabilities', {})
                         onoff = caps.get('onoff', {}).get('value', False)
                         devices_status['dehumidifier'] = {
                             'id': device_id,
-                            'name': state.get('name', device_id),
+                            'name': state.get('attributes', {}).get('friendly_name', device_id),
                             'value': 'on' if onoff else 'off',
                             'is_on': onoff,
-                            'available': state.get('available', True)
+                            'available': state.get('attributes', {}).get('available', state.get('available', True))
                         }
 
                 # Heater
