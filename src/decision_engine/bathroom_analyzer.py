@@ -290,13 +290,16 @@ class BathroomAnalyzer:
         percentile_75_index = int(len(sorted_starts) * 0.75)
         optimal_high = sorted_starts[percentile_75_index]
 
-        # Low: Sollte über dem durchschnittlichen End-Wert liegen
+        # Low: Der Abschalt-Schwellwert soll sicherstellen, dass die Luft wirklich
+        # trocken genug ist, bevor der Entfeuchter stoppt.
+        # Wir nehmen das 75%-Perzentil der End-Feuchtigkeiten (nicht das 25%),
+        # damit der Wert nicht zu tief rutscht – die niedrigsten Endwerte waren meist
+        # Ausreißer durch zu langes Laufen, nicht das gewünschte Ziel.
         if end_humidities:
             avg_end = statistics.mean(end_humidities)
-            # Verwende 25% Perzentil des Endes als Low-Schwellwert
             sorted_ends = sorted(end_humidities)
-            percentile_25_index = int(len(sorted_ends) * 0.25)
-            optimal_low = sorted_ends[percentile_25_index]
+            percentile_75_index = min(int(len(sorted_ends) * 0.75), len(sorted_ends) - 1)
+            optimal_low = sorted_ends[percentile_75_index]
         else:
             # Fallback: 10% unter High-Schwellwert
             optimal_low = optimal_high - 10
