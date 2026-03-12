@@ -398,6 +398,11 @@ class NotificationScheduler:
                     api_key = weather_config.get('api_key')
                     location = weather_config.get('location', 'Berlin, DE')
             
+            # Fallback: API-Key aus Umgebungsvariable (z.B. gesetzt via .env)
+            if not api_key or api_key == 'YOUR_OPENWEATHERMAP_API_KEY':
+                import os
+                api_key = os.getenv('WEATHER_API_KEY') or os.getenv('OPENWEATHERMAP_API_KEY')
+            
             # Prüfe ob API-Key konfiguriert ist
             if not api_key or api_key == 'YOUR_OPENWEATHERMAP_API_KEY':
                 logger.info("⚠️ OpenWeatherMap API-Key nicht konfiguriert - keine Wettervorhersage")

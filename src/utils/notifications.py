@@ -139,7 +139,7 @@ class NotificationService:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "max_tokens": 80,
+                    "max_tokens": 200 if event_type == 'morning_summary' else 80,
                     "temperature": 0.7
                 },
                 timeout=10
