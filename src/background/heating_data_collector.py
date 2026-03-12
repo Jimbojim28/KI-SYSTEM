@@ -97,11 +97,11 @@ class HeatingDataCollector:
                     capabilities = device.get('attributes', {}).get('capabilities', {})
 
                 # Prüfe ob es ein Thermostat oder Heizgerät ist
+                # Nur Geräte MIT Zieltemperatur (controllable thermostats) oder explizitem Typ
                 if ('thermostat' in device_type or
                     'heater' in device_type or
                     domain == 'climate' or  # Homey climate devices
-                    'target_temperature' in capabilities or
-                    'measure_temperature' in capabilities):
+                    'target_temperature' in capabilities):
                     heating_devices.append(device)
 
             if not heating_devices:
@@ -171,10 +171,17 @@ class HeatingDataCollector:
             # Versuche Raum-Name zu holen
             try:
                 zones = self.engine.platform.get_zones()
-                for zone in zones:
-                    if zone.get('id') == zone_id:
-                        room_name = zone.get('name')
-                        break
+                # get_zones() gibt ein Dict zurück: {zone_id: zone_data, ...}
+                if isinstance(zones, dict):
+                    zone_data = zones.get(zone_id)
+                    if zone_data:
+                        room_name = zone_data.get('name')
+                else:
+                    # Fallback für Listen-Format
+                    for zone in zones:
+                        if isinstance(zone, dict) and zone.get('id') == zone_id:
+                            room_name = zone.get('name')
+                            break
             except (AttributeError, KeyError, TypeError) as e:
                 logger.debug(f"Could not fetch zone name for zone_id {zone_id}: {e}")
 

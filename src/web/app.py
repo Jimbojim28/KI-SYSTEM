@@ -7310,6 +7310,42 @@ class WebInterface:
                 logger.error(f"Error getting temperature history: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/heating/settings', methods=['GET', 'POST'])
+        def api_heating_settings():
+            """Hole oder speichere Heizungs-Einstellungen"""
+            settings_file = Path('data/heating_settings.json')
+
+            defaults = {
+                'default_comfort_temp': 21.0,
+                'default_eco_temp': 18.0,
+                'default_night_temp': 17.0,
+                'default_frost_temp': 12.0,
+                'auto_heating': False,
+                'window_detection': True,
+                'presence_based': True,
+                'energy_price_optimization': False
+            }
+
+            if request.method == 'GET':
+                if settings_file.exists():
+                    with open(settings_file, 'r') as f:
+                        data = json.load(f)
+                    return jsonify({**defaults, **data, 'success': True})
+                return jsonify({**defaults, 'success': True})
+
+            elif request.method == 'POST':
+                data = request.json or {}
+                # Validierung
+                allowed_keys = set(defaults.keys())
+                filtered = {k: v for k, v in data.items() if k in allowed_keys}
+
+                settings_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(settings_file, 'w') as f:
+                    json.dump({**defaults, **filtered, 'updated_at': datetime.now().isoformat()}, f, indent=2)
+
+                logger.info("Heating settings saved")
+                return jsonify({'success': True, 'message': 'Einstellungen gespeichert'})
+
         # ===== Window Status Endpoints =====
 
         @self.app.route('/api/heating/windows/all')
@@ -8406,8 +8442,24 @@ class WebInterface:
         heating_count = sum(1 for obs in observations if obs.get('is_heating'))
         total_count = len(observations)
 
-        # Annahme: Alle 15 Minuten eine Beobachtung
-        minutes_per_observation = 15
+        # Berechne echtes Intervall aus Zeitstempeln (statt hartcodierter 15 Min)
+        minutes_per_observation = 1.0  # Fallback: 1 Minute
+        if total_count >= 2:
+            try:
+                timestamps = sorted([
+                    obs.get('timestamp') for obs in observations
+                    if obs.get('timestamp')
+                ])
+                if len(timestamps) >= 2:
+                    from datetime import datetime
+                    t_first = datetime.fromisoformat(str(timestamps[0]))
+                    t_last = datetime.fromisoformat(str(timestamps[-1]))
+                    total_span_minutes = (t_last - t_first).total_seconds() / 60
+                    if total_span_minutes > 0:
+                        minutes_per_observation = total_span_minutes / (len(timestamps) - 1)
+            except Exception:
+                pass
+
         total_minutes = total_count * minutes_per_observation
         heating_minutes = heating_count * minutes_per_observation
         heating_hours = heating_minutes / 60
