@@ -39,21 +39,27 @@ class HomeyCollector(SmartHomeCollector):
         self._device_cache = {}
         self._cache_timestamp = None
 
+        # Circuit Breaker: Endpunkte die dauerhaft 401 zurückgeben überspringen
+        self._endpoint_failures: Dict[str, int] = {}  # endpoint -> failure count
+        self._endpoint_skip_until: Dict[str, datetime] = {}  # endpoint -> skip until
+
     def _make_request(self, endpoint: str, method: str = "GET",
                      data: Dict = None) -> Optional[Any]:
         """Macht einen API-Request zu Homey"""
+        # Circuit Breaker: Endpunkt überspringen wenn er dauerhaft fehlschlägt
+        skip_until = self._endpoint_skip_until.get(endpoint)
+        if skip_until and datetime.now() < skip_until:
+            logger.debug(f"Skipping {endpoint} (circuit open until {skip_until.strftime('%H:%M:%S')})")
+            return None
+
         try:
             # Für Cloud API: verwende die korrekte URL-Struktur
             if self.is_cloud_api and '/delegation/token/' in self.url:
-                # URL ist bereits korrekt konfiguriert mit delegation path
                 url = f"{self.url}/{endpoint.lstrip('/')}"
             elif self.is_cloud_api:
-                # Fallback für alte Cloud API Config - verwende direkten Endpunkt
-                # Dies funktioniert nur für einige Endpunkte
                 url = f"{self.url}/{endpoint.lstrip('/')}"
                 logger.debug(f"Using direct cloud API endpoint: {endpoint}")
             else:
-                # Lokale API
                 url = f"{self.url}/{endpoint.lstrip('/')}"
 
             if method == "GET":
@@ -67,8 +73,34 @@ class HomeyCollector(SmartHomeCollector):
             else:
                 raise ValueError(f"Unsupported method: {method}")
 
+            # Bei Erfolg: Failure-Zähler zurücksetzen
+            if endpoint in self._endpoint_failures:
+                del self._endpoint_failures[endpoint]
+            if endpoint in self._endpoint_skip_until:
+                del self._endpoint_skip_until[endpoint]
+
             response.raise_for_status()
             return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else 0
+            if status_code == 401:
+                # 401: Berechtigungsfehler – Circuit Breaker aktivieren
+                count = self._endpoint_failures.get(endpoint, 0) + 1
+                self._endpoint_failures[endpoint] = count
+                if count == 1:
+                    logger.warning(f"Homey API 401 Unauthorized: {endpoint} (Token hat keine Berechtigung für diesen Endpunkt)")
+                elif count == 3:
+                    from datetime import timedelta
+                    self._endpoint_skip_until[endpoint] = datetime.now() + timedelta(hours=1)
+                    logger.warning(f"Homey API 401 für {endpoint} – Circuit Breaker aktiv, pausiere 1 Stunde")
+                else:
+                    logger.debug(f"Homey API 401: {endpoint} (Fehler #{count})")
+            else:
+                logger.error(f"Homey API error: {e}")
+                if self.is_cloud_api and '/delegation/token/' not in self.url:
+                    logger.error("Hint: For Homey Cloud, configure URL as: https://api.athom.com/delegation/token/YOUR_HOMEY_ID")
+            return None
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Homey API error: {e}")
