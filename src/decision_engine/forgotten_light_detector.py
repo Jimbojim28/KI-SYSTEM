@@ -93,6 +93,11 @@ class ForgottenLightDetector:
         # Notification-Tracking für Cooldown (pro Gerät)
         self._notification_tracking: Dict[str, dict] = {}  # device_id -> {count, last_sent, is_away}
         
+        # Stündliche Zusammenfassung
+        self._digest_pending: Dict[str, dict] = {}  # device_id -> {name, room, on_minutes, reasons}
+        self._digest_last_sent: Optional[datetime] = None
+        self._digest_last_state: set = set()  # set(device_ids) beim letzten Senden
+        
         # Datenbank-Tabelle sicherstellen
         self._ensure_table()
         
@@ -337,9 +342,11 @@ class ForgottenLightDetector:
                             ml_prediction=self.ml_model is not None and self.ml_model.is_trained
                         )
                 else:
-                    # Lampe ist aus - entferne aus Tracking
+                    # Lampe ist aus - entferne aus Tracking und Digest
                     if device_id in self.light_on_times:
                         del self.light_on_times[device_id]
+                    if device_id in self._digest_pending:
+                        del self._digest_pending[device_id]
             
             # Debug-Logging alle 5 Minuten
             if not hasattr(self, '_last_debug_log') or (now - self._last_debug_log).seconds > 300:
@@ -549,15 +556,15 @@ class ForgottenLightDetector:
             logger.info(f"Forgotten light detected: {device_name} in {room_name} "
                        f"(confidence: {confidence:.0%}, reasons: {', '.join(reasons)})")
             
-            # Pushover-Benachrichtigung senden (mit device_id für Cooldown-Tracking)
-            self._send_forgotten_light_notification(
-                device_name=device_name,
-                room_name=room_name,
-                on_minutes=on_minutes,
-                reasons=reasons,
-                confidence=confidence,
-                device_id=device_id
-            )
+            # Für stündliche Zusammenfassung vormerken
+            self._digest_pending[device_id] = {
+                'name': device_name,
+                'room': room_name,
+                'on_minutes': on_minutes,
+                'reasons': reasons,
+                'confidence': confidence
+            }
+            self._maybe_send_digest()
             
             # Im aktiven Modus: Lampe ausschalten
             if not self.test_mode:
@@ -566,6 +573,101 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.error(f"Error saving forgotten light prediction: {e}")
     
+    def _maybe_send_digest(self):
+        """Sendet stündliche Zusammenfassung aller vergessenen Lampen, nur wenn sich etwas geändert hat."""
+        now = datetime.now()
+        
+        # Entferne Lampen die inzwischen ausgeschaltet wurden
+        for device_id in list(self._digest_pending.keys()):
+            if device_id not in self.light_on_times:
+                del self._digest_pending[device_id]
+        
+        if not self._digest_pending:
+            return
+        
+        current_state = set(self._digest_pending.keys())
+        
+        # Nur senden wenn: erste Mail ODER Stunde vorbei UND sich etwas geändert hat
+        hour_passed = (
+            self._digest_last_sent is None or
+            (now - self._digest_last_sent).total_seconds() >= 3600
+        )
+        state_changed = current_state != self._digest_last_state
+        
+        if not (hour_passed and state_changed):
+            return
+        
+        self._send_digest_notification(now)
+        self._digest_last_sent = now
+        self._digest_last_state = current_state
+
+    def _send_digest_notification(self, now: datetime):
+        """Sendet eine zusammengefasste Pushover-Nachricht für alle vergessenen Lampen."""
+        try:
+            config_path = Path('config/config.yaml')
+            if not config_path.exists():
+                return
+
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f) or {}
+
+            forgotten_light_config = full_config.get('forgotten_light', {})
+            if not forgotten_light_config.get('notifications_enabled', True):
+                return
+
+            notifications = full_config.get('notifications', {})
+            pushover = notifications.get('pushover', {})
+            api_key = pushover.get('api_token', '')
+            user_key = pushover.get('user_key', '')
+
+            if not api_key or not user_key:
+                absence = full_config.get('absence', {})
+                api_key = api_key or absence.get('pushover_api_key', '')
+                user_key = user_key or absence.get('pushover_user_key', '')
+
+            if not api_key or not user_key:
+                return
+
+            is_away = not self.current_presence
+            count = len(self._digest_pending)
+
+            if is_away:
+                title = f"💡 {count} Licht{'er' if count > 1 else ''} an – Niemand zuhause!"
+                priority = 1
+            else:
+                title = f"💡 {count} vergessenes Licht{'er' if count > 1 else ''}?"
+                priority = 0
+
+            lines = []
+            for info in self._digest_pending.values():
+                on_h = int(info['on_minutes'] // 60)
+                on_m = int(info['on_minutes'] % 60)
+                duration = f"{on_h}h {on_m}min" if on_h else f"{on_m}min"
+                lines.append(f"• <b>{info['name']}</b> ({info['room']}) – seit {duration}")
+
+            message = "\n".join(lines)
+
+            if is_away and self.away_since:
+                away_minutes = (now - self.away_since).total_seconds() / 60
+                message += f"\n\n🏠 Niemand zuhause seit {int(away_minutes)} Min."
+
+            requests.post(
+                'https://api.pushover.net/1/messages.json',
+                data={
+                    'token': api_key,
+                    'user': user_key,
+                    'title': title,
+                    'message': message,
+                    'html': 1,
+                    'priority': priority
+                },
+                timeout=30
+            )
+            logger.info(f"Forgotten light digest sent: {count} lights (next in 1h if changed)")
+
+        except Exception as e:
+            logger.error(f"Error sending forgotten light digest: {e}")
+
     def _calculate_notification_cooldown(self, device_id: str, is_away: bool) -> int:
         """Berechnet den Cooldown für Forgotten Light Benachrichtigungen
         
