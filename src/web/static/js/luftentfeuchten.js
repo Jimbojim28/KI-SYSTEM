@@ -939,14 +939,25 @@ async function loadAlerts() {
     try {
         const data = await fetchJSON('/api/luftentfeuchten/alerts?days=7');
 
-        if (!data) return; // Null bei Netzwerkfehler
-        
+        if (!data) return;
+
         if (data.alerts && data.alerts.length > 0) {
+            // Filtere bestätigte Warnungen (via localStorage)
+            const confirmedKey = 'bathroom_alerts_confirmed';
+            const confirmed = JSON.parse(localStorage.getItem(confirmedKey) || '[]');
+
+            const newAlerts = data.alerts.filter(a => {
+                const sig = (a.title || '') + '|' + (a.message || '');
+                return !confirmed.includes(sig);
+            });
+
+            if (newAlerts.length === 0) return;
+
             const alertsCard = document.getElementById('alerts-card');
             const alertsContent = document.getElementById('alerts-content');
 
             let html = '';
-            data.alerts.forEach(alert => {
+            newAlerts.forEach(alert => {
                 html += `
                     <div class="alert-item severity-${alert.severity}">
                         <div class="alert-title">${alert.title}</div>
@@ -957,6 +968,16 @@ async function loadAlerts() {
 
             alertsContent.innerHTML = html;
             alertsCard.style.display = 'block';
+
+            // Bestätigen-Button: alle aktuellen Warnungen speichern
+            const confirmBtn = document.getElementById('confirm-alerts-btn');
+            if (confirmBtn) {
+                confirmBtn.onclick = () => {
+                    const sigs = data.alerts.map(a => (a.title || '') + '|' + (a.message || ''));
+                    localStorage.setItem(confirmedKey, JSON.stringify(sigs));
+                    alertsCard.style.display = 'none';
+                };
+            }
         }
 
     } catch (error) {

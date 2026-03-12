@@ -39,9 +39,14 @@
                     <!-- Wird per JavaScript gefüllt -->
                 </div>
             </div>
-            <button id="dismiss-alerts-btn" class="btn btn-sm" style="background: transparent; color: #92400e; border: 1px solid #d97706; padding: 4px 10px;">
-                ✕ Schließen
-            </button>
+            <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                <button id="confirm-alerts-btn" class="btn btn-sm" style="background: #f59e0b; color: white; border: none; padding: 4px 10px;" title="Alle Warnungen bestätigen und dauerhaft ausblenden">
+                    ✓ Alle bestätigen
+                </button>
+                <button id="dismiss-alerts-btn" class="btn btn-sm" style="background: transparent; color: #92400e; border: 1px solid #d97706; padding: 4px 10px;">
+                    ✕ Schließen
+                </button>
+            </div>
         </div>
     </div>
 
