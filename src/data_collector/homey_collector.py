@@ -125,9 +125,9 @@ class HomeyCollector(SmartHomeCollector):
 
     def _get_device(self, device_id: str) -> Optional[Dict]:
         """Holt ein Device aus dem Cache oder API"""
-        # Refresh cache wenn älter als 30 Sekunden
+        # Refresh cache wenn älter als 120 Sekunden (2 Minuten)
         if (not self._cache_timestamp or
-            (datetime.now() - self._cache_timestamp).seconds > 30):
+            (datetime.now() - self._cache_timestamp).seconds > 120):
             self._refresh_device_cache()
 
         # Suche in Cache
