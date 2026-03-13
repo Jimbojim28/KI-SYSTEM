@@ -220,7 +220,16 @@ class BathroomAutomation:
             self._record_measurement(platform)
 
         # === LUFTENTFEUCHTER STEUERUNG ===
-        # Übergebe auch shower_sensor_warning für prädiktive Aktivierung
+        # Frühwarnung nur relevant wenn Feuchtigkeit noch über dem Abschaltschwellwert –
+        # ist die Luft bereits trocken genug, wäre ein Start wegen eines Mini-Trends ein
+        # Fehlalarm (z.B. Restfeuchte nach der Dusche, die sich verteilt).
+        if shower_sensor_warning and humidity < self.humidity_low:
+            logger.debug(
+                f"🔕 Shower sensor warning ignored – humidity already below low threshold "
+                f"({humidity}% < {self.humidity_low}%)"
+            )
+            shower_sensor_warning = False
+
         dehumidifier_action = self._control_dehumidifier(
             humidity,
             shower_active or shower_sensor_warning,  # Auch bei Frühwarnung aktivieren!
