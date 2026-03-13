@@ -679,15 +679,27 @@ class BathroomAutomation:
 
         # EINSCHALTEN wenn:
         # - Luftfeuchtigkeit zu hoch
-        # - Oder Dusche aktiv erkannt
+        # - Oder Dusche aktiv erkannt (NUR wenn Hauptsensor noch nicht trocken)
         # - Oder Schimmelrisiko erkannt
-        should_turn_on = (humidity > self.humidity_high) or shower_active or mold_risk_detected
+        #
+        # WICHTIG: Wenn Hauptsensor bereits unter humidity_low ist, wird shower_active
+        # ignoriert. Restdampf am Duschsensor (nach echter Dusche) löst sonst immer
+        # wieder false positives aus. Eine echte neue Dusche hebt den Hauptsensor
+        # innerhalb von 1-2 Minuten über humidity_low – dann startet der Entfeuchter
+        # durch die humidity_high-Bedingung sowieso.
+        shower_starts_new_cycle = shower_active and humidity >= self.humidity_low
+        if shower_active and humidity < self.humidity_low:
+            logger.debug(
+                f"🔕 Shower detection ignored – main humidity already below low threshold "
+                f"({humidity:.1f}% < {self.humidity_low}%) – likely residual steam"
+            )
+        should_turn_on = (humidity > self.humidity_high) or shower_starts_new_cycle or mold_risk_detected
 
         if should_turn_on and not self.dehumidifier_running:
             # Bestimme Grund
             if mold_risk_detected:
                 reason = f'Mold risk detected: {mold_risk_level} (humidity: {humidity}%)'
-            elif shower_active:
+            elif shower_starts_new_cycle:
                 reason = f'Shower detected (humidity: {humidity}%)'
             else:
                 reason = f'High humidity ({humidity}%)'
