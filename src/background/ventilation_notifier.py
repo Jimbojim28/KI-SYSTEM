@@ -880,21 +880,34 @@ class VentilationNotifier:
             if config.get('frost_warning') and outdoor_temp is not None:
                 frost_threshold = config.get('frost_threshold', 2)
                 if outdoor_temp < frost_threshold:
-                    for window in open_windows:
-                        device_id = window['device_id']
-                        window_info = self._open_windows.get(device_id, {})
-                        opened_at = window_info.get('opened_at') if isinstance(window_info, dict) else None
-                        if opened_at:
-                            minutes_open = (datetime.now() - opened_at).total_seconds() / 60
-                            if minutes_open >= 10:  # Mind. 10 Min offen
-                                self._send_notification(
-                                    '❄️ Frostwarnung!',
-                                    f'<b>Außentemperatur: {outdoor_temp:.1f}°C</b>\n\n'
-                                    f'🪟 <b>{window["name"]}</b> ist seit {minutes_open:.0f} Min. offen.\n\n'
-                                    f'⚠️ Bitte Fenster schließen um Heizkosten zu sparen.',
-                                    priority=1,
-                                    notification_key=f'frost_{device_id}'
-                                )
+                    # Nachts keine Frostwarnung – man schläft und kann nichts tun
+                    if self._is_quiet_hours(config):
+                        logger.debug("Frost warning suppressed during quiet hours")
+                    else:
+                        # Alle betroffenen Fenster sammeln und als EINE Nachricht senden
+                        frost_windows = []
+                        for window in open_windows:
+                            device_id = window['device_id']
+                            window_info = self._open_windows.get(device_id, {})
+                            opened_at = window_info.get('opened_at') if isinstance(window_info, dict) else None
+                            if opened_at:
+                                minutes_open = (datetime.now() - opened_at).total_seconds() / 60
+                                if minutes_open >= 10:  # Mind. 10 Min offen
+                                    frost_windows.append((window['name'], minutes_open))
+
+                        if frost_windows:
+                            window_lines = '\n'.join(
+                                f'🪟 <b>{name}</b> seit {mins:.0f} Min. offen'
+                                for name, mins in frost_windows
+                            )
+                            self._send_notification(
+                                '❄️ Frostwarnung!',
+                                f'<b>Außentemperatur: {outdoor_temp:.1f}°C</b>\n\n'
+                                f'{window_lines}\n\n'
+                                f'⚠️ Bitte Fenster schließen um Heizkosten zu sparen.',
+                                priority=1,
+                                notification_key='frost_combined'
+                            )
             
             # === Schimmelgefahr ===
             if config.get('mold_warning'):
