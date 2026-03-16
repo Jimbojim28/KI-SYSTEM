@@ -935,8 +935,16 @@ class BathroomAutomation:
             learned_delay = self.db.get_learned_parameter('dehumidifier_delay')
 
             if learned_high:
-                self.humidity_high = learned_high
-                logger.info(f"Loaded learned humidity_high: {learned_high}%")
+                # Sicherheitsgrenze: Gelernt darf nicht unter dem konfigurierten Wert liegen
+                # Der Nutzer hat bewusst einen Wert eingestellt – Lernen darf nur nach oben optimieren,
+                # aber NICHT unter den konfigurierten Schwellwert fallen (verhindert false positives)
+                config_high = self.config.get('humidity_threshold_high', 70.0)
+                if learned_high < config_high:
+                    logger.info(f"Learned humidity_high={learned_high}% is below configured {config_high}% – using configured value")
+                    self.humidity_high = config_high
+                else:
+                    self.humidity_high = learned_high
+                logger.info(f"Loaded learned humidity_high: {self.humidity_high}%")
 
             if learned_low:
                 # Sicherheitsgrenze: Gelernt darf nicht unter dem konfigurierten Wert liegen
@@ -1091,9 +1099,12 @@ class BathroomAutomation:
                 }
 
             # Speichere gelernte Parameter
+            # Sicherheitsgrenze: gelernter High-Wert darf nicht unter konfiguriertem Wert liegen
+            config_high = self.config.get('humidity_threshold_high', 70.0)
+            learned_high_value = max(suggestions['humidity_threshold_high'], config_high)
             self.db.save_learned_parameter(
                 parameter_name='humidity_threshold_high',
-                value=suggestions['humidity_threshold_high'],
+                value=learned_high_value,
                 confidence=suggestions['confidence'],
                 samples_used=suggestions['based_on_events'],
                 reason=suggestions['reason']
@@ -1113,7 +1124,7 @@ class BathroomAutomation:
                 'humidity_low': self.humidity_low
             }
 
-            self.humidity_high = suggestions['humidity_threshold_high']
+            self.humidity_high = learned_high_value
             self.humidity_low = suggestions['humidity_threshold_low']
 
             logger.info(f"✨ Parameters optimized! High: {old_values['humidity_high']}% -> {self.humidity_high}%, Low: {old_values['humidity_low']}% -> {self.humidity_low}%")
