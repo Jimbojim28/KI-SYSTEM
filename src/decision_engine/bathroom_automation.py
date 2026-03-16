@@ -589,10 +589,11 @@ class BathroomAutomation:
                 self.last_shower_sensor_humidity = shower_sensor_humidity
                 logger.info(f"🚿 Shower detected via shower sensor! (shower: {shower_sensor_humidity}%, main: {humidity}%, threshold: {self.shower_sensor_min_humidity}%)")
                 return True
-            # ALTERNATIV: Auch bei niedrigerer Luftfeuchtigkeit, wenn Hauptsensor bereits erhöht ist
-            elif shower_sensor_humidity and humidity > 55:  # Hauptsensor zeigt auch Anstieg
+            # ALTERNATIV: Auch bei niedrigerer Luftfeuchtigkeit, wenn Hauptsensor deutlich erhöht ist
+            # Schwellwert = humidity_high - 5% (konsistent mit high_humidity-Definition)
+            elif shower_sensor_humidity and humidity > (self.humidity_high - 5.0):  # Hauptsensor zeigt echten Anstieg
                 self.last_shower_sensor_humidity = shower_sensor_humidity
-                logger.info(f"🚿 Shower detected via shower sensor (combined)! (shower: {shower_sensor_humidity}%, main: {humidity}%)")
+                logger.info(f"🚿 Shower detected via shower sensor (combined)! (shower: {shower_sensor_humidity}%, main: {humidity}%, threshold: {self.humidity_high - 5.0}%)")
                 return True
 
         # Duschsensor-Wert for Logging merken (auch wenn kein schneller Anstieg)
