@@ -46,7 +46,7 @@ class ForgottenLightDetector:
     - Verbessert sich mit mehr Daten
     """
     
-    def __init__(self, db: Database = None, config: dict = None, test_mode: bool = True):
+    def __init__(self, db: Optional[Database] = None, config: Optional[dict] = None, test_mode: bool = True):
         self.db = db or Database()
         self.config = config or {}
         self.test_mode = test_mode  # Wenn True: nur protokollieren, nicht ausschalten
@@ -283,6 +283,9 @@ class ForgottenLightDetector:
                 light_count += 1
                 device_id = device.get('id')
                 device_name = device.get('name', 'Unknown')
+                
+                if not device_id:
+                    continue
                 
                 # Handle zone - prefer zoneName, then resolve UUID
                 room_name = device.get('zoneName')
@@ -731,7 +734,7 @@ class ForgottenLightDetector:
         cooldown = self._calculate_notification_cooldown(device_id, is_away)
         logger.debug(f"Forgotten light notification tracking: {device_id}, count={tracking['count']}, next_cooldown={cooldown}min")
     
-    def reset_notification_tracking(self, device_id: str = None):
+    def reset_notification_tracking(self, device_id: Optional[str] = None):
         """Setzt das Tracking zurück (z.B. wenn Lampe ausgeschaltet wird)"""
         if device_id:
             if device_id in self._notification_tracking:
@@ -743,7 +746,7 @@ class ForgottenLightDetector:
 
     def _send_forgotten_light_notification(self, device_name: str, room_name: str,
                                             on_minutes: float, reasons: List[str],
-                                            confidence: float, device_id: str = None):
+                                            confidence: float, device_id: Optional[str] = None):
         """Sendet Pushover-Benachrichtigung für vergessene Lampe mit intelligentem Cooldown
         
         Cooldown-Logik:
@@ -891,8 +894,8 @@ class ForgottenLightDetector:
             return
             
         try:
-            if hasattr(self.platform, 'turn_off_device'):
-                self.platform.turn_off_device(device_id)
+            if self.platform and hasattr(self.platform, 'turn_off'):
+                self.platform.turn_off(device_id)
                 logger.info(f"Turned off forgotten light: {device_name}")
         except Exception as e:
             logger.error(f"Could not turn off {device_name}: {e}")
@@ -930,6 +933,9 @@ class ForgottenLightDetector:
             
             device_id = device.get('id')
             device_name = device.get('name', 'Unknown')
+            
+            if not device_id:
+                continue
             
             # Raumname ermitteln - prefer zoneName
             room_name = device.get('zoneName')
@@ -1098,8 +1104,9 @@ class ForgottenLightDetector:
         try:
             if self.platform:
                 # Versuche Zonen von der Platform zu holen
-                if hasattr(self.platform, 'get_zones'):
-                    zones = self.platform.get_zones()
+                get_zones_fn = getattr(self.platform, 'get_zones', None)
+                if get_zones_fn:
+                    zones = get_zones_fn()
                     # Homey gibt Dict zurück: {zone_id: {id, name, ...}}
                     if isinstance(zones, dict):
                         for zone_id, zone_data in zones.items():
@@ -1121,8 +1128,9 @@ class ForgottenLightDetector:
     def _get_presence_status(self) -> bool:
         """Prüft ob jemand zu Hause ist"""
         try:
-            if hasattr(self.platform, 'get_presence_status'):
-                presence = self.platform.get_presence_status()
+            get_presence_fn = getattr(self.platform, 'get_presence_status', None)
+            if get_presence_fn:
+                presence = get_presence_fn()
                 return presence.get('anyone_home', True)
         except:
             pass
@@ -1173,7 +1181,7 @@ class ForgottenLightDetector:
         configured_type = self.device_types.get(device_id)
         
         # Explizit als "device" ausgeblendet -> ignorieren
-        if configured_type == 'device':
+        if configured_type in ('device', 'light_ignored'):
             return False
         
         # Explizit als "light" markiert -> ist eine Lampe
@@ -1222,6 +1230,9 @@ class ForgottenLightDetector:
                 
                 device_id = device.get('id')
                 device_name = device.get('name', 'Unknown')
+                
+                if not device_id:
+                    continue
                 
                 # Raumname ermitteln
                 room_name = device.get('zoneName')
@@ -1528,7 +1539,7 @@ class ForgottenLightDetector:
 _detector_instance = None
 
 
-def get_forgotten_light_detector(config: dict = None, test_mode: Optional[bool] = None) -> ForgottenLightDetector:
+def get_forgotten_light_detector(config: Optional[dict] = None, test_mode: Optional[bool] = None) -> ForgottenLightDetector:
     """Gibt globale Detektor-Instanz zurück"""
     global _detector_instance
     if _detector_instance is None:
@@ -1544,7 +1555,7 @@ def get_forgotten_light_detector(config: dict = None, test_mode: Optional[bool] 
     return _detector_instance
 
 
-def start_forgotten_light_detector(config: dict = None, test_mode: Optional[bool] = None) -> ForgottenLightDetector:
+def start_forgotten_light_detector(config: Optional[dict] = None, test_mode: Optional[bool] = None) -> ForgottenLightDetector:
     """Startet den Detektor"""
     detector = get_forgotten_light_detector(config=config, test_mode=test_mode)
     detector.start()

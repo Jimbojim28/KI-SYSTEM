@@ -110,6 +110,23 @@
         </div>
     </div>
     
+    <!-- Alle Lampen Übersicht -->
+    <div class="section-card">
+        <div class="all-lights-header">
+            <h3>🗺️ Alle Lampen – Übersicht</h3>
+            <button class="btn-refresh-lights" onclick="loadAllLights()">🔄 Aktualisieren</button>
+        </div>
+        <p class="section-hint">Aktueller Zustand aller erkannten Lampen im Haus:</p>
+        <div class="all-lights-summary" id="all-lights-summary" style="display:none;">
+            <span class="lights-on-badge">💡 <span id="al-on-count">0</span> AN</span>
+            <span class="lights-off-badge">⚫ <span id="al-off-count">0</span> AUS</span>
+            <span class="lights-total-badge">Gesamt: <span id="al-total">0</span></span>
+        </div>
+        <div id="all-lights-container" class="all-lights-grid">
+            <div class="loading-state"><div class="spinner"></div><p>Lade Lampen...</p></div>
+        </div>
+    </div>
+
     <!-- Chart: Wann wurden Lampen vergessen? -->
     <div class="section-card">
         <h3>📈 Wann wurden Lampen vergessen?</h3>
@@ -875,7 +892,111 @@
     color: #059669;
 }
 
-.ml-tag {
+/* Alle Lampen Übersicht */
+.all-lights-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+.all-lights-header h3 { margin: 0; }
+.btn-refresh-lights {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.btn-refresh-lights:hover { background: #e5e7eb; }
+
+.all-lights-summary {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+.lights-on-badge {
+    background: #d1fae5;
+    color: #065f46;
+    font-weight: 600;
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.9em;
+}
+.lights-off-badge {
+    background: #f3f4f6;
+    color: #374151;
+    font-weight: 600;
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.9em;
+}
+.lights-total-badge {
+    color: #6b7280;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.9em;
+    align-self: center;
+}
+
+.all-lights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.6rem;
+}
+
+.light-tile {
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    border: 1px solid transparent;
+    transition: transform 0.15s, box-shadow 0.15s;
+    cursor: default;
+}
+.light-tile:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+
+.light-tile.light-on {
+    background: linear-gradient(135deg, #fef9c3 0%, #fefce8 100%);
+    border-color: #fde68a;
+}
+.light-tile.light-off {
+    background: #f9fafb;
+    border-color: #e5e7eb;
+}
+
+.light-tile-icon { font-size: 1.4rem; line-height: 1; }
+.light-tile-name {
+    font-weight: 600;
+    font-size: 0.85em;
+    color: #1f2937;
+    word-break: break-word;
+}
+.light-tile.light-off .light-tile-name { color: #6b7280; }
+.light-tile-room {
+    font-size: 0.75em;
+    color: #9ca3af;
+}
+.light-tile-dim {
+    font-size: 0.75em;
+    color: #d97706;
+    font-weight: 500;
+}
+.light-room-group {
+    grid-column: 1 / -1;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.4rem 0 0.1rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-top: 0.4rem;
+}
+
+
     font-size: 0.7em;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -1657,6 +1778,56 @@ function switchTab(tabName) {
         loadCollectorStatus();
         loadRecentEvents();
         loadLightStats();
+    }
+}
+
+// Alle Lampen laden
+async function loadAllLights() {
+    const container = document.getElementById('all-lights-container');
+    const summary = document.getElementById('all-lights-summary');
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Lade Lampen...</p></div>';
+
+    try {
+        const resp = await fetch('/api/lighting/all-lights');
+        const data = await resp.json();
+        const lights = data.lights || [];
+
+        // Summary anzeigen
+        document.getElementById('al-on-count').textContent = data.on_count || 0;
+        document.getElementById('al-off-count').textContent = data.off_count || 0;
+        document.getElementById('al-total').textContent = data.total || 0;
+        summary.style.display = 'flex';
+
+        if (lights.length === 0) {
+            container.innerHTML = '<p class="empty-state">Keine Lampen gefunden. Ist der Detektor gestartet?</p>';
+            return;
+        }
+
+        // Nach Räumen gruppieren
+        const grouped = {};
+        for (const l of lights) {
+            if (!grouped[l.room_name]) grouped[l.room_name] = [];
+            grouped[l.room_name].push(l);
+        }
+
+        let html = '';
+        for (const room of Object.keys(grouped).sort()) {
+            html += `<div class="light-room-group">📍 ${room}</div>`;
+            for (const l of grouped[room]) {
+                const icon = l.state ? '💡' : '⚫';
+                const unavailNote = !l.available ? `<div class="light-tile-dim" style="color:#9ca3af">⚠️ nicht erreichbar</div>` : '';
+                const dimInfo = (l.state && l.dim_pct !== null) ? `<div class="light-tile-dim">${l.dim_pct}% Helligkeit</div>` : '';
+                html += `
+                <div class="light-tile ${l.state ? 'light-on' : 'light-off'}" title="${l.room_name}">
+                    <div class="light-tile-icon">${icon}</div>
+                    <div class="light-tile-name">${l.device_name}</div>
+                    ${dimInfo}${unavailNote}
+                </div>`;
+            }
+        }
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `<p class="empty-state">Fehler beim Laden: ${e.message}</p>`;
     }
 }
 
@@ -2558,6 +2729,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Dann alle anderen Daten laden
     loadStatus();
+    loadAllLights();
     loadChart(7);
     loadRoomLightStats();
     loadLightStats();

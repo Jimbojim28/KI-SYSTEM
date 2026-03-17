@@ -24,5 +24,7 @@
         }
     ],
     "typeCheckingMode": "basic",
-    "useLibraryCodeForTypes": true
+    "useLibraryCodeForTypes": true,
+    "venvPath": ".",
+    "venv": "venv"
 }
