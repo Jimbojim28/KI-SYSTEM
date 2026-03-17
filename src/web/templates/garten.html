@@ -34,6 +34,20 @@
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 2em;">☔</span>
+            <div>
+                <div style="font-size: 0.8em; color: #065f46;">Regen heute</div>
+                <div id="summary-rain-prob" style="font-size: 1.5em; font-weight: bold; color: #064e3b;">–</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 2em;">☀️</span>
+            <div>
+                <div style="font-size: 0.8em; color: #065f46;">Sonnenstunden</div>
+                <div id="summary-sun-hours" style="font-size: 1.5em; font-weight: bold; color: #064e3b;">–</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
             <span style="font-size: 2em;">🌧️</span>
             <div>
                 <div style="font-size: 0.8em; color: #065f46;">Letzter Update</div>
@@ -515,16 +529,45 @@ function updateCard(key, moistureData, tempData) {
     }
 }
 
-// ─── Außentemperatur aus Status ──────────────────────────────────
+// ─── Außentemperatur, Regen & Sonnenstunden aus Status ───────────
 async function updateSummary(successCount) {
     try {
         const resp = await fetch('/api/status');
         if (resp.ok) {
             const data = await resp.json();
-            // Außentemperatur: data.temperature.outdoor (wie im Dashboard)
+
+            // Außentemperatur
             const temp = data?.temperature?.outdoor;
             document.getElementById('summary-outdoor-temp').textContent =
                 temp !== undefined && temp !== null ? temp.toFixed(1) + ' °C' : '–';
+
+            // Regenwahrscheinlichkeit: Max aus dem heutigen Forecast (0–100%)
+            const forecast = data?.weather?.forecast || [];
+            const todayStr = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+            const todayFc = forecast.filter(f => f.timestamp && f.timestamp.startsWith(todayStr));
+            const useFc = todayFc.length > 0 ? todayFc : forecast; // Fallback: alle Einträge
+            const maxRain = useFc.length > 0
+                ? Math.round(Math.max(...useFc.map(f => f.rain_probability || 0)))
+                : null;
+            const rainEl = document.getElementById('summary-rain-prob');
+            if (maxRain !== null) {
+                rainEl.textContent = maxRain + ' %';
+                rainEl.style.color = maxRain >= 70 ? '#dc2626' : maxRain >= 30 ? '#d97706' : '#064e3b';
+            } else {
+                rainEl.textContent = '–';
+            }
+
+            // Sonnenstunden: Schätzung aus Wolkenbedeckung (clouds 0–100%)
+            // Tageslicht März ~11h; (1 - clouds/100) × 11
+            const clouds = data?.weather?.clouds;
+            const sunEl = document.getElementById('summary-sun-hours');
+            if (clouds !== undefined && clouds !== null) {
+                const sunH = Math.round((1 - clouds / 100) * 11);
+                sunEl.textContent = '~' + sunH + ' h';
+                sunEl.style.color = sunH >= 7 ? '#b45309' : sunH >= 4 ? '#064e3b' : '#6b7280';
+            } else {
+                sunEl.textContent = '–';
+            }
         }
     } catch (e) {}
     document.getElementById('summary-sensors-active').textContent = successCount + ' / 3';
