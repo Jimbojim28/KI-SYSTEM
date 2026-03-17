@@ -1,0 +1,852 @@
+{% extends "base.html" %}
+
+{% block title %}Hochbeet & Rasen - KI Smart Home{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>🪴 Hochbeet & Rasen</h2>
+    <p>Bodenfeuchte-Überwachung für Hochbeete und Rasen</p>
+</div>
+
+<!-- Tab Navigation -->
+<div class="settings-tabs">
+    <button class="tab-button active" onclick="switchGartenTab('status')">🌱 Status</button>
+    <button class="tab-button" onclick="switchGartenTab('settings')">⚙️ Einstellungen</button>
+</div>
+
+<!-- ===== STATUS TAB ===== -->
+<div id="status-tab" class="tab-content active">
+
+    <!-- Zusammenfassung -->
+    <div id="garten-summary" class="outdoor-header" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-left: 4px solid #10b981; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 30px; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 2em;">🌡️</span>
+            <div>
+                <div style="font-size: 0.8em; color: #065f46;">Außentemperatur</div>
+                <div id="summary-outdoor-temp" style="font-size: 1.5em; font-weight: bold; color: #064e3b;">–</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 2em;">💧</span>
+            <div>
+                <div style="font-size: 0.8em; color: #065f46;">Sensoren aktiv</div>
+                <div id="summary-sensors-active" style="font-size: 1.5em; font-weight: bold; color: #064e3b;">–</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 2em;">🌧️</span>
+            <div>
+                <div style="font-size: 0.8em; color: #065f46;">Letzter Update</div>
+                <div id="summary-last-update" style="font-size: 1em; font-weight: bold; color: #064e3b;">–</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hochbeete -->
+    <h3 style="margin-top: 0; margin-bottom: 15px;">🌿 Hochbeete</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px;">
+
+        <!-- Hochbeet 1 -->
+        <div class="card" id="card-hochbeet1">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0;">🪴 Hochbeet 1</h3>
+                <span id="status-badge-hochbeet1" class="badge badge-loading">Lädt...</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div style="text-align: center; padding: 12px; background: #f0fdf4; border-radius: 8px;">
+                    <div style="font-size: 2em; font-weight: bold; color: #065f46;" id="moisture-hochbeet1">–</div>
+                    <div style="color: #6b7280; font-size: 0.8em;">💧 Feuchte</div>
+                </div>
+                <div style="text-align: center; padding: 12px; background: #fff7ed; border-radius: 8px;">
+                    <div style="font-size: 2em; font-weight: bold; color: #9a3412;" id="temp-hochbeet1">–</div>
+                    <div style="color: #6b7280; font-size: 0.8em;">🌡️ Bodentemp.</div>
+                </div>
+            </div>
+            <div class="progress-bar-container" style="background: #e5e7eb; border-radius: 8px; height: 10px; margin: 8px 0;">
+                <div id="bar-hochbeet1" class="progress-bar" style="height: 100%; border-radius: 8px; width: 0%; transition: width 0.5s ease; background: #10b981;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: #9ca3af; margin-top: 4px;">
+                <span>0% trocken</span>
+                <span>100% nass</span>
+            </div>
+            <div id="hint-hochbeet1" style="margin-top: 10px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 0.85em; color: #4b5563;">–</div>
+            <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="updated-hochbeet1">Kein Datensatz</div>
+            <button onclick="toggleChart('hochbeet1')" style="margin-top: 10px; width: 100%; padding: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8em; color: #6b7280;">📈 24h-Verlauf anzeigen</button>
+            <div id="chart-area-hochbeet1" style="display: none; margin-top: 10px;">
+                <canvas id="chart-hochbeet1" height="100"></canvas>
+            </div>
+        </div>
+
+        <!-- Hochbeet 2 -->
+        <div class="card" id="card-hochbeet2">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0;">🪴 Hochbeet 2</h3>
+                <span id="status-badge-hochbeet2" class="badge badge-loading">Lädt...</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div style="text-align: center; padding: 12px; background: #f0fdf4; border-radius: 8px;">
+                    <div style="font-size: 2em; font-weight: bold; color: #065f46;" id="moisture-hochbeet2">–</div>
+                    <div style="color: #6b7280; font-size: 0.8em;">💧 Feuchte</div>
+                </div>
+                <div style="text-align: center; padding: 12px; background: #fff7ed; border-radius: 8px;">
+                    <div style="font-size: 2em; font-weight: bold; color: #9a3412;" id="temp-hochbeet2">–</div>
+                    <div style="color: #6b7280; font-size: 0.8em;">🌡️ Bodentemp.</div>
+                </div>
+            </div>
+            <div class="progress-bar-container" style="background: #e5e7eb; border-radius: 8px; height: 10px; margin: 8px 0;">
+                <div id="bar-hochbeet2" class="progress-bar" style="height: 100%; border-radius: 8px; width: 0%; transition: width 0.5s ease; background: #10b981;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: #9ca3af; margin-top: 4px;">
+                <span>0% trocken</span>
+                <span>100% nass</span>
+            </div>
+            <div id="hint-hochbeet2" style="margin-top: 10px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 0.85em; color: #4b5563;">–</div>
+            <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="updated-hochbeet2">Kein Datensatz</div>
+            <button onclick="toggleChart('hochbeet2')" style="margin-top: 10px; width: 100%; padding: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8em; color: #6b7280;">📈 24h-Verlauf anzeigen</button>
+            <div id="chart-area-hochbeet2" style="display: none; margin-top: 10px;">
+                <canvas id="chart-hochbeet2" height="100"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Rasen -->
+    <h3 style="margin-bottom: 15px;">🌾 Rasen</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px;">
+
+        <!-- Rasen 1 -->
+        <div class="card" id="card-rasen1">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0;">🌾 Rasen</h3>
+                <span id="status-badge-rasen1" class="badge badge-loading">Lädt...</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div style="text-align: center; padding: 12px; background: #f0fdf4; border-radius: 8px;">
+                    <div style="font-size: 2em; font-weight: bold; color: #065f46;" id="moisture-rasen1">–</div>
+                    <div style="color: #6b7280; font-size: 0.8em;">💧 Feuchte</div>
+                </div>
+                <div style="text-align: center; padding: 12px; background: #fff7ed; border-radius: 8px;">
+                    <div style="font-size: 2em; font-weight: bold; color: #9a3412;" id="temp-rasen1">–</div>
+                    <div style="color: #6b7280; font-size: 0.8em;">🌡️ Bodentemp.</div>
+                </div>
+            </div>
+            <div class="progress-bar-container" style="background: #e5e7eb; border-radius: 8px; height: 10px; margin: 8px 0;">
+                <div id="bar-rasen1" class="progress-bar" style="height: 100%; border-radius: 8px; width: 0%; transition: width 0.5s ease; background: #10b981;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: #9ca3af; margin-top: 4px;">
+                <span>0% trocken</span>
+                <span>100% nass</span>
+            </div>
+            <div id="hint-rasen1" style="margin-top: 10px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 0.85em; color: #4b5563;">–</div>
+            <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="updated-rasen1">Kein Datensatz</div>
+            <button onclick="toggleChart('rasen1')" style="margin-top: 10px; width: 100%; padding: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8em; color: #6b7280;">📈 24h-Verlauf anzeigen</button>
+            <div id="chart-area-rasen1" style="display: none; margin-top: 10px;">
+                <canvas id="chart-rasen1" height="100"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Mähroboter -->
+    <h3 style="margin-bottom: 15px;">🤖 Mähroboter (Anthbot Genie)</h3>
+    <div class="card" id="mower-card">
+        <!-- Nicht konfiguriert -->
+        <div id="mower-not-configured" style="text-align: center; padding: 20px; color: #6b7280;">
+            <div style="font-size: 2.5em; margin-bottom: 8px;">⚙️</div>
+            <p>Gerätename nicht konfiguriert –
+                <a href="#" onclick="switchGartenTab('settings'); event.preventDefault();" style="color: #2563eb;">Einstellungen öffnen</a>
+            </p>
+        </div>
+        <!-- Konfigurierter Inhalt -->
+        <div id="mower-content" style="display: none;">
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="margin: 0;">🤖 Anthbot Genie</h3>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <span id="mower-badge-connection" class="badge badge-loading">Verbindung…</span>
+                    <span id="mower-badge-status" class="badge badge-loading">Status…</span>
+                </div>
+            </div>
+            <!-- Akku -->
+            <div style="margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="font-size: 0.9em; color: #6b7280;">🔋 Akku</span>
+                    <span id="mower-battery-text" style="font-weight: 600;">–</span>
+                </div>
+                <div style="background: #e5e7eb; border-radius: 8px; height: 10px;">
+                    <div id="mower-battery-bar" style="height: 100%; border-radius: 8px; width: 0%; transition: width 0.5s ease; background: #10b981;"></div>
+                </div>
+            </div>
+            <!-- Stats -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;">
+                <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
+                    <div id="mower-mowing-time" style="font-size: 1.3em; font-weight: bold;">–</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Mähzeit (min)</div>
+                </div>
+                <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
+                    <div id="mower-mow-count" style="font-size: 1.3em; font-weight: bold;">–</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Mähgänge</div>
+                </div>
+                <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
+                    <div id="mower-cut-height" style="font-size: 1.3em; font-weight: bold;">–</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Schnitthöhe (mm)</div>
+                </div>
+            </div>
+            <!-- Steuerung -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="mowerCommand('start')" style="flex: 1; min-width: 110px; padding: 10px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 8px; font-size: 0.95em; cursor: pointer; font-weight: 600;">▶ Mähen starten</button>
+                <button onclick="mowerCommand('stop')"  style="flex: 1; min-width: 110px; padding: 10px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; border-radius: 8px; font-size: 0.95em; cursor: pointer; font-weight: 600;">⏹ Stoppen</button>
+                <button onclick="mowerCommand('dock')"  style="flex: 1; min-width: 110px; padding: 10px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 8px; font-size: 0.95em; cursor: pointer; font-weight: 600;">🏠 Ladestation</button>
+            </div>
+            <!-- Feedback -->
+            <div id="mower-feedback" style="margin-top: 10px; display: none; padding: 8px 12px; border-radius: 6px; font-size: 0.9em;"></div>
+            <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="mower-last-update">–</div>
+        </div>
+    </div>
+
+</div><!-- end status-tab -->
+
+<!-- ===== EINSTELLUNGEN TAB ===== -->
+<div id="settings-tab" class="tab-content">
+    <div class="settings-section card">
+        <h3>🔧 Sensor-IDs konfigurieren</h3>
+        <p class="info-text">Trage hier die Home Assistant Entitäts-IDs der Bodenfeuchtesensoren ein.</p>
+
+        <form id="garten-settings-form" onsubmit="saveGartenSettings(event)">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 20px;">
+                <div>
+                    <label for="sensor-hochbeet1" style="display: block; font-weight: 600; margin-bottom: 4px;">🪴 Hochbeet 1 – Feuchte-Sensor</label>
+                    <input type="text" id="sensor-hochbeet1" placeholder="z. B. sensor.hochbeet1_bodenfeuchte"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9em; box-sizing: border-box;">
+                    <label for="sensor-hochbeet1-temp" style="display: block; font-weight: 600; margin-top: 8px; margin-bottom: 4px;">🌡️ Hochbeet 1 – Temperatur-Sensor</label>
+                    <input type="text" id="sensor-hochbeet1-temp" placeholder="z. B. sensor.hochbeet1_temperatur"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9em; box-sizing: border-box;">
+                </div>
+                <div>
+                    <label for="sensor-hochbeet2" style="display: block; font-weight: 600; margin-bottom: 4px;">🪴 Hochbeet 2 – Feuchte-Sensor</label>
+                    <input type="text" id="sensor-hochbeet2" placeholder="z. B. sensor.hochbeet2_bodenfeuchte"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9em; box-sizing: border-box;">
+                    <label for="sensor-hochbeet2-temp" style="display: block; font-weight: 600; margin-top: 8px; margin-bottom: 4px;">🌡️ Hochbeet 2 – Temperatur-Sensor</label>
+                    <input type="text" id="sensor-hochbeet2-temp" placeholder="z. B. sensor.hochbeet2_temperatur"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9em; box-sizing: border-box;">
+                </div>
+                <div>
+                    <label for="sensor-rasen1" style="display: block; font-weight: 600; margin-bottom: 4px;">🌾 Rasen – Feuchte-Sensor</label>
+                    <input type="text" id="sensor-rasen1" placeholder="z. B. sensor.rasen_bodenfeuchte"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9em; box-sizing: border-box;">
+                    <label for="sensor-rasen1-temp" style="display: block; font-weight: 600; margin-top: 8px; margin-bottom: 4px;">🌡️ Rasen – Temperatur-Sensor</label>
+                    <input type="text" id="sensor-rasen1-temp" placeholder="z. B. sensor.rasen_temperatur"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9em; box-sizing: border-box;">
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 10px;">📊 Schwellenwerte Bodenfeuchte</label>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div>
+                        <label for="threshold-dry" style="font-size: 0.85em; color: #6b7280;">Trocken unter (%)</label>
+                        <input type="number" id="threshold-dry" min="0" max="100" value="30"
+                            style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label for="threshold-wet" style="font-size: 0.85em; color: #6b7280;">Nass über (%)</label>
+                        <input type="number" id="threshold-wet" min="0" max="100" value="70"
+                            style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <button type="submit" class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 10px 24px; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer;">
+                    💾 Einstellungen speichern
+                </button>
+                <span id="settings-save-msg" style="margin-left: 12px; font-size: 0.9em; display: none;"></span>
+            </div>
+        </form>
+    </div>
+
+    <!-- Mähroboter Einstellungen -->
+    <div class="settings-section card" style="margin-top: 20px;">
+        <h3>🤖 Mähroboter – Anthbot Genie HA</h3>
+        <p class="info-text">Gerätename aus Home Assistant. Wenn deine Entitäten z. B. <code>sensor.<strong>genie_600</strong>_battery_level</code> heißen, trage <strong>genie_600</strong> ein.</p>
+
+        <div style="margin-top: 16px;">
+            <label for="mower-device-prefix" style="display: block; font-weight: 600; margin-bottom: 6px;">🔑 HA Gerätename (Prefix)</label>
+            <input type="text" id="mower-device-prefix" placeholder="z. B. genie_600"
+                oninput="updateMowerPreview()"
+                style="width: 100%; max-width: 360px; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95em; box-sizing: border-box;">
+        </div>
+        <!-- Entitäten-Vorschau -->
+        <div id="mower-entities-preview" style="margin-top: 12px; display: none; padding: 12px; background: #f9fafb; border-radius: 8px; font-size: 0.82em; font-family: monospace; color: #374151; line-height: 1.9;"></div>
+
+        <div style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+                <label for="mower-default-height" style="font-size: 0.85em; color: #6b7280; display: block; margin-bottom: 4px;">✂️ Standard-Schnitthöhe (30–70 mm, Schritte à 5)</label>
+                <input type="number" id="mower-default-height" min="30" max="70" step="5" value="45"
+                    style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div>
+                <label for="mower-default-volume" style="font-size: 0.85em; color: #6b7280; display: block; margin-bottom: 4px;">🔊 Lautstärke (0–100)</label>
+                <input type="number" id="mower-default-volume" min="0" max="100" value="50"
+                    style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;">
+            </div>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button onclick="saveMowerSettings()" style="padding: 10px 22px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer; font-weight: 600;">💾 Speichern</button>
+            <button onclick="applyMowerHeight()" style="padding: 10px 18px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer;">✂️ Schnitthöhe setzen</button>
+            <button onclick="applyMowerVolume()" style="padding: 10px 18px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer;">🔊 Lautstärke setzen</button>
+            <span id="mower-settings-msg" style="font-size: 0.9em; display: none;"></span>
+        </div>
+
+        <div style="margin-top: 16px; padding: 12px; background: #eff6ff; border-radius: 8px; border-left: 4px solid #3b82f6;">
+            <strong style="color: #1e40af;">ℹ️ Anthbot Genie HA Integration</strong>
+            <p style="font-size: 0.85em; color: #1e3a8a; margin: 6px 0 0 0;">
+                Benötigt die <a href="https://github.com/vincentjanv/anthbot_genie_ha" target="_blank" rel="noopener" style="color: #2563eb; font-weight: 600;">anthbot_genie</a> HACS-Integration in Home Assistant.<br>
+                Installation: HACS → Custom Repositories → URL einfügen → <em>Anthbot Genie</em> installieren → HA neu starten → Integration hinzufügen.
+            </p>
+        </div>
+    </div>
+
+    <div class="settings-section card" style="margin-top: 20px;">
+        <h3>ℹ️ Feuchtewerte – Bedeutung</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px;">
+            <div style="padding: 12px; border-radius: 8px; background: #fee2e2; border-left: 4px solid #ef4444;">
+                <strong style="color: #991b1b;">💧 Trocken</strong>
+                <div style="font-size: 0.85em; color: #7f1d1d; margin-top: 4px;">Unter Schwellenwert – Gießen empfohlen</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; background: #d1fae5; border-left: 4px solid #10b981;">
+                <strong style="color: #065f46;">✅ Optimal</strong>
+                <div style="font-size: 0.85em; color: #064e3b; margin-top: 4px;">Im idealen Bereich – kein Handeln nötig</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; background: #dbeafe; border-left: 4px solid #3b82f6;">
+                <strong style="color: #1e3a8a;">🌊 Nass</strong>
+                <div style="font-size: 0.85em; color: #1e40af; margin-top: 4px;">Über Schwellenwert – kein Gießen nötig</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; background: #f3f4f6; border-left: 4px solid #9ca3af;">
+                <strong style="color: #374151;">❓ Kein Signal</strong>
+                <div style="font-size: 0.85em; color: #6b7280; margin-top: 4px;">Sensor nicht konfiguriert oder offline</div>
+            </div>
+        </div>
+    </div>
+</div><!-- end settings-tab -->
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+.badge-loading { background: #f3f4f6; color: #6b7280; }
+.badge-dry     { background: #fee2e2; color: #991b1b; }
+.badge-optimal { background: #d1fae5; color: #065f46; }
+.badge-wet     { background: #dbeafe; color: #1e3a8a; }
+.badge-offline { background: #f3f4f6; color: #6b7280; }
+
+.settings-section { margin-bottom: 0; }
+.info-text { color: #6b7280; font-size: 0.95em; margin-top: 4px; }
+</style>
+
+<script>
+// ─── Konfiguration ─────────────────────────────────────────────
+const SENSORS = {
+    hochbeet1:      null,
+    hochbeet2:      null,
+    rasen1:         null,
+    hochbeet1_temp: null,
+    hochbeet2_temp: null,
+    rasen1_temp:    null
+};
+let thresholdDry = 30;
+let thresholdWet = 70;
+const REFRESH_INTERVAL = 60000; // 60 Sekunden
+
+// ─── Tab-Switching ──────────────────────────────────────────────
+function switchGartenTab(tab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.settings-tabs .tab-button').forEach(el => el.classList.remove('active'));
+    document.getElementById(tab + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+
+// ─── Settings laden & speichern ──────────────────────────────────
+async function loadSettings() {
+    try {
+        const resp = await fetch('/api/garten/settings');
+        if (resp.ok) {
+            const saved = await resp.json();
+            if (saved.sensors) {
+                SENSORS.hochbeet1      = saved.sensors.hochbeet1      || null;
+                SENSORS.hochbeet2      = saved.sensors.hochbeet2      || null;
+                SENSORS.rasen1         = saved.sensors.rasen1         || null;
+                SENSORS.hochbeet1_temp = saved.sensors.hochbeet1_temp || null;
+                SENSORS.hochbeet2_temp = saved.sensors.hochbeet2_temp || null;
+                SENSORS.rasen1_temp    = saved.sensors.rasen1_temp    || null;
+            }
+            if (saved.thresholdDry !== undefined) thresholdDry = saved.thresholdDry;
+            if (saved.thresholdWet !== undefined) thresholdWet = saved.thresholdWet;
+        }
+    } catch (e) {
+        console.warn('Settings konnten nicht geladen werden:', e);
+    }
+
+    document.getElementById('sensor-hochbeet1').value      = SENSORS.hochbeet1      || '';
+    document.getElementById('sensor-hochbeet2').value      = SENSORS.hochbeet2      || '';
+    document.getElementById('sensor-rasen1').value         = SENSORS.rasen1         || '';
+    document.getElementById('sensor-hochbeet1-temp').value = SENSORS.hochbeet1_temp || '';
+    document.getElementById('sensor-hochbeet2-temp').value = SENSORS.hochbeet2_temp || '';
+    document.getElementById('sensor-rasen1-temp').value    = SENSORS.rasen1_temp    || '';
+    document.getElementById('threshold-dry').value         = thresholdDry;
+    document.getElementById('threshold-wet').value         = thresholdWet;
+}
+
+async function saveGartenSettings(event) {
+    event.preventDefault();
+    SENSORS.hochbeet1      = document.getElementById('sensor-hochbeet1').value.trim()      || null;
+    SENSORS.hochbeet2      = document.getElementById('sensor-hochbeet2').value.trim()      || null;
+    SENSORS.rasen1         = document.getElementById('sensor-rasen1').value.trim()         || null;
+    SENSORS.hochbeet1_temp = document.getElementById('sensor-hochbeet1-temp').value.trim() || null;
+    SENSORS.hochbeet2_temp = document.getElementById('sensor-hochbeet2-temp').value.trim() || null;
+    SENSORS.rasen1_temp    = document.getElementById('sensor-rasen1-temp').value.trim()    || null;
+    thresholdDry = parseInt(document.getElementById('threshold-dry').value) || 30;
+    thresholdWet = parseInt(document.getElementById('threshold-wet').value) || 70;
+
+    const payload = {
+        sensors: {
+            hochbeet1: SENSORS.hochbeet1, hochbeet2: SENSORS.hochbeet2, rasen1: SENSORS.rasen1,
+            hochbeet1_temp: SENSORS.hochbeet1_temp, hochbeet2_temp: SENSORS.hochbeet2_temp,
+            rasen1_temp: SENSORS.rasen1_temp
+        },
+        thresholdDry, thresholdWet
+    };
+
+    const msg = document.getElementById('settings-save-msg');
+    try {
+        const resp = await fetch('/api/garten/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (resp.ok) {
+            msg.textContent = '✅ Gespeichert!';
+            msg.style.color = '#059669';
+        } else {
+            msg.textContent = '❌ Fehler beim Speichern';
+            msg.style.color = '#dc2626';
+        }
+    } catch (e) {
+        msg.textContent = '❌ Verbindungsfehler';
+        msg.style.color = '#dc2626';
+    }
+    msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+
+    refreshAll();
+}
+
+// ─── Sensordaten abrufen ─────────────────────────────────────────
+async function fetchSensorValue(entityId) {
+    if (!entityId) return null;
+    try {
+        const resp = await fetch('/api/garten/sensor?entity_id=' + encodeURIComponent(entityId));
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+
+// ─── Karte aktualisieren ─────────────────────────────────────────
+function getMoistureClass(value) {
+    if (value === null) return 'offline';
+    if (value < thresholdDry) return 'dry';
+    if (value > thresholdWet) return 'wet';
+    return 'optimal';
+}
+
+function getBadgeLabel(cls) {
+    return { dry: '💧 Trocken', optimal: '✅ Optimal', wet: '🌊 Nass', offline: '❓ Kein Signal' }[cls];
+}
+
+function getHint(cls) {
+    return {
+        dry:     '⚠️ Bodenfeuchte niedrig – Gießen empfohlen!',
+        optimal: '✅ Feuchtigkeitswert im optimalen Bereich.',
+        wet:     'ℹ️ Boden ist ausreichend feucht – kein Gießen nötig.',
+        offline: '⚙️ Sensor nicht konfiguriert oder nicht erreichbar.'
+    }[cls];
+}
+
+function getBarColor(cls) {
+    return { dry: '#ef4444', optimal: '#10b981', wet: '#3b82f6', offline: '#d1d5db' }[cls];
+}
+
+function updateCard(key, moistureData, tempData) {
+    const value = moistureData ? parseFloat(moistureData.state) : null;
+    const isNum = value !== null && !isNaN(value);
+    const cls = isNum ? getMoistureClass(value) : 'offline';
+
+    document.getElementById('moisture-' + key).textContent = isNum ? value.toFixed(1) + '%' : '–';
+    const bar = document.getElementById('bar-' + key);
+    bar.style.width = isNum ? Math.min(Math.max(value, 0), 100) + '%' : '0%';
+    bar.style.background = getBarColor(cls);
+
+    const badge = document.getElementById('status-badge-' + key);
+    badge.textContent = getBadgeLabel(cls);
+    badge.className = 'badge badge-' + cls;
+
+    document.getElementById('hint-' + key).textContent = getHint(cls);
+
+    // Temperatur
+    const tempEl = document.getElementById('temp-' + key);
+    if (tempEl) {
+        const temp = tempData ? parseFloat(tempData.state) : null;
+        tempEl.textContent = (temp !== null && !isNaN(temp)) ? temp.toFixed(1) + ' °C' : '–';
+    }
+
+    if (moistureData && moistureData.last_changed) {
+        const d = new Date(moistureData.last_changed);
+        document.getElementById('updated-' + key).textContent =
+            'Zuletzt: ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    }
+}
+
+// ─── Außentemperatur aus Status ──────────────────────────────────
+async function updateSummary(successCount) {
+    try {
+        const resp = await fetch('/api/status');
+        if (resp.ok) {
+            const data = await resp.json();
+            // Außentemperatur: data.temperature.outdoor (wie im Dashboard)
+            const temp = data?.temperature?.outdoor;
+            document.getElementById('summary-outdoor-temp').textContent =
+                temp !== undefined && temp !== null ? temp.toFixed(1) + ' °C' : '–';
+        }
+    } catch (e) {}
+    document.getElementById('summary-sensors-active').textContent = successCount + ' / 3';
+    document.getElementById('summary-last-update').textContent =
+        new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─── Alle Sensoren aktualisieren ─────────────────────────────────
+async function refreshAll() {
+    const keys = ['hochbeet1', 'hochbeet2', 'rasen1'];
+    const moistureSensors = [SENSORS.hochbeet1, SENSORS.hochbeet2, SENSORS.rasen1];
+    const tempSensors     = [SENSORS.hochbeet1_temp, SENSORS.hochbeet2_temp, SENSORS.rasen1_temp];
+
+    let successCount = 0;
+    for (let i = 0; i < keys.length; i++) {
+        const [moistureData, tempData] = await Promise.all([
+            fetchSensorValue(moistureSensors[i]),
+            fetchSensorValue(tempSensors[i])
+        ]);
+        updateCard(keys[i], moistureData, tempData);
+        if (moistureData) successCount++;
+    }
+    await updateSummary(successCount);
+}
+
+// ─── Mähroboter ─────────────────────────────────────────────────
+let MOWER_PREFIX = null;
+let MOWER_DEFAULT_HEIGHT = 45;
+let MOWER_DEFAULT_VOLUME = 50;
+
+function loadMowerSettings() {
+    const saved = JSON.parse(localStorage.getItem('mower_settings') || '{}');
+    MOWER_PREFIX = saved.prefix || null;
+    MOWER_DEFAULT_HEIGHT = saved.defaultHeight || 45;
+    MOWER_DEFAULT_VOLUME  = saved.defaultVolume  || 50;
+    if (document.getElementById('mower-device-prefix'))
+        document.getElementById('mower-device-prefix').value = MOWER_PREFIX || '';
+    if (document.getElementById('mower-default-height'))
+        document.getElementById('mower-default-height').value = MOWER_DEFAULT_HEIGHT;
+    if (document.getElementById('mower-default-volume'))
+        document.getElementById('mower-default-volume').value = MOWER_DEFAULT_VOLUME;
+    toggleMowerCard();
+    updateMowerPreview();
+}
+
+function saveMowerSettings() {
+    MOWER_PREFIX = document.getElementById('mower-device-prefix').value.trim() || null;
+    MOWER_DEFAULT_HEIGHT = parseInt(document.getElementById('mower-default-height').value) || 45;
+    MOWER_DEFAULT_VOLUME  = parseInt(document.getElementById('mower-default-volume').value)  || 50;
+    localStorage.setItem('mower_settings', JSON.stringify({
+        prefix: MOWER_PREFIX,
+        defaultHeight: MOWER_DEFAULT_HEIGHT,
+        defaultVolume: MOWER_DEFAULT_VOLUME
+    }));
+    toggleMowerCard();
+    const msg = document.getElementById('mower-settings-msg');
+    msg.textContent = '✅ Gespeichert!';
+    msg.style.color = '#059669';
+    msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+    if (MOWER_PREFIX) refreshMowerStatus();
+}
+
+function toggleMowerCard() {
+    const notConf = document.getElementById('mower-not-configured');
+    const content = document.getElementById('mower-content');
+    if (MOWER_PREFIX) {
+        notConf.style.display = 'none';
+        content.style.display = 'block';
+    } else {
+        notConf.style.display = 'block';
+        content.style.display = 'none';
+    }
+}
+
+function updateMowerPreview() {
+    const prefix = document.getElementById('mower-device-prefix').value.trim();
+    const el = document.getElementById('mower-entities-preview');
+    if (!prefix || !/^[a-zA-Z0-9_]+$/.test(prefix)) {
+        el.style.display = 'none';
+        return;
+    }
+    el.style.display = 'block';
+    el.innerHTML = [
+        `sensor.${prefix}_battery_level`,
+        `binary_sensor.${prefix}_connection`,
+        `binary_sensor.${prefix}_charging`,
+        `sensor.${prefix}_mowing_time`,
+        `sensor.${prefix}_mow_count`,
+        `sensor.${prefix}_cutting_height`,
+        `button.${prefix}_start_full_mow`,
+        `button.${prefix}_stop_mow`,
+        `button.${prefix}_return_to_dock`,
+        `number.${prefix}_mow_height`,
+        `number.${prefix}_voice_volume`,
+    ].map(e => `<div>📌 ${e}</div>`).join('');
+}
+
+async function refreshMowerStatus() {
+    if (!MOWER_PREFIX) return;
+    try {
+        const resp = await fetch('/api/garten/mower/status?prefix=' + encodeURIComponent(MOWER_PREFIX));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const e = data.entities || {};
+
+        // Akku
+        const bat = e.battery ? parseFloat(e.battery.state) : null;
+        const isNum = bat !== null && !isNaN(bat);
+        document.getElementById('mower-battery-text').textContent = isNum ? bat.toFixed(0) + ' %' : '–';
+        const bar = document.getElementById('mower-battery-bar');
+        bar.style.width = isNum ? bat + '%' : '0%';
+        bar.style.background = bat >= 50 ? '#10b981' : bat >= 20 ? '#f59e0b' : '#ef4444';
+
+        // Verbindung
+        const connBadge = document.getElementById('mower-badge-connection');
+        const connected = e.connection && e.connection.state === 'on';
+        connBadge.textContent = connected ? '🟢 Verbunden' : '🔴 Getrennt';
+        connBadge.className   = 'badge ' + (connected ? 'badge-optimal' : 'badge-dry');
+
+        // Lade-Status / Mäh-Status
+        const statBadge = document.getElementById('mower-badge-status');
+        const charging  = e.charging && e.charging.state === 'on';
+        statBadge.textContent = charging ? '🔌 Lädt' : '🌿 Bereit';
+        statBadge.className   = 'badge ' + (charging ? 'badge-wet' : 'badge-optimal');
+
+        // Stats
+        const setStatEl = (id, val) => {
+            document.getElementById(id).textContent = val && val.state ? val.state : '–';
+        };
+        setStatEl('mower-mowing-time', e.mowing_time);
+        setStatEl('mower-mow-count',   e.mow_count);
+        setStatEl('mower-cut-height',  e.cut_height);
+
+        document.getElementById('mower-last-update').textContent =
+            'Zuletzt: ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+        console.warn('Mower status error:', e);
+    }
+}
+
+async function mowerCommand(action, value) {
+    if (!MOWER_PREFIX) { showMowerFeedback('⚙️ Kein Gerät konfiguriert.', false); return; }
+    const body = { prefix: MOWER_PREFIX, action };
+    if (value !== undefined) body.value = value;
+    try {
+        const resp = await fetch('/api/garten/mower/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            const labels = { start: 'Mähen gestartet ✅', stop: 'Gestoppt ✅', dock: 'Fährt zur Ladestation ✅',
+                             set_height: 'Schnitthöhe gesetzt ✅', set_volume: 'Lautstärke gesetzt ✅' };
+            showMowerFeedback(labels[action] || '✅ Ausgeführt', true);
+            setTimeout(refreshMowerStatus, 3000);
+        } else {
+            showMowerFeedback('❌ ' + (data.error || 'Fehler'), false);
+        }
+    } catch (err) {
+        showMowerFeedback('❌ Verbindungsfehler', false);
+    }
+}
+
+function showMowerFeedback(text, ok) {
+    const el = document.getElementById('mower-feedback');
+    el.textContent = text;
+    el.style.background = ok ? '#d1fae5' : '#fee2e2';
+    el.style.color      = ok ? '#065f46' : '#991b1b';
+    el.style.display    = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function applyMowerHeight() {
+    const h = parseInt(document.getElementById('mower-default-height').value) || 45;
+    mowerCommand('set_height', h);
+}
+
+function applyMowerVolume() {
+    const v = parseInt(document.getElementById('mower-default-volume').value) || 50;
+    mowerCommand('set_volume', v);
+}
+
+// ─── 24h-Verlaufschart ───────────────────────────────────────────
+const CHART_INSTANCES = {};
+
+async function toggleChart(key) {
+    const area = document.getElementById('chart-area-' + key);
+    const btn  = area.previousElementSibling;
+    if (area.style.display === 'none') {
+        area.style.display = 'block';
+        btn.textContent = '📈 24h-Verlauf ausblenden';
+        await loadHistoryChart(key);
+    } else {
+        area.style.display = 'none';
+        btn.textContent = '📈 24h-Verlauf anzeigen';
+    }
+}
+
+async function loadHistoryChart(key) {
+    const moistureId = SENSORS[key];
+    const tempId     = SENSORS[key + '_temp'];
+    if (!moistureId && !tempId) {
+        document.getElementById('chart-' + key).insertAdjacentHTML(
+            'afterend', '<p style="font-size:0.8em;color:#9ca3af;text-align:center;">Kein Sensor konfiguriert</p>'
+        );
+        return;
+    }
+
+    const [moistureResp, tempResp] = await Promise.all([
+        moistureId ? fetch('/api/garten/history?entity_id=' + encodeURIComponent(moistureId)).then(r => r.json()).catch(() => null) : Promise.resolve(null),
+        tempId     ? fetch('/api/garten/history?entity_id=' + encodeURIComponent(tempId)).then(r => r.json()).catch(() => null)     : Promise.resolve(null),
+    ]);
+
+    // Datenpunkte als {x: ms-timestamp, y: value} aufbauen
+    const moistureData = [];
+    const tempData     = [];
+
+    if (moistureResp && moistureResp.points) {
+        for (const p of moistureResp.points) {
+            const ms = new Date(p.t).getTime();
+            if (!isNaN(ms)) moistureData.push({ x: ms, y: p.v });
+        }
+    }
+    if (tempResp && tempResp.points) {
+        for (const p of tempResp.points) {
+            const ms = new Date(p.t).getTime();
+            if (!isNaN(ms)) tempData.push({ x: ms, y: p.v });
+        }
+    }
+
+    const canvas = document.getElementById('chart-' + key);
+    if (!canvas) return;
+
+    if (CHART_INSTANCES[key]) {
+        CHART_INSTANCES[key].destroy();
+        delete CHART_INSTANCES[key];
+    }
+
+    const datasets = [];
+    if (moistureData.length > 0) {
+        datasets.push({
+            label: '💧 Feuchte (%)',
+            data: moistureData,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.1)',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'yMoist',
+        });
+    }
+    if (tempData.length > 0) {
+        datasets.push({
+            label: '🌡️ Temp. (°C)',
+            data: tempData,
+            borderColor: '#f97316',
+            backgroundColor: 'rgba(249,115,22,0.05)',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.3,
+            yAxisID: 'yTemp',
+        });
+    }
+    if (datasets.length === 0) {
+        canvas.parentElement.innerHTML = '<p style="font-size:0.8em;color:#9ca3af;text-align:center;">Keine Verlaufsdaten verfügbar</p>';
+        return;
+    }
+
+    const fmtTime = (ms) => new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+    CHART_INSTANCES[key] = new Chart(canvas, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { font: { size: 11 }, boxWidth: 14 } },
+                tooltip: {
+                    bodyFont: { size: 11 },
+                    callbacks: {
+                        title: (items) => fmtTime(items[0].parsed.x)
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    ticks: {
+                        font: { size: 10 },
+                        maxTicksLimit: 8,
+                        callback: (val) => fmtTime(val)
+                    },
+                    grid: { display: false }
+                },
+                yMoist: {
+                    type: 'linear', position: 'left',
+                    min: 0, max: 100,
+                    ticks: { font: { size: 10 }, callback: v => v + '%' }
+                },
+                yTemp: {
+                    type: 'linear', position: 'right',
+                    ticks: { font: { size: 10 }, callback: v => v + '°' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+// ─── Init ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadSettings();
+    loadMowerSettings();
+    refreshAll();
+    refreshMowerStatus();
+    setInterval(refreshAll, REFRESH_INTERVAL);
+    setInterval(refreshMowerStatus, REFRESH_INTERVAL);
+});
+</script>
+{% endblock %}
