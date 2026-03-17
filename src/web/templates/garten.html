@@ -1060,11 +1060,14 @@ async function loadHistoryChart(key) {
     }
     hideMsg();
 
+    const nowMs  = Date.now();
+    const fromMs = nowMs - hours * 3600 * 1000;
+
     const fmtTime = (ms) => {
         const d = new Date(ms);
-        return hours <= 24
-            ? d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-            : d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        const datePart = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+        const timePart = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        return datePart + '\n' + timePart;
     };
 
     CHART_INSTANCES[key] = new Chart(canvas, {
@@ -1078,16 +1081,22 @@ async function loadHistoryChart(key) {
                 tooltip: {
                     bodyFont: { size: 11 },
                     callbacks: {
-                        title: (items) => fmtTime(items[0].parsed.x)
+                        title: (items) => {
+                            const d = new Date(items[0].parsed.x);
+                            return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                                + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                        }
                     }
                 }
             },
             scales: {
                 x: {
                     type: 'linear',
+                    min: fromMs,
+                    max: nowMs,
                     ticks: {
-                        font: { size: 10 },
-                        maxTicksLimit: hours > 168 ? 10 : 8,
+                        font: { size: 9 },
+                        maxTicksLimit: hours > 168 ? 10 : hours > 24 ? 10 : 8,
                         callback: (val) => fmtTime(val)
                     },
                     grid: { display: false }
