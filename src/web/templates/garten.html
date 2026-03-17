@@ -87,6 +87,7 @@
             <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="updated-hochbeet1">Kein Datensatz</div>
             <button onclick="toggleChart('hochbeet1')" style="margin-top: 10px; width: 100%; padding: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8em; color: #6b7280;">📈 24h-Verlauf anzeigen</button>
             <div id="chart-area-hochbeet1" style="display: none; margin-top: 10px;">
+                <div class="chart-period-bar" data-key="hochbeet1"></div>
                 <canvas id="chart-hochbeet1" height="100"></canvas>
             </div>
         </div>
@@ -118,6 +119,7 @@
             <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="updated-hochbeet2">Kein Datensatz</div>
             <button onclick="toggleChart('hochbeet2')" style="margin-top: 10px; width: 100%; padding: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8em; color: #6b7280;">📈 24h-Verlauf anzeigen</button>
             <div id="chart-area-hochbeet2" style="display: none; margin-top: 10px;">
+                <div class="chart-period-bar" data-key="hochbeet2"></div>
                 <canvas id="chart-hochbeet2" height="100"></canvas>
             </div>
         </div>
@@ -155,6 +157,7 @@
             <div style="margin-top: 8px; font-size: 0.8em; color: #9ca3af;" id="updated-rasen1">Kein Datensatz</div>
             <button onclick="toggleChart('rasen1')" style="margin-top: 10px; width: 100%; padding: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8em; color: #6b7280;">📈 24h-Verlauf anzeigen</button>
             <div id="chart-area-rasen1" style="display: none; margin-top: 10px;">
+                <div class="chart-period-bar" data-key="rasen1"></div>
                 <canvas id="chart-rasen1" height="100"></canvas>
             </div>
         </div>
@@ -929,15 +932,39 @@ function applyMowerVolume() {
     mowerCommand('set_volume', v);
 }
 
-// ─── 24h-Verlaufschart ───────────────────────────────────────────
+// ─── Verlaufschart mit Zeitraum-Auswahl ──────────────────────────
 const CHART_INSTANCES = {};
+const CHART_PERIOD = { hochbeet1: 24, hochbeet2: 24, rasen1: 24 };
+
+const PERIOD_OPTIONS = [
+    { label: '24h', hours: 24 },
+    { label: '7 Tage', hours: 168 },
+    { label: '30 Tage', hours: 720 },
+];
+
+function renderPeriodBar(key) {
+    const bar = document.querySelector(`.chart-period-bar[data-key="${key}"]`);
+    if (!bar) return;
+    bar.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
+    bar.innerHTML = PERIOD_OPTIONS.map(opt => {
+        const active = CHART_PERIOD[key] === opt.hours;
+        return `<button onclick="setChartPeriod('${key}', ${opt.hours})" style="padding:3px 10px;font-size:0.78em;border:1px solid ${active ? '#10b981' : '#e5e7eb'};background:${active ? '#d1fae5' : '#f9fafb'};color:${active ? '#065f46' : '#6b7280'};border-radius:5px;cursor:pointer;">${opt.label}</button>`;
+    }).join('');
+}
+
+async function setChartPeriod(key, hours) {
+    CHART_PERIOD[key] = hours;
+    renderPeriodBar(key);
+    await loadHistoryChart(key);
+}
 
 async function toggleChart(key) {
     const area = document.getElementById('chart-area-' + key);
     const btn  = area.previousElementSibling;
     if (area.style.display === 'none') {
         area.style.display = 'block';
-        btn.textContent = '📈 24h-Verlauf ausblenden';
+        btn.textContent = '📈 Verlauf ausblenden';
+        renderPeriodBar(key);
         await loadHistoryChart(key);
     } else {
         area.style.display = 'none';
@@ -946,6 +973,7 @@ async function toggleChart(key) {
 }
 
 async function loadHistoryChart(key) {
+    const hours      = CHART_PERIOD[key] || 24;
     const moistureId = SENSORS[key];
     const tempId     = SENSORS[key + '_temp'];
     if (!moistureId && !tempId) {
@@ -955,9 +983,10 @@ async function loadHistoryChart(key) {
         return;
     }
 
+    const qs = (id) => `/api/garten/history?hours=${hours}&entity_id=` + encodeURIComponent(id);
     const [moistureResp, tempResp] = await Promise.all([
-        moistureId ? fetch('/api/garten/history?entity_id=' + encodeURIComponent(moistureId)).then(r => r.json()).catch(() => null) : Promise.resolve(null),
-        tempId     ? fetch('/api/garten/history?entity_id=' + encodeURIComponent(tempId)).then(r => r.json()).catch(() => null)     : Promise.resolve(null),
+        moistureId ? fetch(qs(moistureId)).then(r => r.json()).catch(() => null) : Promise.resolve(null),
+        tempId     ? fetch(qs(tempId)).then(r => r.json()).catch(() => null)     : Promise.resolve(null),
     ]);
 
     // Datenpunkte als {x: ms-timestamp, y: value} aufbauen
@@ -1017,7 +1046,12 @@ async function loadHistoryChart(key) {
         return;
     }
 
-    const fmtTime = (ms) => new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const fmtTime = (ms) => {
+        const d = new Date(ms);
+        return hours <= 24
+            ? d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+            : d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    };
 
     CHART_INSTANCES[key] = new Chart(canvas, {
         type: 'line',
@@ -1039,7 +1073,7 @@ async function loadHistoryChart(key) {
                     type: 'linear',
                     ticks: {
                         font: { size: 10 },
-                        maxTicksLimit: 8,
+                        maxTicksLimit: hours > 168 ? 10 : 8,
                         callback: (val) => fmtTime(val)
                     },
                     grid: { display: false }

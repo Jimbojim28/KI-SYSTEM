@@ -459,7 +459,201 @@ class WebInterface:
             """Beleuchtungsoptimierung Seite"""
             return render_template('lighting.html')
 
+        @self.app.route('/garten')
+        def garten_page():
+            """Hochbeet & Rasen Übersicht Seite"""
+            return render_template('garten.html')
+
         # === API Endpunkte ===
+
+        @self.app.route('/api/garten/sensor')
+        def api_garten_sensor():
+            """API: Bodenfeuchtesensor-Wert eines beliebigen HA-Sensors abfragen"""
+            entity_id = request.args.get('entity_id', '').strip()
+            if not entity_id:
+                return jsonify({'error': 'entity_id parameter missing'}), 400
+            # Nur alphanumerische Zeichen, Punkt, Unterstrich und Bindestrich erlaubt
+            import re as _re
+            if not _re.match(r'^[a-zA-Z0-9_./-]+$', entity_id):
+                return jsonify({'error': 'Invalid entity_id'}), 400
+            if not self.engine:
+                return jsonify({'error': 'Engine not initialized'}), 500
+            try:
+                if hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                    collector = self.engine.platforms['homeassistant']
+                else:
+                    collector = self.engine.platform
+                if not collector:
+                    return jsonify({'error': 'No platform available'}), 500
+                state = collector.get_state(entity_id)
+                if state is None:
+                    return jsonify({'error': 'Sensor not found or unavailable'}), 404
+                return jsonify(state)
+            except Exception as e:
+                logger.error(f"Garten sensor API error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/garten/mower/status')
+        def api_garten_mower_status():
+            """API: Mähroboter-Status aus Home Assistant abrufen (Anthbot Genie)"""
+            import re as _re
+            prefix = request.args.get('prefix', '').strip()
+            if not prefix:
+                return jsonify({'error': 'prefix parameter missing'}), 400
+            if not _re.match(r'^[a-zA-Z0-9_]+$', prefix):
+                return jsonify({'error': 'Invalid prefix'}), 400
+            if not self.engine:
+                return jsonify({'error': 'Engine not initialized'}), 500
+            try:
+                if hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                    collector = self.engine.platforms['homeassistant']
+                else:
+                    collector = self.engine.platform
+                if not collector:
+                    return jsonify({'error': 'No platform available'}), 500
+                entities = {
+                    'battery':    f'sensor.{prefix}_battery_level',
+                    'connection': f'binary_sensor.{prefix}_connection',
+                    'charging':   f'binary_sensor.{prefix}_charging',
+                    'mowing_time': f'sensor.{prefix}_mowing_time',
+                    'mow_count':  f'sensor.{prefix}_mow_count',
+                    'cut_height': f'sensor.{prefix}_cutting_height',
+                }
+                result = {}
+                for key, entity_id in entities.items():
+                    try:
+                        state = collector.get_state(entity_id)
+                        result[key] = state
+                    except Exception:
+                        result[key] = None
+                return jsonify({'prefix': prefix, 'entities': result})
+            except Exception as e:
+                logger.error(f"Mower status API error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        GARTEN_CONFIG_PATH = os.path.join('data', 'garten_config.json')
+
+        @self.app.route('/api/garten/settings', methods=['GET'])
+        def api_garten_settings_get():
+            """API: Garten-Einstellungen laden"""
+            try:
+                if os.path.exists(GARTEN_CONFIG_PATH):
+                    with open(GARTEN_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                        return jsonify(json.load(f))
+                return jsonify({})
+            except Exception as e:
+                logger.error(f"Garten settings GET error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/garten/settings', methods=['POST'])
+        def api_garten_settings_post():
+            """API: Garten-Einstellungen speichern"""
+            try:
+                data = request.get_json(force=True) or {}
+                os.makedirs('data', exist_ok=True)
+                with open(GARTEN_CONFIG_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                return jsonify({'success': True})
+            except Exception as e:
+                logger.error(f"Garten settings POST error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/garten/history')
+        def api_garten_history():
+            """API: HA-Verlaufsdaten für einen Sensor abrufen (Zeitraum wählbar)"""
+            import re as _re
+            from datetime import timedelta
+            entity_id = request.args.get('entity_id', '').strip()
+            if not entity_id:
+                return jsonify({'error': 'entity_id parameter missing'}), 400
+            if not _re.match(r'^[a-zA-Z0-9_./-]+$', entity_id):
+                return jsonify({'error': 'Invalid entity_id'}), 400
+            try:
+                hours = int(request.args.get('hours', 24))
+            except (ValueError, TypeError):
+                hours = 24
+            hours = max(1, min(hours, 720))  # 1h bis 30 Tage
+            max_points = 200 if hours > 72 else 150 if hours > 24 else 100
+            if not self.engine:
+                return jsonify({'error': 'Engine not initialized'}), 500
+            try:
+                if hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                    collector = self.engine.platforms['homeassistant']
+                else:
+                    collector = self.engine.platform
+                if not collector or not hasattr(collector, '_make_request'):
+                    return jsonify({'error': 'Home Assistant platform required'}), 400
+                from datetime import timezone
+                start_time = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+                raw = collector._make_request(
+                    f'history/period/{start_time}?filter_entity_id={entity_id}&minimal_response=true&no_attributes=true'
+                )
+                if not raw or not isinstance(raw, list) or len(raw) == 0:
+                    return jsonify({'points': []})
+                points = []
+                for item in raw[0]:
+                    try:
+                        val = float(item.get('state', ''))
+                        ts = item.get('last_changed') or item.get('last_updated', '')
+                        points.append({'t': ts, 'v': round(val, 2)})
+                    except (ValueError, TypeError):
+                        pass
+                if len(points) > max_points:
+                    step = len(points) // max_points
+                    points = points[::step][:max_points]
+                return jsonify({'entity_id': entity_id, 'points': points, 'hours': hours})
+            except Exception as e:
+                logger.error(f"Garten history API error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/garten/mower/command', methods=['POST'])
+        def api_garten_mower_command():
+            """API: Mähroboter-Befehl über Home Assistant senden (Anthbot Genie)"""
+            import re as _re
+            data = request.get_json(force=True) or {}
+            prefix = data.get('prefix', '').strip()
+            action = data.get('action', '').strip()
+            if not prefix or not action:
+                return jsonify({'error': 'prefix and action required'}), 400
+            if not _re.match(r'^[a-zA-Z0-9_]+$', prefix):
+                return jsonify({'error': 'Invalid prefix'}), 400
+            allowed_actions = {'start', 'stop', 'dock', 'set_height', 'set_volume'}
+            if action not in allowed_actions:
+                return jsonify({'error': f'Unknown action. Allowed: {", ".join(allowed_actions)}'}), 400
+            if not self.engine:
+                return jsonify({'error': 'Engine not initialized'}), 500
+            if hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                collector = self.engine.platforms['homeassistant']
+            else:
+                collector = self.engine.platform
+            if not collector:
+                return jsonify({'error': 'No platform available'}), 400
+            if not hasattr(collector, 'call_service'):
+                return jsonify({'error': 'Mähroboter-Steuerung benötigt Home Assistant als Plattform'}), 400
+            try:
+                if action == 'start':
+                    ok = collector.call_service('button', 'press', f'button.{prefix}_start_full_mow')
+                elif action == 'stop':
+                    ok = collector.call_service('button', 'press', f'button.{prefix}_stop_mow')
+                elif action == 'dock':
+                    ok = collector.call_service('button', 'press', f'button.{prefix}_return_to_dock')
+                elif action == 'set_height':
+                    value = int(data.get('value', 45))
+                    value = max(30, min(70, round(value / 5) * 5))
+                    ok = collector.call_service('number', 'set_value', f'number.{prefix}_mow_height', value=value)
+                elif action == 'set_volume':
+                    value = int(data.get('value', 50))
+                    value = max(0, min(100, value))
+                    ok = collector.call_service('number', 'set_value', f'number.{prefix}_voice_volume', value=value)
+                else:
+                    ok = False
+                if ok:
+                    return jsonify({'success': True, 'action': action})
+                else:
+                    return jsonify({'error': 'Befehl konnte nicht ausgeführt werden (HA Fehler)'}), 502
+            except Exception as e:
+                logger.error(f"Mower command API error: {e}")
+                return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/health')
         def api_health():
@@ -1249,6 +1443,77 @@ class WebInterface:
             except Exception as e:
                 logger.error(f"Error getting debug info: {e}")
                 return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/lighting/all-lights')
+        def api_lighting_all_lights():
+            """API: Alle Lampen mit aktuellem AN/AUS-Status"""
+            try:
+                from src.decision_engine.forgotten_light_detector import get_forgotten_light_detector
+                detector = get_forgotten_light_detector(config=self.config)
+
+                if not detector.platform:
+                    return jsonify({'lights': [], 'error': 'Keine Plattformverbindung'})
+
+                devices = detector.platform.get_all_devices()
+                if isinstance(devices, dict):
+                    devices = list(devices.values())
+
+                zone_mapping = detector._get_zone_mapping()
+                lights = []
+
+                for d in devices:
+                    device_id = d.get('id')
+                    configured_type = detector.device_types.get(device_id)
+                    # light_ignored: in Übersicht zeigen, aber vom Detektor ignoriert
+                    if not detector._is_light_device(d) and configured_type != 'light_ignored':
+                        continue
+
+                    device_name = d.get('name', 'Unbekannt')
+
+                    # Raumname
+                    room_name = d.get('zoneName')
+                    if not room_name:
+                        zone = d.get('zone')
+                        if isinstance(zone, dict):
+                            room_name = zone.get('name', 'Unbekannt')
+                        elif isinstance(zone, str):
+                            room_name = zone_mapping.get(zone, zone)
+                        else:
+                            room_name = 'Unbekannt'
+
+                    if room_name in detector.hidden_rooms:
+                        continue
+
+                    caps = d.get('capabilitiesObj', {})
+                    available = d.get('available', True)
+                    state = caps.get('onoff', {}).get('value', False)
+                    # Nicht erreichbare Geräte als AUS behandeln
+                    if not available:
+                        state = False
+                    dim = caps.get('dim', {}).get('value')  # 0.0–1.0 oder None
+
+                    lights.append({
+                        'device_id': device_id,
+                        'device_name': device_name,
+                        'room_name': room_name,
+                        'state': bool(state),
+                        'available': available,
+                        'dim_pct': int(dim * 100) if dim is not None else None
+                    })
+
+                # Sortierung: AN zuerst, dann nach Raum, dann Name
+                lights.sort(key=lambda x: (not x['state'], x['room_name'], x['device_name']))
+
+                on_count = sum(1 for l in lights if l['state'])
+                return jsonify({
+                    'lights': lights,
+                    'total': len(lights),
+                    'on_count': on_count,
+                    'off_count': len(lights) - on_count
+                })
+            except Exception as e:
+                logger.error(f"Error getting all lights: {e}")
+                return jsonify({'error': str(e), 'lights': []}), 500
 
         @self.app.route('/api/lighting/collector/status')
         def api_lighting_collector_status():
