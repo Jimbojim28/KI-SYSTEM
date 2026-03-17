@@ -579,27 +579,6 @@ class VentilationNotifier:
                     if window_state == 'tilted' and outdoor_temp is not None and outdoor_temp < 10:
                         message_parts.append(f"\n\n📐 <i>Tipp: Bei {outdoor_temp:.0f}°C ist Stoßlüften (ganz öffnen) effektiver als Kippen!</i>")
 
-                    # === Nacht-Lüftungs-Empfehlung (15–23 Uhr) ===
-                    if config.get('night_ventilation_check', True) and 15 <= datetime.now().hour < 23:
-                        min_night_temp = float(config.get('night_ventilation_min_temp', 3.0))
-                        night_check = self._get_night_temperature_check(min_night_temp)
-                        if night_check:
-                            min_temp = night_check['min_temp']
-                            min_at = night_check['min_temp_at'].strftime('%H:%M')
-                            end_time = night_check['tonight_end'].strftime('%H:%M')
-                            if night_check['can_stay_open']:
-                                message_parts.append(
-                                    f"\n\n🌙 <b>Nacht-Lüftung bis {end_time} Uhr:</b> ✅ Sicher!"
-                                    f"\nTiefste Temp.: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)"
-                                    f"\n→ Fenster kann bis 07:00 Uhr offen/gekippt bleiben"
-                                )
-                            else:
-                                message_parts.append(
-                                    f"\n\n🌙 <b>Nacht-Lüftung bis {end_time} Uhr:</b> ⚠️ Zu kalt!"
-                                    f"\nTiefste Temp.: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)"
-                                    f"\n→ Unter {night_check['min_threshold']:.0f}°C erwartet – Fenster bitte schließen"
-                                )
-
                     # Titel mit Warnung wenn Heizung aktiv oder Luftqualität dringend
                     if heater_warning and heater_warning.get('is_heating'):
                         title = '🔥🪟 Fenster offen - Heizung aktiv!' if window_state != 'tilted' else '🔥📐 Fenster gekippt - Heizung aktiv!'
@@ -613,6 +592,32 @@ class VentilationNotifier:
                         ''.join(message_parts),
                         notification_key=f'window_opened_{window["device_id"]}'
                     )
+
+                    # === Nacht-Lüftungs-Empfehlung als eigene Nachricht (15–23 Uhr) ===
+                    if config.get('night_ventilation_check', True) and 15 <= datetime.now().hour < 23:
+                        min_night_temp = float(config.get('night_ventilation_min_temp', 3.0))
+                        night_check = self._get_night_temperature_check(min_night_temp)
+                        if night_check:
+                            min_temp = night_check['min_temp']
+                            min_at = night_check['min_temp_at'].strftime('%H:%M')
+                            end_time = night_check['tonight_end'].strftime('%H:%M')
+                            room_label = f"<b>{window.get('name', 'Fenster')}</b> – {window.get('room', '')}"
+                            if night_check['can_stay_open']:
+                                self._send_notification(
+                                    '🌙 Nachtlüften empfohlen ✅',
+                                    f"{room_label}\n\n"
+                                    f"Fenster kann bis <b>{end_time} Uhr</b> offen/gekippt bleiben.\n"
+                                    f"Tiefste Außentemperatur: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)",
+                                    notification_key=f'night_vent_{window["device_id"]}'
+                                )
+                            else:
+                                self._send_notification(
+                                    '🌙 Nachtlüften: ⚠️ Zu kalt!',
+                                    f"{room_label}\n\n"
+                                    f"Tiefste Außentemperatur: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)\n"
+                                    f"Unter <b>{night_check['min_threshold']:.0f}°C</b> erwartet – Fenster besser schließen.",
+                                    notification_key=f'night_vent_{window["device_id"]}'
+                                )
             
             # === Fenster wurde geschlossen - Benachrichtigung mit Dauer und Effektivität ===
             closed = set(self._open_windows.keys()) - current_open
