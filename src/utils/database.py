@@ -2232,11 +2232,33 @@ class Database:
         window_state = active.get('window_state', 'open')
 
         # Füge window_state Spalte zu ventilation_events hinzu falls nicht vorhanden
-        try:
-            cursor.execute("ALTER TABLE ventilation_events ADD COLUMN window_state TEXT DEFAULT 'open'")
-            conn.commit()
-        except:
-            pass  # Spalte existiert bereits
+        # Schema-Migration: neue Spalten hinzufügen falls nicht vorhanden
+        for alter_sql in [
+            "ALTER TABLE ventilation_events ADD COLUMN window_state TEXT DEFAULT 'open'",
+            "ALTER TABLE ventilation_events ADD COLUMN ventilation_type TEXT DEFAULT 'normal'",
+            "ALTER TABLE ventilation_events ADD COLUMN co2_min_during INTEGER",
+            "ALTER TABLE ventilation_events ADD COLUMN co2_max_during INTEGER",
+            "ALTER TABLE ventilation_events ADD COLUMN temp_min_during REAL",
+        ]:
+            try:
+                cursor.execute(alter_sql)
+                conn.commit()
+            except Exception:
+                pass  # Spalte existiert bereits
+
+        # Nachtlüften-Klassifizierung
+        ventilation_type = self._classify_ventilation_type(
+            opened_at=opened_at,
+            closed_at=now,
+            duration_minutes=duration_minutes,
+            co2_start=active.get('co2_start'),
+            co2_end=co2_end,
+            co2_min_during=active.get('co2_min_during'),
+            co2_max_during=active.get('co2_max_during'),
+            temp_start=active.get('temp_start'),
+            temp_end=temp_end,
+            temp_min_during=active.get('temp_min_during'),
+        )
 
         # Speichere in ventilation_events
         cursor.execute("""
@@ -2244,8 +2266,9 @@ class Database:
             (device_id, device_name, room_name, opened_at, closed_at, duration_minutes,
              temp_start, humidity_start, co2_start, temp_end, humidity_end, co2_end,
              temp_change, humidity_change, co2_change, outdoor_temp, outdoor_humidity,
-             season, time_of_day, weekday, effectiveness_score, was_optimal, window_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             season, time_of_day, weekday, effectiveness_score, was_optimal, window_state,
+             ventilation_type, co2_min_during, co2_max_during, temp_min_during)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             device_id, active['device_name'], active['room_name'],
             active['opened_at'], now, duration_minutes,
@@ -2255,7 +2278,9 @@ class Database:
             active['outdoor_temp'], active['outdoor_humidity'],
             season, time_of_day, weekday,
             effectiveness, effectiveness > 0.6 if effectiveness else None,
-            window_state
+            window_state, ventilation_type,
+            active.get('co2_min_during'), active.get('co2_max_during'),
+            active.get('temp_min_during'),
         ))
 
         event_id = cursor.lastrowid
@@ -2264,9 +2289,115 @@ class Database:
         cursor.execute("DELETE FROM active_ventilations WHERE device_id = ?", (device_id,))
         
         conn.commit()
-        logger.info(f"Ended ventilation event for {active['device_name']}: {duration_minutes}min ({window_state}), "
-                   f"temp_change={temp_change}, co2_change={co2_change}")
+        logger.info(f"Ended ventilation event for {active['device_name']}: {duration_minutes}min "
+                   f"({window_state}, type={ventilation_type}), temp_change={temp_change}, co2_change={co2_change}")
         return event_id
+
+    def _classify_ventilation_type(self, opened_at: datetime, closed_at: datetime,
+                                     duration_minutes: int,
+                                     co2_start: Optional[int], co2_end: Optional[int],
+                                     co2_min_during: Optional[int], co2_max_during: Optional[int],
+                                     temp_start: Optional[float], temp_end: Optional[float],
+                                     temp_min_during: Optional[float]) -> str:
+        """Klassifiziert den Typ eines Lüftungs-Events.
+
+        Typen:
+        - night_ventilation : Nachtlüften (Fenster nachts auf, ≥2h, bis morgens,
+                              CO2 stabil, Temp nicht zu stark gesunken)
+        - power_ventilation : Stoßlüften (kurz + weit offen, starke CO2-Reduktion)
+        - quick_vent        : Kurzlüften (< 15 min)
+        - normal            : Normales Lüften
+        """
+        if duration_minutes is None:
+            return 'normal'
+
+        hour_start = opened_at.hour
+        hour_end = closed_at.hour
+
+        # Nachtzeitraum: 21:00–06:00
+        is_night_start = hour_start >= 21 or hour_start < 6
+        # Morgenabschluss: 05:00–11:00
+        is_morning_end = 5 <= hour_end < 11
+
+        # --- Nachtlüften ---
+        if is_night_start and duration_minutes >= 120 and is_morning_end:
+            # CO2-Stabilität: maximaler Anstieg während der Öffnung < 200 ppm
+            co2_stable = True
+            if co2_start is not None and co2_max_during is not None:
+                co2_rise = co2_max_during - co2_start
+                co2_stable = co2_rise < 200  # Wenig Anstieg = Frischluft kommt rein
+            elif co2_start is not None and co2_end is not None:
+                co2_stable = (co2_end - co2_start) < 200
+
+            # Temperaturstabilität: Raumtemperatur soll nicht mehr als 5 °C sinken
+            temp_stable = True
+            ref_temp = temp_start if temp_start is not None else temp_end
+            min_temp = temp_min_during if temp_min_during is not None else temp_end
+            if ref_temp is not None and min_temp is not None:
+                temp_drop = ref_temp - min_temp
+                temp_stable = temp_drop < 5.0
+
+            if co2_stable and temp_stable:
+                return 'night_ventilation'
+
+        # --- Stoßlüften (kurz und effektiv) ---
+        if duration_minutes <= 20:
+            # CO2 muss deutlich gesunken sein
+            if co2_start is not None and co2_end is not None and (co2_start - co2_end) > 150:
+                return 'power_ventilation'
+            return 'quick_vent'
+
+        return 'normal'
+
+    def update_active_ventilation_readings(self, device_id: str, co2: Optional[int],
+                                            temp: Optional[float]) -> None:
+        """Aktualisiert Min/Max-CO2 und Min-Temp für ein laufendes Lüftungs-Event.
+
+        Wird vom Window-Kollektor periodisch aufgerufen, um den Verlauf während
+        eines offenen Fensters zu tracken (für Nachtlüften-Klassifizierung).
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Schema-Migration: Spalten hinzufügen falls nicht vorhanden
+        for alter_sql in [
+            "ALTER TABLE active_ventilations ADD COLUMN co2_min_during INTEGER",
+            "ALTER TABLE active_ventilations ADD COLUMN co2_max_during INTEGER",
+            "ALTER TABLE active_ventilations ADD COLUMN temp_min_during REAL",
+        ]:
+            try:
+                cursor.execute(alter_sql)
+                conn.commit()
+            except Exception:
+                pass
+
+        now = datetime.now()
+        # Hole aktuellen Stand
+        cursor.execute(
+            "SELECT co2_min_during, co2_max_during, temp_min_during FROM active_ventilations WHERE device_id = ?",
+            (device_id,)
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return
+
+        row = dict(row)
+        new_co2_min = row['co2_min_during']
+        new_co2_max = row['co2_max_during']
+        new_temp_min = row['temp_min_during']
+
+        if co2 is not None:
+            new_co2_min = co2 if new_co2_min is None else min(new_co2_min, co2)
+            new_co2_max = co2 if new_co2_max is None else max(new_co2_max, co2)
+        if temp is not None:
+            new_temp_min = temp if new_temp_min is None else min(new_temp_min, temp)
+
+        cursor.execute("""
+            UPDATE active_ventilations
+            SET co2_min_during = ?, co2_max_during = ?, temp_min_during = ?, last_check = ?
+            WHERE device_id = ?
+        """, (new_co2_min, new_co2_max, new_temp_min, now, device_id))
+        conn.commit()
 
     def _calculate_ventilation_effectiveness(self, duration: int, temp_change: float,
                                              co2_change: int, humidity_change: float,

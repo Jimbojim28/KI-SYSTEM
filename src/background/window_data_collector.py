@@ -610,8 +610,41 @@ class WindowDataCollector:
 
             logger.info(f"Collected window data from {collected_count}/{len(window_devices)} window devices")
 
+            # === CO2/Temp-Tracking für aktive Lüftungs-Events (Nachtlüften-Erkennung) ===
+            # Aktualisiere Min/Max-CO2 und Min-Temp für alle aktuell offenen Events
+            self._update_active_event_readings()
+
         except Exception as e:
             logger.error(f"Error in window data collection: {e}")
+
+    def _update_active_event_readings(self):
+        """Aktualisiert CO2/Temp-Messwerte für alle laufenden Lüftungs-Events.
+
+        Ermöglicht am Ende die Klassifizierung als Nachtlüften:
+        - Stabiler CO2 (kein starker Anstieg während der Nacht)
+        - Stabile Temperatur (nicht zu stark abgekühlt)
+        """
+        try:
+            active = self.db.get_active_ventilations()
+            if not active:
+                return
+
+            for event in active:
+                device_id = event.get('device_id')
+                room_name = event.get('room_name')
+                if not device_id:
+                    continue
+
+                # Hole aktuelle Klimadaten für diesen Raum
+                climate = self._get_room_climate(room_name) if room_name else {}
+                co2 = climate.get('co2')
+                temp = climate.get('temp')
+
+                if co2 is not None or temp is not None:
+                    self.db.update_active_ventilation_readings(device_id, co2=co2, temp=temp)
+                    logger.debug(f"Updated active ventilation readings for {room_name}: CO2={co2}ppm, Temp={temp}°C")
+        except Exception as e:
+            logger.debug(f"Error updating active ventilation readings: {e}")
 
     def _collect_device_data(self, device: dict) -> Optional[int]:
         """Sammelt Daten von einem einzelnen Fenster"""
