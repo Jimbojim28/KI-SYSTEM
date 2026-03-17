@@ -1022,9 +1022,6 @@ async function loadHistoryChart(key) {
         }
     }
 
-    const canvas = document.getElementById('chart-' + key);
-    if (!canvas) return;
-
     if (CHART_INSTANCES[key]) {
         CHART_INSTANCES[key].destroy();
         delete CHART_INSTANCES[key];
