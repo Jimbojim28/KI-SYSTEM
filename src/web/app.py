@@ -599,8 +599,9 @@ class WebInterface:
                     except (ValueError, TypeError):
                         pass
                 if len(points) > max_points:
-                    step = len(points) // max_points
-                    points = points[::step][:max_points]
+                    # Gleichmäßig verteilt, erster und letzter Punkt immer inklusive
+                    indices = [int(i * (len(points) - 1) / (max_points - 1)) for i in range(max_points)]
+                    points = [points[i] for i in indices]
                 return jsonify({'entity_id': entity_id, 'points': points, 'hours': hours})
             except Exception as e:
                 logger.error(f"Garten history API error: {e}")
