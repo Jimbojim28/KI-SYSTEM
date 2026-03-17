@@ -161,6 +161,15 @@
 
     </div>
 
+    <!-- Rasen-Pflegeempfehlung -->
+    <h3 style="margin-top: 30px; margin-bottom: 15px;">📋 Rasen-Pflegeempfehlungen</h3>
+    <div class="card" id="rasen-pflege-card">
+        <div id="rasen-pflege-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+            <div style="color: #9ca3af; font-size: 0.9em;">Wird berechnet…</div>
+        </div>
+        <div style="margin-top: 14px; font-size: 0.78em; color: #9ca3af; border-top: 1px solid #f3f4f6; padding-top: 10px;" id="rasen-pflege-info"></div>
+    </div>
+
     <!-- Mähroboter -->
     <h3 style="margin-bottom: 15px;">🤖 Mähroboter (Anthbot Genie)</h3>
     <div class="card" id="mower-card">
@@ -568,11 +577,171 @@ async function updateSummary(successCount) {
             } else {
                 sunEl.textContent = '–';
             }
+
+            // Wetterdaten für Rasen-Empfehlungen cachen
+            _rasenWeatherCache = {
+                outdoor: data?.temperature?.outdoor ?? null,
+                rainProbMax: maxRain,
+                condition: data?.weather?.condition ?? ''
+            };
         }
     } catch (e) {}
     document.getElementById('summary-sensors-active').textContent = successCount + ' / 3';
     document.getElementById('summary-last-update').textContent =
         new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─── Rasen-Pflegeempfehlungen ────────────────────────────────────
+let _rasenWeatherCache = null;
+
+function _rasenEmpfehlungen(moisture, soilTemp, weather) {
+    const month = new Date().getMonth() + 1;
+    const rainProb = weather?.rainProbMax ?? 0;
+    const outdoor  = weather?.outdoor ?? null;
+    const items    = [];
+
+    // ── Gießen ─────────────────────────────────
+    let gSt, gTx;
+    if (month < 4 || month > 10) {
+        gSt = 'gray';   gTx = 'Kein Gießen nötig (Winterpause)';
+    } else if (rainProb >= 60) {
+        gSt = 'green';  gTx = 'Regen erwartet – kein Gießen nötig';
+    } else if (moisture !== null && moisture > 60) {
+        gSt = 'green';  gTx = 'Boden feucht genug – kein Gießen nötig';
+    } else if (moisture !== null && moisture < 30 && rainProb < 30) {
+        gSt = 'red';    gTx = 'Dringend gießen! Boden sehr trocken → beste Zeit: 6–9 Uhr';
+    } else if (moisture !== null && moisture < 50 && rainProb < 30) {
+        gSt = 'orange'; gTx = 'Gießen empfohlen – morgens 6–9 Uhr, nicht in der Mittagssonne';
+    } else {
+        gSt = 'green';  gTx = 'Bodenfeuchte akzeptabel';
+    }
+    items.push({ icon: '💧', label: 'Gießen', status: gSt, text: gTx });
+
+    // ── Mähen ───────────────────────────────────
+    const grassGrows = soilTemp !== null ? soilTemp >= 10 : month >= 4;
+    let mSt, mTx;
+    if (month < 3 || month > 11) {
+        mSt = 'gray';   mTx = 'Mähpause (Winter)';
+    } else if (!grassGrows) {
+        mSt = 'gray';   mTx = 'Gras wächst noch nicht (Bodentemp. < 10 °C)';
+    } else if (moisture !== null && moisture > 75) {
+        mSt = 'red';    mTx = 'Boden zu nass – Mähen vermeiden (Bodenverdichtung)';
+    } else if (rainProb >= 60) {
+        mSt = 'orange'; mTx = 'Regen erwartet – Mähen besser verschieben';
+    } else if (month >= 6 && month <= 8 && outdoor !== null && outdoor > 28) {
+        mSt = 'orange'; mTx = 'Hitze: Schnitthöhe 6–7 cm, früh morgens mähen';
+    } else {
+        mSt = 'green';
+        mTx = month === 3 ? 'Erstes Mähen möglich – Schnitthöhe 4–5 cm' : 'Gute Bedingungen (Schnitthöhe 4–5 cm)';
+    }
+    items.push({ icon: '🌾', label: 'Mähen', status: mSt, text: mTx });
+
+    // ── Lüften / Standen ────────────────────────
+    let lSt, lTx;
+    if ([4, 5].includes(month)) {
+        if (moisture !== null && moisture > 70) {
+            lSt = 'orange'; lTx = 'Boden noch zu nass – warten bis etwas trockener';
+        } else {
+            lSt = 'green';  lTx = 'Ideale Zeit zum Belüften / Standen (April–Mai)';
+        }
+    } else if ([9, 10].includes(month)) {
+        lSt = 'green';  lTx = 'Herbst-Belüftung möglich (September–Oktober)';
+    } else if (month >= 6 && month <= 8) {
+        lSt = 'gray';   lTx = 'Kein Lüften im Sommer (Hitzestress für Gras)';
+    } else {
+        lSt = 'gray';   lTx = 'Saison: April–Mai und September–Oktober';
+    }
+    items.push({ icon: '🍃', label: 'Lüften / Standen', status: lSt, text: lTx });
+
+    // ── Vertikutieren ───────────────────────────
+    let vSt, vTx;
+    if (month === 3 || month === 4) {
+        const soilWarm = soilTemp !== null ? soilTemp >= 12 : month === 4;
+        if (!soilWarm) {
+            vSt = 'orange'; vTx = 'Fast Zeit – warten bis Bodentemp. ≥ 12 °C';
+        } else if (moisture !== null && (moisture > 70 || moisture < 25)) {
+            vSt = 'orange'; vTx = 'Boden zu nass/trocken – optimale Feuchte abwarten';
+        } else {
+            vSt = 'green';  vTx = 'Optimale Zeit zum Vertikutieren (Frühjahr)!';
+        }
+    } else if (month === 9) {
+        vSt = 'green';  vTx = 'Herbst-Vertikutierung möglich (mind. 6 Wochen vor Frost)';
+    } else if (month >= 5 && month <= 8) {
+        vSt = 'gray';   vTx = 'Nicht im Sommer vertikutieren (zu viel Stress)';
+    } else {
+        vSt = 'gray';   vTx = 'Saison: März–April und September';
+    }
+    items.push({ icon: '⚙️', label: 'Vertikutieren', status: vSt, text: vTx });
+
+    // ── Düngen ──────────────────────────────────
+    let dSt, dTx;
+    if (month === 4 || month === 5) {
+        dSt = 'green';  dTx = 'Jetzt Langzeit-Frühjahrsdünger (NPK) ausbringen';
+    } else if (month === 6) {
+        dSt = 'green';  dTx = 'Sommerdünger möglich (leichte Gabe, viel danach gießen)';
+    } else if (month === 9) {
+        dSt = 'green';  dTx = 'Herbstdünger ausbringen – kaliumreich, kein Stickstoff!';
+    } else if (month === 3) {
+        const warm = soilTemp !== null ? soilTemp >= 10 : false;
+        dSt = warm ? 'orange' : 'gray';
+        dTx = warm ? 'Frühdünger möglich (Boden ≥ 10 °C)' : 'Noch zu früh – warten bis Boden wärmer';
+    } else if (month >= 7 && month <= 8) {
+        dSt = 'gray';   dTx = 'Kein Stickstoff-Dünger im Hochsommer (Verbrennungsgefahr)';
+    } else if (month === 10) {
+        dSt = 'orange'; dTx = 'Kein Dünger mehr – Gras geht in Ruhephase';
+    } else {
+        dSt = 'gray';   dTx = 'Außerhalb der Düngesaison';
+    }
+    items.push({ icon: '🌿', label: 'Düngen', status: dSt, text: dTx });
+
+    // ── Nachsäen ────────────────────────────────
+    let nSt, nTx;
+    if (month === 4 || month === 5) {
+        nSt = 'green';  nTx = 'Ideale Zeit zum Nachsäen (warm + Niederschläge)';
+    } else if (month === 9) {
+        nSt = 'green';  nTx = 'Herbst-Nachsaat empfohlen (September)';
+    } else if (month === 3) {
+        const warm = soilTemp !== null ? soilTemp >= 10 : false;
+        nSt = warm ? 'orange' : 'gray';
+        nTx = warm ? 'Frühsaat möglich (Boden warm genug)' : 'Noch zu kalt für Rasensamen';
+    } else if (month >= 6 && month <= 8) {
+        nSt = 'orange'; nTx = 'Saat im Sommer nur mit sehr regelmäßigem Gießen möglich';
+    } else {
+        nSt = 'gray';   nTx = 'Außerhalb der Rasensaat-Saison';
+    }
+    items.push({ icon: '🌱', label: 'Nachsäen', status: nSt, text: nTx });
+
+    return items;
+}
+
+function renderRasenEmpfehlungen(moisture, soilTemp) {
+    const weather = _rasenWeatherCache;
+    const items   = _rasenEmpfehlungen(moisture, soilTemp, weather);
+    const sc = {
+        green:  { bg: '#f0fdf4', border: '#86efac', badge: '✅', col: '#14532d' },
+        orange: { bg: '#fffbeb', border: '#fcd34d', badge: '⚠️',  col: '#78350f' },
+        red:    { bg: '#fef2f2', border: '#fca5a5', badge: '🔴',  col: '#7f1d1d' },
+        gray:   { bg: '#f9fafb', border: '#e5e7eb', badge: '⏸️',  col: '#6b7280' }
+    };
+    const container = document.getElementById('rasen-pflege-list');
+    if (!container) return;
+    container.innerHTML = items.map(item => {
+        const s = sc[item.status];
+        return `<div style="padding: 12px 14px; background: ${s.bg}; border: 1px solid ${s.border}; border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                <span style="font-size: 1.2em;">${item.icon}</span>
+                <span style="font-weight: 600; color: ${s.col}; font-size: 0.95em;">${item.label}</span>
+                <span style="margin-left: auto;">${s.badge}</span>
+            </div>
+            <div style="font-size: 0.81em; color: ${s.col}; line-height: 1.4;">${item.text}</div>
+        </div>`;
+    }).join('');
+    const months = ['','Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    const m = new Date().getMonth() + 1;
+    const mStr = moisture !== null ? moisture.toFixed(1) + ' %' : '–';
+    const tStr = soilTemp !== null ? soilTemp.toFixed(1) + ' °C' : '–';
+    document.getElementById('rasen-pflege-info').textContent =
+        `Empfehlungen für ${months[m]} — Bodenfeuchte: ${mStr} — Bodentemp.: ${tStr}`;
 }
 
 // ─── Alle Sensoren aktualisieren ─────────────────────────────────
@@ -582,6 +751,7 @@ async function refreshAll() {
     const tempSensors     = [SENSORS.hochbeet1_temp, SENSORS.hochbeet2_temp, SENSORS.rasen1_temp];
 
     let successCount = 0;
+    let rasenMoisture = null, rasenSoilTemp = null;
     for (let i = 0; i < keys.length; i++) {
         const [moistureData, tempData] = await Promise.all([
             fetchSensorValue(moistureSensors[i]),
@@ -589,8 +759,15 @@ async function refreshAll() {
         ]);
         updateCard(keys[i], moistureData, tempData);
         if (moistureData) successCount++;
+        if (keys[i] === 'rasen1') {
+            rasenMoisture = moistureData ? parseFloat(moistureData.state) : null;
+            if (isNaN(rasenMoisture)) rasenMoisture = null;
+            rasenSoilTemp = tempData ? parseFloat(tempData.state) : null;
+            if (isNaN(rasenSoilTemp)) rasenSoilTemp = null;
+        }
     }
     await updateSummary(successCount);
+    renderRasenEmpfehlungen(rasenMoisture, rasenSoilTemp);
 }
 
 // ─── Mähroboter ─────────────────────────────────────────────────
