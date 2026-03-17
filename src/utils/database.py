@@ -2320,7 +2320,7 @@ class Database:
         is_morning_end = 5 <= hour_end < 11
 
         # --- Nachtlüften ---
-        if is_night_start and duration_minutes >= 120 and is_morning_end:
+        if is_night_start and duration_minutes >= 180 and is_morning_end:
             # CO2-Stabilität: maximaler Anstieg während der Öffnung < 200 ppm
             co2_stable = True
             if co2_start is not None and co2_max_during is not None:
