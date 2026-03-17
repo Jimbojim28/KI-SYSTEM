@@ -579,8 +579,8 @@ class VentilationNotifier:
                     if window_state == 'tilted' and outdoor_temp is not None and outdoor_temp < 10:
                         message_parts.append(f"\n\n📐 <i>Tipp: Bei {outdoor_temp:.0f}°C ist Stoßlüften (ganz öffnen) effektiver als Kippen!</i>")
 
-                    # === Nacht-Lüftungs-Empfehlung (16–19 Uhr) ===
-                    if config.get('night_ventilation_check', True) and 16 <= datetime.now().hour < 19:
+                    # === Nacht-Lüftungs-Empfehlung (15–23 Uhr) ===
+                    if config.get('night_ventilation_check', True) and 15 <= datetime.now().hour < 23:
                         min_night_temp = float(config.get('night_ventilation_min_temp', 3.0))
                         night_check = self._get_night_temperature_check(min_night_temp)
                         if night_check:
@@ -830,6 +830,27 @@ class VentilationNotifier:
                     if effectiveness.get('comment'):
                         message_parts.append(f"\n\n💬 {effectiveness['comment']}")
                     
+                    # === Nacht-Lüftungs-Empfehlung beim Schließen (15–23 Uhr) ===
+                    if config.get('night_ventilation_check', True) and 15 <= datetime.now().hour < 23:
+                        min_night_temp = float(config.get('night_ventilation_min_temp', 3.0))
+                        night_check = self._get_night_temperature_check(min_night_temp)
+                        if night_check:
+                            min_temp = night_check['min_temp']
+                            min_at = night_check['min_temp_at'].strftime('%H:%M')
+                            end_time = night_check['tonight_end'].strftime('%H:%M')
+                            if night_check['can_stay_open']:
+                                message_parts.append(
+                                    f"\n\n🌙 <b>Nachtlüften empfohlen:</b> ✅"
+                                    f"\nTiefste Temp. bis morgen 07:00: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)"
+                                    f"\n→ Fenster kann diese Nacht offen/gekippt bleiben"
+                                )
+                            else:
+                                message_parts.append(
+                                    f"\n\n🌙 <b>Nachtlüften:</b> ⚠️ Zu kalt!"
+                                    f"\nTiefste Temp. bis morgen 07:00: <b>{min_temp:.1f}°C</b> (ca. {min_at} Uhr)"
+                                    f"\n→ Unter {night_check['min_threshold']:.0f}°C erwartet – Fenster besser geschlossen lassen"
+                                )
+
                     # Titel basierend auf Score
                     if score >= 80:
                         title = '🌟 Sehr gute Lüftung!'
