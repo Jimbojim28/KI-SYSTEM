@@ -1147,6 +1147,24 @@ class Database:
 
         conn.commit()
 
+    def get_last_device_action_time(self, device_id: str, action: str) -> Optional[datetime]:
+        """Gibt den Zeitpunkt der letzten aufgezeichneten Aktion für ein Gerät zurück.
+        Wird genutzt um dehumidifier_start_time nach Neustarts wiederherzustellen."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT timestamp FROM bathroom_device_actions
+            WHERE device_id = ? AND action = ?
+            ORDER BY timestamp DESC LIMIT 1
+        """, (device_id, action))
+        row = cursor.fetchone()
+        if row:
+            try:
+                return datetime.fromisoformat(row[0])
+            except (ValueError, TypeError):
+                return None
+        return None
+
     def save_learned_parameter(self, parameter_name: str, value: float,
                               confidence: float, samples_used: int, reason: str):
         """Speichert einen gelernten Parameter"""

@@ -647,9 +647,27 @@ class BathroomAutomation:
                             self.humidity_below_threshold_since = None
                             self.dehumidifier_start_time = None
                         # Setze Start-Zeit wenn Gerät extern eingeschaltet wurde (für Runtime-Tracking)
+                        # WICHTIG: Echten Startzeitpunkt aus DB lesen, damit Timer nach
+                        # Prozess-Neustarts nicht zurückgesetzt wird.
                         elif actual_running and self.dehumidifier_start_time is None:
-                            self.dehumidifier_start_time = datetime.now()
-                            logger.info(f"Dehumidifier detected as running - starting runtime tracking")
+                            persisted_start = None
+                            if self.db:
+                                try:
+                                    persisted_start = self.db.get_last_device_action_time(
+                                        dehumidifier_id, 'turn_on'
+                                    )
+                                except Exception:
+                                    pass
+                            if persisted_start and (datetime.now() - persisted_start).total_seconds() < 86400:
+                                self.dehumidifier_start_time = persisted_start
+                                elapsed = (datetime.now() - persisted_start).total_seconds() / 60
+                                logger.info(
+                                    f"Dehumidifier running - Laufzeit aus DB wiederhergestellt: "
+                                    f"{elapsed:.0f} min (gestartet: {persisted_start})"
+                                )
+                            else:
+                                self.dehumidifier_start_time = datetime.now()
+                                logger.info(f"Dehumidifier detected as running - starting runtime tracking (kein DB-Eintrag)")
         except Exception as e:
             logger.debug(f"Could not check dehumidifier state: {e}")
 
