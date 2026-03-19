@@ -66,6 +66,9 @@ class BathroomAutomation:
         self.max_dehumidifier_runtime_minutes = config.get('max_dehumidifier_runtime', 120)  # Default: 2 Stunden
         # Harte Abschalt-Schwelle: Unter diesem Wert IMMER ausschalten (unabhängig von Schimmelrisiko)
         self.force_off_humidity = config.get('force_off_humidity', 50.0)  # Default: 50%
+        # Mindest-Pause zwischen zwei Entfeuchter-Zyklen (verhindert zu häufiges Ein/Ausschalten)
+        self.dehumidifier_cooldown_minutes = config.get('dehumidifier_cooldown', 15)  # Default: 15 Minuten
+        self.dehumidifier_last_off_time = None  # Zeitpunkt des letzten Ausschaltens
 
         # Event-Tracking
         self.current_event_id = None
@@ -84,7 +87,7 @@ class BathroomAutomation:
         self.last_shower_sensor_humidity = None  # Letzter bekannter Duschsensor-Wert
         self.shower_sensor_enabled = bool(config.get('shower_humidity_sensor'))  # Aktiviert wenn Sensor konfiguriert
         self.shower_sensor_rate_threshold = config.get('rate_threshold', 1.2)  # Standard: 1.2% pro Minute (niedriger für schnellere Reaktion)
-        self.shower_sensor_min_humidity = config.get('shower_sensor_min_humidity', 45.0)  # Mindest-Luftfeuchtigkeit für Duscherkennung via Duschsensor
+        self.shower_sensor_min_humidity = config.get('shower_sensor_min_humidity', 55.0)  # Mindest-Luftfeuchtigkeit für Duscherkennung via Duschsensor
         self.shower_sensor_predictive = config.get('shower_sensor_predictive', True)  # Aktiviert prädiktive Einschaltung bei Duschsensor-Anstieg
 
         # Datenbank für Lernsystem
@@ -191,12 +194,14 @@ class BathroomAutomation:
             shower_sensor_humidity = self._get_shower_sensor_humidity(platform)
             if (shower_sensor_humidity and
                 len(self.shower_sensor_history) >= 2 and
-                shower_sensor_humidity > 50.0):  # Mindestens 50% am Duschsensor
-                # Prüfe ob es einen Trend nach oben gibt
-                old_val = self.shower_sensor_history[-2]['value']
-                if shower_sensor_humidity > old_val + 0.8:  # Mindestens +0.8% Anstieg
+                shower_sensor_humidity > self.shower_sensor_min_humidity):  # Mindest-Schwellwert
+                # Prüfe Anstiegsrate (zeitbasiert, konsistent mit _detect_shower)
+                old_entry = self.shower_sensor_history[-2]
+                time_diff_min = max(0.1, (datetime.now() - old_entry['time']).total_seconds() / 60)
+                rate_per_min = (shower_sensor_humidity - old_entry['value']) / time_diff_min
+                if rate_per_min >= self.shower_sensor_rate_threshold:  # Gleicher Schwellwert wie _detect_shower
                     shower_sensor_warning = True
-                    logger.debug(f"🔔 Shower sensor early warning: {shower_sensor_humidity}% (trend up from {old_val}%)")
+                    logger.debug(f"🔔 Shower sensor early warning: {shower_sensor_humidity}% (rate: {rate_per_min:.1f}%/min >= {self.shower_sensor_rate_threshold}%/min)")
 
             # ShowerPredictor: Tiefere Analyse des Duschsensor-Trends
             if self.shower_predictor and len(self.shower_sensor_history) >= 2:
@@ -223,10 +228,10 @@ class BathroomAutomation:
         # Frühwarnung nur relevant wenn Feuchtigkeit noch über dem Abschaltschwellwert –
         # ist die Luft bereits trocken genug, wäre ein Start wegen eines Mini-Trends ein
         # Fehlalarm (z.B. Restfeuchte nach der Dusche, die sich verteilt).
-        if shower_sensor_warning and humidity < self.humidity_low:
+        if shower_sensor_warning and humidity <= self.force_off_humidity:
             logger.debug(
-                f"🔕 Shower sensor warning ignored – humidity already below low threshold "
-                f"({humidity}% < {self.humidity_low}%)"
+                f"🔕 Shower sensor warning ignored – humidity below force-off threshold "
+                f"({humidity}% <= {self.force_off_humidity}%)"
             )
             shower_sensor_warning = False
 
@@ -305,17 +310,26 @@ class BathroomAutomation:
         return None
 
     def _get_temperature(self, platform) -> Optional[float]:
-        """Liest Temperatur-Sensor"""
+        """Liest Temperatur-Sensor (unterstützt Homey-Geräte und HA-Sensoren)"""
         sensor_id = self.config.get('temperature_sensor_id')
         if not sensor_id:
             return None
 
         try:
-            state = platform.get_state(sensor_id)
-            if state:
-                caps = state.get('attributes', {}).get('capabilities', {})
-                if 'measure_temperature' in caps:
-                    return caps['measure_temperature'].get('value')
+            # Home Assistant Sensor (z.B. sensor.dusche_temperatur)
+            if isinstance(sensor_id, str) and sensor_id.startswith('sensor.'):
+                state = platform.get_state(sensor_id)
+                if state:
+                    value = state.get('state')
+                    if value and value not in ['unknown', 'unavailable']:
+                        return float(value)
+            else:
+                # Homey Gerät
+                state = platform.get_state(sensor_id)
+                if state:
+                    caps = state.get('attributes', {}).get('capabilities', {})
+                    if 'measure_temperature' in caps:
+                        return caps['measure_temperature'].get('value')
         except Exception as e:
             logger.error(f"Error reading temperature sensor: {e}")
 
@@ -689,8 +703,8 @@ class BathroomAutomation:
                     if analysis and 'condensation_risk' in analysis:
                         risk_data = analysis['condensation_risk']
                         mold_risk_level = risk_data.get('risk_level')
-                        # Einschalten bei kritischem oder hohem Risiko
-                        if mold_risk_level in ['KRITISCH', 'HOCH']:
+                        # Einschalten NUR bei kritischem Risiko (HOCH reicht nicht zum Starten)
+                        if mold_risk_level == 'KRITISCH':
                             mold_risk_detected = True
                             logger.warning(f"⚠️ Mold risk detected: {mold_risk_level} (humidity: {humidity}%, dewpoint: {analysis.get('dewpoint', 'N/A')}°C)")
             except Exception as e:
@@ -701,18 +715,27 @@ class BathroomAutomation:
         # - Oder Dusche aktiv erkannt (NUR wenn Hauptsensor noch nicht trocken)
         # - Oder Schimmelrisiko erkannt
         #
-        # WICHTIG: Wenn Hauptsensor bereits unter humidity_low ist, wird shower_active
-        # ignoriert. Restdampf am Duschsensor (nach echter Dusche) löst sonst immer
-        # wieder false positives aus. Eine echte neue Dusche hebt den Hauptsensor
-        # innerhalb von 1-2 Minuten über humidity_low – dann startet der Entfeuchter
-        # durch die humidity_high-Bedingung sowieso.
-        shower_starts_new_cycle = shower_active and humidity >= self.humidity_low
-        if shower_active and humidity < self.humidity_low:
+        # WICHTIG: Wenn Hauptsensor unter der harten Abschaltschwelle (force_off_humidity)
+        # liegt, wird shower_active ignoriert – dann ist die Luft wirklich trocken und
+        # es handelt sich um Restdampf am Duschsensor nach einer früheren Dusche.
+        # Hinweis: humidity_low NICHT verwenden, da beim Duschanfang der Hauptsensor
+        # noch im Normalbereich liegt (z.B. 50-53%) und der Entfeuchter sonst erst
+        # 5-10 Minuten zu spät startet.
+        shower_starts_new_cycle = shower_active and humidity > self.force_off_humidity
+        if shower_active and humidity <= self.force_off_humidity:
             logger.debug(
-                f"🔕 Shower detection ignored – main humidity already below low threshold "
-                f"({humidity:.1f}% < {self.humidity_low}%) – likely residual steam"
+                f"🔕 Shower detection ignored – main humidity below force-off threshold "
+                f"({humidity:.1f}% <= {self.force_off_humidity}%) – likely residual steam"
             )
         should_turn_on = (humidity > self.humidity_high) or shower_starts_new_cycle or mold_risk_detected
+
+        # COOLDOWN-CHECK: Mindest-Pause nach letztem Ausschalten (kein Cooldown bei sehr hoher Feuchtigkeit)
+        if should_turn_on and not self.dehumidifier_running and self.dehumidifier_last_off_time is not None:
+            minutes_since_off = (datetime.now() - self.dehumidifier_last_off_time).total_seconds() / 60
+            cooldown_remaining = self.dehumidifier_cooldown_minutes - minutes_since_off
+            if cooldown_remaining > 0 and humidity < self.humidity_high + 5.0:
+                logger.info(f"🔇 Dehumidifier cooldown aktiv: noch {cooldown_remaining:.1f} min warten (humidity: {humidity}%)")
+                return None
 
         if should_turn_on and not self.dehumidifier_running:
             # Bestimme Grund
@@ -750,6 +773,7 @@ class BathroomAutomation:
             self.dehumidifier_running = False
             self.humidity_below_threshold_since = None
             self.dehumidifier_start_time = None
+            self.dehumidifier_last_off_time = datetime.now()
             self._log_device_action('dehumidifier', dehumidifier_id, 'turn_off', reason, platform)
             return {
                 'device_id': dehumidifier_id,
@@ -766,6 +790,7 @@ class BathroomAutomation:
                 self.dehumidifier_running = False
                 self.humidity_below_threshold_since = None
                 self.dehumidifier_start_time = None
+                self.dehumidifier_last_off_time = datetime.now()
                 self._log_device_action('dehumidifier', dehumidifier_id, 'turn_off', reason, platform)
                 return {
                     'device_id': dehumidifier_id,
@@ -839,6 +864,7 @@ class BathroomAutomation:
             self.dehumidifier_running = False
             self.humidity_below_threshold_since = None  # Reset
             self.dehumidifier_start_time = None  # Reset runtime tracking
+            self.dehumidifier_last_off_time = datetime.now()  # Cooldown starten
 
             # Protokolliere Aktion
             self._log_device_action('dehumidifier', dehumidifier_id, 'turn_off', reason, platform)

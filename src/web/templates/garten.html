@@ -584,14 +584,28 @@ async function updateSummary(successCount) {
                 sunEl.textContent = '–';
             }
 
-            // Wetterdaten für Rasen-Empfehlungen cachen
+            // Wetterdaten für Rasen-Empfehlungen cachen (Basiswerte)
             _rasenWeatherCache = {
                 outdoor: data?.temperature?.outdoor ?? null,
                 rainProbMax: maxRain,
-                condition: data?.weather?.condition ?? ''
+                condition: data?.weather?.condition ?? '',
+                avgTempDays: null   // wird gleich nachgeladen
             };
         }
     } catch (e) {}
+
+    // Durchschnittstemp der letzten 5 Tage nachladen
+    try {
+        const avgResp = await fetch('/api/garten/avg-temp?days=5');
+        if (avgResp.ok) {
+            const avgData = await avgResp.json();
+            if (_rasenWeatherCache) {
+                _rasenWeatherCache.avgTempDays = avgData.avg_temp ?? null;
+                _rasenWeatherCache.avgTempDailyList = avgData.daily ?? [];
+            }
+        }
+    } catch (e) {}
+
     document.getElementById('summary-sensors-active').textContent = successCount + ' / 3';
     document.getElementById('summary-last-update').textContent =
         new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
@@ -604,16 +618,33 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     const month = new Date().getMonth() + 1;
     const rainProb = weather?.rainProbMax ?? 0;
     const outdoor  = weather?.outdoor ?? null;
+    const avgTemp  = weather?.avgTempDays ?? null;   // Ø letzte 5 Tage
     const items    = [];
+
+    // Wachstumssignal: Boden warm genug für Gras?
+    // Priorität: gemessene Bodentemp → 5-Tage-Durchschnitt → Monat
+    const grassGrows = soilTemp !== null ? soilTemp >= 10
+                     : avgTemp  !== null ? avgTemp  >= 10
+                     : month >= 4 && month <= 10;
+
+    // Bodentemp für Vertikutieren/Düngen/Nachsäen (Bodentemp > 12°C)
+    const soilWarmEnough = soilTemp !== null ? soilTemp >= 12
+                         : avgTemp  !== null ? avgTemp  >= 12
+                         : month >= 4;
+
+    // Hitzeperiode (aktuelle ODER Durchschnitts-Temperatur)
+    const heatWave = (outdoor !== null && outdoor > 28) || (avgTemp !== null && avgTemp > 26);
 
     // ── Gießen ─────────────────────────────────
     let gSt, gTx;
-    if (month < 4 || month > 10) {
-        gSt = 'gray';   gTx = 'Kein Gießen nötig (Winterpause)';
+    if (!grassGrows) {
+        gSt = 'gray';   gTx = 'Kein Gießen nötig (Wachstumspause)';
     } else if (rainProb >= 60) {
         gSt = 'green';  gTx = 'Regen erwartet – kein Gießen nötig';
     } else if (moisture !== null && moisture > 60) {
         gSt = 'green';  gTx = 'Boden feucht genug – kein Gießen nötig';
+    } else if (heatWave && moisture !== null && moisture < 50) {
+        gSt = 'red';    gTx = 'Hitzeperiode! Täglich morgens gießen (6–9 Uhr), Menge erhöhen';
     } else if (moisture !== null && moisture < 30 && rainProb < 30) {
         gSt = 'red';    gTx = 'Dringend gießen! Boden sehr trocken → beste Zeit: 6–9 Uhr';
     } else if (moisture !== null && moisture < 50 && rainProb < 30) {
@@ -624,21 +655,23 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     items.push({ icon: '💧', label: 'Gießen', status: gSt, text: gTx });
 
     // ── Mähen ───────────────────────────────────
-    const grassGrows = soilTemp !== null ? soilTemp >= 10 : month >= 4;
     let mSt, mTx;
     if (month < 3 || month > 11) {
         mSt = 'gray';   mTx = 'Mähpause (Winter)';
     } else if (!grassGrows) {
-        mSt = 'gray';   mTx = 'Gras wächst noch nicht (Bodentemp. < 10 °C)';
+        const tempHint = avgTemp !== null ? ` (Ø ${avgTemp.toFixed(1)} °C letzte 5 Tage)` : '';
+        mSt = 'gray';   mTx = `Gras wächst noch nicht – zu kalt${tempHint}`;
     } else if (moisture !== null && moisture > 75) {
         mSt = 'red';    mTx = 'Boden zu nass – Mähen vermeiden (Bodenverdichtung)';
     } else if (rainProb >= 60) {
         mSt = 'orange'; mTx = 'Regen erwartet – Mähen besser verschieben';
-    } else if (month >= 6 && month <= 8 && outdoor !== null && outdoor > 28) {
-        mSt = 'orange'; mTx = 'Hitze: Schnitthöhe 6–7 cm, früh morgens mähen';
+    } else if (heatWave) {
+        const hint = avgTemp !== null ? ` (Ø ${avgTemp.toFixed(1)} °C)` : '';
+        mSt = 'orange'; mTx = `Hitzeperiode${hint}: Schnitthöhe 6–7 cm, früh morgens mähen`;
     } else {
+        const firstMow = (soilTemp !== null ? soilTemp < 12 : avgTemp !== null ? avgTemp < 12 : month === 3);
         mSt = 'green';
-        mTx = month === 3 ? 'Erstes Mähen möglich – Schnitthöhe 4–5 cm' : 'Gute Bedingungen (Schnitthöhe 4–5 cm)';
+        mTx = firstMow ? 'Erstes Mähen möglich – Schnitthöhe 4–5 cm' : 'Gute Bedingungen (Schnitthöhe 4–5 cm)';
     }
     items.push({ icon: '🌾', label: 'Mähen', status: mSt, text: mTx });
 
@@ -662,9 +695,9 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     // ── Vertikutieren ───────────────────────────
     let vSt, vTx;
     if (month === 3 || month === 4) {
-        const soilWarm = soilTemp !== null ? soilTemp >= 12 : month === 4;
-        if (!soilWarm) {
-            vSt = 'orange'; vTx = 'Fast Zeit – warten bis Bodentemp. ≥ 12 °C';
+        if (!soilWarmEnough) {
+            const hint = avgTemp !== null ? ` (Ø ${avgTemp.toFixed(1)} °C)` : '';
+            vSt = 'orange'; vTx = `Fast Zeit – warten bis Bodentemp. ≥ 12 °C${hint}`;
         } else if (moisture !== null && (moisture > 70 || moisture < 25)) {
             vSt = 'orange'; vTx = 'Boden zu nass/trocken – optimale Feuchte abwarten';
         } else {
@@ -688,11 +721,17 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     } else if (month === 9) {
         dSt = 'green';  dTx = 'Herbstdünger ausbringen – kaliumreich, kein Stickstoff!';
     } else if (month === 3) {
-        const warm = soilTemp !== null ? soilTemp >= 10 : false;
-        dSt = warm ? 'orange' : 'gray';
-        dTx = warm ? 'Frühdünger möglich (Boden ≥ 10 °C)' : 'Noch zu früh – warten bis Boden wärmer';
+        if (soilWarmEnough) {
+            const hint = avgTemp !== null ? ` (Ø ${avgTemp.toFixed(1)} °C letzte 5 Tage)` : '';
+            dSt = 'orange'; dTx = `Frühdünger möglich – Boden warm genug${hint}`;
+        } else {
+            const hint = avgTemp !== null ? ` (aktuell Ø ${avgTemp.toFixed(1)} °C)` : '';
+            dSt = 'gray';   dTx = `Noch zu früh – warten bis Ø mind. 10 °C${hint}`;
+        }
+    } else if (heatWave && (month >= 7 && month <= 8)) {
+        dSt = 'gray';   dTx = 'Kein Dünger bei Hitze (Verbrennungsgefahr)';
     } else if (month >= 7 && month <= 8) {
-        dSt = 'gray';   dTx = 'Kein Stickstoff-Dünger im Hochsommer (Verbrennungsgefahr)';
+        dSt = 'gray';   dTx = 'Kein Stickstoff-Dünger im Hochsommer';
     } else if (month === 10) {
         dSt = 'orange'; dTx = 'Kein Dünger mehr – Gras geht in Ruhephase';
     } else {
@@ -707,9 +746,13 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     } else if (month === 9) {
         nSt = 'green';  nTx = 'Herbst-Nachsaat empfohlen (September)';
     } else if (month === 3) {
-        const warm = soilTemp !== null ? soilTemp >= 10 : false;
-        nSt = warm ? 'orange' : 'gray';
-        nTx = warm ? 'Frühsaat möglich (Boden warm genug)' : 'Noch zu kalt für Rasensamen';
+        if (soilWarmEnough) {
+            const hint = avgTemp !== null ? ` (Ø ${avgTemp.toFixed(1)} °C letzte 5 Tage)` : '';
+            nSt = 'orange'; nTx = `Frühsaat möglich – Boden ausreichend warm${hint}`;
+        } else {
+            const hint = avgTemp !== null ? ` (aktuell Ø ${avgTemp.toFixed(1)} °C)` : '';
+            nSt = 'gray';   nTx = `Noch zu kalt für Rasensamen${hint}`;
+        }
     } else if (month >= 6 && month <= 8) {
         nSt = 'orange'; nTx = 'Saat im Sommer nur mit sehr regelmäßigem Gießen möglich';
     } else {
@@ -746,8 +789,10 @@ function renderRasenEmpfehlungen(moisture, soilTemp) {
     const m = new Date().getMonth() + 1;
     const mStr = moisture !== null ? moisture.toFixed(1) + ' %' : '–';
     const tStr = soilTemp !== null ? soilTemp.toFixed(1) + ' °C' : '–';
+    const avgStr = weather?.avgTempDays !== null && weather?.avgTempDays !== undefined
+        ? ` — Ø Außentemp. 5 Tage: ${weather.avgTempDays.toFixed(1)} °C` : '';
     document.getElementById('rasen-pflege-info').textContent =
-        `Empfehlungen für ${months[m]} — Bodenfeuchte: ${mStr} — Bodentemp.: ${tStr}`;
+        `Empfehlungen für ${months[m]} — Bodenfeuchte: ${mStr} — Bodentemp.: ${tStr}${avgStr}`;
 }
 
 // ─── Alle Sensoren aktualisieren ─────────────────────────────────

@@ -990,6 +990,11 @@
                     <input type="password" id="pushover-user-key" placeholder="Dein Pushover User Key">
                     <small>Von deinem <a href="https://pushover.net/" target="_blank">Pushover Dashboard</a></small>
                 </div>
+                <div class="form-group">
+                    <label for="pushover-bundle-window">Bündelungs-Zeitfenster (Sekunden):</label>
+                    <input type="number" id="pushover-bundle-window" min="5" max="300" step="5" value="30" style="width: 100px;">
+                    <small>Nachrichten werden in diesem Zeitraum gesammelt und als eine gebündelte Push-Nachricht versendet (5–300 Sek., Standard: 30)</small>
+                </div>
                 <div id="pushover-status" style="margin: 10px 0; padding: 10px; border-radius: 6px; display: none;"></div>
             </form>
         </div>

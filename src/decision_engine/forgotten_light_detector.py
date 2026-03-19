@@ -654,19 +654,15 @@ class ForgottenLightDetector:
                 away_minutes = (now - self.away_since).total_seconds() / 60
                 message += f"\n\n🏠 Niemand zuhause seit {int(away_minutes)} Min."
 
-            requests.post(
-                'https://api.pushover.net/1/messages.json',
-                data={
-                    'token': api_key,
-                    'user': user_key,
-                    'title': title,
-                    'message': message,
-                    'html': 1,
-                    'priority': priority
-                },
-                timeout=30
+            from src.utils.notification_bundler import get_bundler
+            get_bundler().add(
+                title=title,
+                message=message,
+                priority=priority,
+                html=True,
+                source="forgotten_light_digest",
             )
-            logger.info(f"Forgotten light digest sent: {count} lights (next in 1h if changed)")
+            logger.info(f"Forgotten light digest queued: {count} lights (next in 1h if changed)")
 
         except Exception as e:
             logger.error(f"Error sending forgotten light digest: {e}")
@@ -815,30 +811,22 @@ class ForgottenLightDetector:
                 )
                 priority = 0
             
-            # Sende Benachrichtigung
-            response = requests.post(
-                'https://api.pushover.net/1/messages.json',
-                data={
-                    'token': api_key,
-                    'user': user_key,
-                    'title': title,
-                    'message': message,
-                    'html': 1,
-                    'priority': priority
-                },
-                timeout=30
+            # Benachrichtigung in Bundler einreihen
+            from src.utils.notification_bundler import get_bundler
+            get_bundler().add(
+                title=title,
+                message=message,
+                priority=priority,
+                html=True,
+                source=f"forgotten_light:{device_id or device_name}",
             )
             
-            # Tracking immer aktualisieren (auch bei Fehler), um Spam zu verhindern
+            # Tracking aktualisieren
             if device_id:
                 self._update_notification_tracking(device_id, is_away)
             
-            if response.status_code == 200:
-                cooldown = self._calculate_notification_cooldown(device_id, is_away) if device_id else 5
-                logger.info(f"Pushover notification sent for forgotten light: {device_name} (next in {cooldown}min)")
-            else:
-                cooldown = self._calculate_notification_cooldown(device_id, is_away) if device_id else 10
-                logger.error(f"Pushover error (retry in {cooldown}min): {response.text}")
+            cooldown = self._calculate_notification_cooldown(device_id, is_away) if device_id else 5
+            logger.info(f"Forgotten light notification queued: {device_name} (next in {cooldown}min)")
                 
         except Exception as e:
             # Auch bei Exception Tracking aktualisieren um Spam zu verhindern

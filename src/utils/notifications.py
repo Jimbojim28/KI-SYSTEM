@@ -343,7 +343,8 @@ class NotificationService:
                          url: str = None,
                          url_title: str = None,
                          device: str = None,
-                         html: bool = False) -> bool:
+                         html: bool = False,
+                         force_immediate: bool = False) -> bool:
         """
         Sendet eine Pushover-Benachrichtigung.
         
@@ -376,6 +377,23 @@ class NotificationService:
         if self._is_quiet_hours() and priority < 1:
             priority = -1  # Leise während Ruhezeit
         
+        if not force_immediate:
+            try:
+                from src.utils.notification_bundler import get_bundler
+                get_bundler().add(
+                    title=title,
+                    message=message,
+                    priority=priority,
+                    html=html,
+                    source="NotificationService",
+                )
+                logger.debug(f"Notification queued in bundler: {title!r}")
+                return True
+            except Exception as e:
+                logger.error(f"Error queuing notification: {e}")
+                return False
+        
+        # force_immediate: direkt senden (z. B. für Tests / Verbindungstest)
         try:
             payload = {
                 "token": self.pushover_token,
@@ -403,7 +421,7 @@ class NotificationService:
             )
             
             if response.status_code == 200:
-                logger.info(f"✅ Pushover notification sent: {title}")
+                logger.info(f"✅ Pushover notification sent (immediate): {title}")
                 return True
             else:
                 logger.error(f"Pushover error: {response.status_code} - {response.text}")
@@ -419,7 +437,8 @@ class NotificationService:
                                        url: str = None,
                                        url_title: str = None,
                                        device: str = None,
-                                       html: bool = False) -> tuple[bool, str]:
+                                       html: bool = False,
+                                       force_immediate: bool = False) -> tuple[bool, str]:
         """
         Sendet eine Pushover-Benachrichtigung mit detaillierter Fehlerrückgabe.
         
@@ -435,6 +454,23 @@ class NotificationService:
         if self._is_quiet_hours() and priority < 1:
             priority = -1
         
+        if not force_immediate:
+            try:
+                from src.utils.notification_bundler import get_bundler
+                get_bundler().add(
+                    title=title,
+                    message=message,
+                    priority=priority,
+                    html=html,
+                    source="NotificationService",
+                )
+                logger.debug(f"Notification queued in bundler: {title!r}")
+                return True, None
+            except Exception as e:
+                logger.error(f"Error queuing notification: {e}")
+                return False, f"Fehler: {str(e)}"
+        
+        # force_immediate: direkt senden (z. B. für Tests / Verbindungstest)
         try:
             payload = {
                 "token": self.pushover_token,
@@ -462,7 +498,7 @@ class NotificationService:
             )
             
             if response.status_code == 200:
-                logger.info(f"✅ Pushover notification sent: {title}")
+                logger.info(f"✅ Pushover notification sent (immediate): {title}")
                 return True, None
             else:
                 # Parse Pushover Error

@@ -1190,36 +1190,20 @@ def init_ventilation_blueprint(engine, db, config):
     
     def _send_pushover_notification(title: str, message: str, priority: int = 0) -> bool:
         """Sende Pushover-Benachrichtigung"""
-        import requests
-        
-        api_key, user_key = _get_pushover_credentials()
-        if not api_key or not user_key:
-            logger.warning("Pushover credentials not configured")
-            return False
-        
         try:
-            response = requests.post(
-                'https://api.pushover.net/1/messages.json',
-                data={
-                    'token': api_key,
-                    'user': user_key,
-                    'title': title,
-                    'message': message,
-                    'html': 1,
-                    'priority': priority
-                },
-                timeout=30
+            from src.utils.notification_bundler import get_bundler
+            get_bundler().add(
+                title=title,
+                message=message,
+                priority=priority,
+                html=True,
+                source="ventilation_api",
             )
-            
-            if response.status_code == 200:
-                logger.info(f"Ventilation notification sent: {title}")
-                return True
-            else:
-                logger.error(f"Pushover error: {response.text}")
-                return False
+            logger.info(f"Ventilation notification queued: {title}")
+            return True
                 
         except Exception as e:
-            logger.error(f"Error sending Pushover notification: {e}")
+            logger.error(f"Error queuing ventilation notification: {e}")
             return False
     
     @ventilation_bp.route('/ventilation/notification-settings', methods=['GET'])

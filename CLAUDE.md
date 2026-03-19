@@ -312,6 +312,30 @@ python3 main.py web --host 0.0.0.0 --port 5000
 
 The bathroom automation system is a self-learning feature that detects shower/bath events and controls dehumidifiers automatically.
 
+## Workflow Guidelines
+
+### Task Management
+- Vor komplexen Änderungen: Plan in `tasks/todo.md` schreiben
+- Nach Korrekturen: Muster in `tasks/lessons.md` dokumentieren
+- Tasks erst als erledigt markieren wenn verifiziert
+
+### Verification
+- Nie "fertig" ohne Beweis dass es funktioniert
+- Bei Bugs: Logs/Errors zeigen und direkt fixen, kein Handholding nötig
+- Vor jedem Commit: `./quick_test.sh` laufen lassen
+
+### Code Quality
+- Jede Änderung so minimal wie möglich halten
+- Keine temporären Fixes – immer Ursache finden
+- Platform-spezifischer Code gehört NIE in engine.py
+
+## Do NOT
+- `.env` Inhalte in Outputs oder Logs zeigen
+- Direkt in `data/ki_system.db` schreiben ohne Backup
+- Platform-Code außerhalb der Collector-Klassen schreiben
+- ML-Modelle unter Mindest-Samples trainieren (100 Lighting / 200 Heating)
+- Breaking Changes an laufenden Sensor-IDs ohne Migrationsplan
+
 **Key Components:**
 - `src/decision_engine/bathroom_automation.py`: Event detection and device control logic
 - `src/decision_engine/bathroom_analyzer.py`: Analytics, pattern recognition, threshold optimization

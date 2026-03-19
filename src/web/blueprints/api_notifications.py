@@ -62,6 +62,9 @@ def init_notifications_blueprint(engine, db, config):
                     'cache_ttl_seconds': config.get('openai', {}).get('cache_ttl_seconds', 3600),
                     'has_credentials': bool(config.get('openai', {}).get('api_key'))
                 },
+                'bundler': {
+                    'window_seconds': config.get('bundler', {}).get('window_seconds', 30)
+                },
                 'default_priority': config.get('default_priority', 0),
                 'quiet_hours_start': config.get('quiet_hours_start', '22:00'),
                 'quiet_hours_end': config.get('quiet_hours_end', '07:00'),
@@ -136,6 +139,12 @@ def init_notifications_blueprint(engine, db, config):
                 config['custom_prompt'] = data['custom_prompt']
             if 'events' in data:
                 config['events'] = data['events']
+            if 'bundler' in data:
+                if 'bundler' not in config:
+                    config['bundler'] = {}
+                w = data['bundler'].get('window_seconds')
+                if w is not None:
+                    config['bundler']['window_seconds'] = max(5, min(300, int(w)))
             
             _save_notification_config(config)
             
@@ -171,12 +180,13 @@ def init_notifications_blueprint(engine, db, config):
                 return jsonify({'success': False, 'error': 'Pushover ist nicht aktiviert.'}), 400
             
             if test_type == 'simple':
-                # Einfache Test-Nachricht
+                # Einfache Test-Nachricht – sofort senden (kein Bundling)
                 success, error_msg = service.send_notification_with_details(
                     title="🏠 KI Smart Home",
                     message="Test-Benachrichtigung erfolgreich! Die Pushover-Integration funktioniert.",
                     priority=0,
-                    sound="pushover"
+                    sound="pushover",
+                    force_immediate=True
                 )
             elif test_type == 'chatgpt':
                 # Prüfe ob ChatGPT konfiguriert ist

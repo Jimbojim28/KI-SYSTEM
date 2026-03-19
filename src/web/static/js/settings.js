@@ -2338,6 +2338,7 @@ async function loadNotificationConfig() {
                 document.getElementById('pushover-api-token').value = '***';
                 document.getElementById('pushover-user-key').value = '***';
             }
+            document.getElementById('pushover-bundle-window').value = config.bundler?.window_seconds ?? 30;
             
             // OpenAI
             document.getElementById('openai-enabled').checked = config.openai?.enabled || false;
@@ -2531,6 +2532,9 @@ async function saveNotificationConfig() {
                 enabled: document.getElementById('pushover-enabled').checked,
                 api_token: document.getElementById('pushover-api-token').value,
                 user_key: document.getElementById('pushover-user-key').value
+            },
+            bundler: {
+                window_seconds: parseInt(document.getElementById('pushover-bundle-window').value) || 30
             },
             openai: {
                 enabled: document.getElementById('openai-enabled').checked,

@@ -338,39 +338,30 @@ class VentilationNotifier:
             return False
         
         try:
-            response = requests.post(
-                'https://api.pushover.net/1/messages.json',
-                data={
-                    'token': api_key,
-                    'user': user_key,
-                    'title': title,
-                    'message': message,
-                    'html': 1,
-                    'priority': priority
-                },
-                timeout=30
+            from src.utils.notification_bundler import get_bundler
+            get_bundler().add(
+                title=title,
+                message=message,
+                priority=priority,
+                html=True,
+                source=f"ventilation:{notification_key or title}",
             )
             
-            # Tracking immer aktualisieren (auch bei Fehler), um Spam zu verhindern
+            # Tracking sofort aktualisieren (Nachricht gilt als gesendet)
             if notification_key:
                 self._last_notifications[notification_key] = datetime.now()
-                self._update_notification_tracking(notification_key, sent=(response.status_code == 200))
+                self._update_notification_tracking(notification_key, sent=True)
             
-            if response.status_code == 200:
-                cooldown = self._calculate_cooldown(notification_key) if notification_key else self._cooldown_minutes
-                logger.info(f"Ventilation notification sent: {title} (next in {cooldown}min)")
-                return True
-            else:
-                cooldown = self._calculate_cooldown(notification_key) if notification_key else self._cooldown_minutes
-                logger.error(f"Pushover error (retry in {cooldown}min): {response.text}")
-                return False
+            cooldown = self._calculate_cooldown(notification_key) if notification_key else self._cooldown_minutes
+            logger.info(f"Ventilation notification queued: {title} (next in {cooldown}min)")
+            return True
                 
         except Exception as e:
             # Auch bei Exception Tracking aktualisieren um Spam zu verhindern
             if notification_key:
                 self._last_notifications[notification_key] = datetime.now()
                 self._update_notification_tracking(notification_key, sent=False)
-            logger.error(f"Error sending notification: {e}")
+            logger.error(f"Error queuing notification: {e}")
             return False
 
     def start(self):

@@ -171,6 +171,11 @@ notifications:
     api_token: YOUR_PUSHOVER_API_TOKEN
     user_key: YOUR_PUSHOVER_USER_KEY
   
+  # Nachrichten-Bundler: sammelt Pushover-Nachrichten und sendet sie gebündelt
+  bundler:
+    enabled: true
+    window_seconds: 30  # Zeitfenster in Sekunden (5–300); kritische Nachrichten (priority>=1) lösen sofortigen Flush aus
+  
   # OpenAI/ChatGPT für intelligente Texte
   openai:
     enabled: true

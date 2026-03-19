@@ -167,6 +167,7 @@ async function loadConfig() {
             setSlider('humidity-high', config.humidity_threshold_high || 70);
             setSlider('humidity-low', config.humidity_threshold_low || 60);
             setSlider('dehumidifier-delay', config.dehumidifier_delay || 5);
+            setSlider('dehumidifier-cooldown', config.dehumidifier_cooldown ?? 15);
             setSlider('max-dehumidifier-runtime', config.max_dehumidifier_runtime || 120);
             setSlider('force-off-humidity', config.force_off_humidity || 50);
 
@@ -223,6 +224,7 @@ async function saveConfig() {
             humidity_threshold_high: parseFloat(document.getElementById('humidity-high').value),
             humidity_threshold_low: parseFloat(document.getElementById('humidity-low').value),
             dehumidifier_delay: parseInt(document.getElementById('dehumidifier-delay').value),
+            dehumidifier_cooldown: parseInt(document.getElementById('dehumidifier-cooldown').value),
             max_dehumidifier_runtime: parseInt(document.getElementById('max-dehumidifier-runtime').value),
             force_off_humidity: parseFloat(document.getElementById('force-off-humidity').value),
             // Heizung
@@ -488,7 +490,7 @@ function updateSliderValue(sliderId) {
         suffix = '%';
     } else if (sliderId.includes('temperature')) {
         suffix = '°C';
-    } else if (sliderId.includes('delay') || sliderId.includes('runtime')) {
+    } else if (sliderId.includes('delay') || sliderId.includes('runtime') || sliderId.includes('cooldown')) {
         suffix = ' Min';
     } else if (sliderId === 'heating-boost-delta') {
         suffix = '°C';
@@ -506,7 +508,8 @@ function setupSliders() {
         'humidity-high', 
         'humidity-low', 
         'target-temperature', 
-        'dehumidifier-delay', 
+        'dehumidifier-delay',
+        'dehumidifier-cooldown',
         'heating-boost-delta', 
         'max-dehumidifier-runtime', 
         'force-off-humidity',

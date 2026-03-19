@@ -197,28 +197,19 @@ def init_absence_blueprint(engine, db, config):
     def _send_pushover_notification(title: str, message: str, api_key: str, user_key: str) -> bool:
         """Sende Pushover-Benachrichtigung"""
         try:
-            response = requests.post(
-                'https://api.pushover.net/1/messages.json',
-                data={
-                    'token': api_key,
-                    'user': user_key,
-                    'title': title,
-                    'message': message,
-                    'html': 1,
-                    'priority': 0
-                },
-                timeout=30
+            from src.utils.notification_bundler import get_bundler
+            get_bundler().add(
+                title=title,
+                message=message,
+                priority=0,
+                html=True,
+                source="absence",
             )
-            
-            if response.status_code == 200:
-                logger.info(f"Absence notification sent successfully")
-                return True
-            else:
-                logger.error(f"Pushover error: {response.text}")
-                return False
+            logger.info("Absence notification queued in bundler")
+            return True
                 
         except Exception as e:
-            logger.error(f"Error sending Pushover notification: {e}")
+            logger.error(f"Error queuing absence notification: {e}")
             return False
     
     def _build_absence_message(lights: list, windows: list) -> tuple:

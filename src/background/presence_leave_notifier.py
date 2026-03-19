@@ -407,28 +407,19 @@ Antworte NUR mit dem Kommentar, keine Anführungszeichen, kein "Hier ist..." etc
             return False
         
         try:
-            response = requests.post(
-                'https://api.pushover.net/1/messages.json',
-                data={
-                    'token': api_key,
-                    'user': user_key,
-                    'title': title,
-                    'message': message,
-                    'html': 1,
-                    'priority': 0
-                },
-                timeout=30
+            from src.utils.notification_bundler import get_bundler
+            get_bundler().add(
+                title=title,
+                message=message,
+                priority=0,
+                html=True,
+                source="presence_leave",
             )
-            
-            if response.status_code == 200:
-                logger.info(f"Leave notification sent successfully")
-                return True
-            else:
-                logger.error(f"Pushover error: {response.text}")
-                return False
+            logger.info("Leave notification queued in bundler")
+            return True
                 
         except Exception as e:
-            logger.error(f"Error sending notification: {e}")
+            logger.error(f"Error queuing leave notification: {e}")
             return False
     
     def _check_presence_change(self):

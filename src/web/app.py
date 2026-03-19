@@ -656,6 +656,60 @@ class WebInterface:
                 logger.error(f"Mower command API error: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/garten/avg-temp')
+        def api_garten_avg_temp():
+            """API: Durchschnittliche Außentemperatur der letzten N Tage.
+            Queries continuous_measurements und heating_observations (beide haben outdoor_temperature).
+            Gibt Tages-Durchschnitte + Gesamt-Durchschnitt zurück.
+            """
+            try:
+                days = int(request.args.get('days', 5))
+            except (ValueError, TypeError):
+                days = 5
+            days = max(1, min(14, days))
+
+            try:
+                import statistics as _stats
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                cutoff = (datetime.now() - __import__('datetime').timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+
+                # Pro-Tag-Durchschnitt aus continuous_measurements
+                cursor.execute("""
+                    SELECT date(timestamp) as day, AVG(outdoor_temperature) as avg_temp, COUNT(*) as samples
+                    FROM continuous_measurements
+                    WHERE timestamp >= ? AND outdoor_temperature IS NOT NULL
+                    GROUP BY date(timestamp)
+                    ORDER BY day DESC
+                """, (cutoff,))
+                rows_cm = cursor.fetchall()
+
+                # Falls keine Daten in continuous_measurements → heating_observations verwenden
+                if not rows_cm:
+                    cursor.execute("""
+                        SELECT date(timestamp) as day, AVG(outdoor_temperature) as avg_temp, COUNT(*) as samples
+                        FROM heating_observations
+                        WHERE timestamp >= ? AND outdoor_temperature IS NOT NULL
+                        GROUP BY date(timestamp)
+                        ORDER BY day DESC
+                    """, (cutoff,))
+                    rows_cm = cursor.fetchall()
+
+                daily = [{'day': r['day'], 'avg_temp': round(r['avg_temp'], 1), 'samples': r['samples']}
+                         for r in rows_cm]
+                all_temps = [r['avg_temp'] for r in daily]
+                overall_avg = round(_stats.mean(all_temps), 1) if all_temps else None
+
+                return jsonify({
+                    'days': days,
+                    'daily': daily,
+                    'avg_temp': overall_avg,
+                    'source': 'continuous_measurements' if rows_cm else 'none'
+                })
+            except Exception as e:
+                logger.error(f"Garten avg-temp API error: {e}")
+                return jsonify({'error': str(e), 'avg_temp': None, 'daily': []}), 500
+
         @self.app.route('/api/health')
         def api_health():
             """API: Health Check für Verbindungsprüfung"""
@@ -4645,26 +4699,54 @@ class WebInterface:
 
                 # Konvertiere Zones zu Rooms
                 imported = 0
+                renamed = 0
                 if isinstance(zones, dict):
                     for zone_id, zone_data in zones.items():
+                        new_name = zone_data.get('name', zone_id)
+                        homey_icon = zone_data.get('icon', 'default')
+                        emoji_icon = map_homey_icon_to_emoji(homey_icon)
+
                         # Prüfe ob Zone schon existiert
-                        if not any(r['id'] == zone_id for r in rooms_data['rooms']):
-                            homey_icon = zone_data.get('icon', 'default')
-                            emoji_icon = map_homey_icon_to_emoji(homey_icon)
+                        existing = next((r for r in rooms_data['rooms'] if r['id'] == zone_id), None)
+                        if existing is None:
+                            # Neue Zone hinzufügen
                             rooms_data['rooms'].append({
                                 'id': zone_id,
-                                'name': zone_data.get('name', zone_id),
+                                'name': new_name,
                                 'icon': emoji_icon,
                                 'type': 'homey'
                             })
                             imported += 1
+                        elif existing.get('name') != new_name:
+                            # Bestehende Zone umbenennen und Sensor-Mapping migrieren
+                            old_name = existing['name']
+                            old_slug = old_name.lower().replace(' ', '_').replace('(', '').replace(')', '')
+                            new_slug = new_name.lower().replace(' ', '_').replace('(', '').replace(')', '')
+
+                            existing['name'] = new_name
+                            renamed += 1
+                            logger.info(f"Zone renamed in Homey: '{old_name}' → '{new_name}'")
+
+                            # Sensor-Mapping-Schlüssel ebenfalls migrieren
+                            from src.web.blueprints.api_ventilation import _load_sensor_mapping, _save_sensor_mapping
+                            try:
+                                mapping = _load_sensor_mapping()
+                                rooms_map = mapping.get('rooms', {})
+                                if old_slug in rooms_map and new_slug not in rooms_map:
+                                    rooms_map[new_slug] = rooms_map.pop(old_slug)
+                                    rooms_map[new_slug]['name'] = new_name
+                                    mapping['rooms'] = rooms_map
+                                    _save_sensor_mapping(mapping)
+                                    logger.info(f"Sensor mapping migrated: '{old_slug}' → '{new_slug}'")
+                            except Exception as e:
+                                logger.warning(f"Could not migrate sensor mapping for renamed zone: {e}")
 
                 Path('data').mkdir(exist_ok=True)
                 with open(rooms_file, 'w') as f:
                     json.dump(rooms_data, f, indent=2)
 
-                logger.info(f"Imported {imported} Homey zones")
-                return jsonify({'success': True, 'zones_imported': imported})
+                logger.info(f"Imported {imported} Homey zones, renamed {renamed}")
+                return jsonify({'success': True, 'zones_imported': imported, 'zones_renamed': renamed})
 
             except Exception as e:
                 logger.error(f"Error syncing zones: {e}")
