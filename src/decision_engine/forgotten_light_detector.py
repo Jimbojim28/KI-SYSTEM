@@ -27,6 +27,7 @@ import requests
 from src.utils.database import Database
 from src.data_collector.platform_factory import PlatformFactory
 from src.utils.config_manager import get_config_section, get_config_value
+from src.models.light_profile_builder import LightProfileBuilder, ProfileCheckResult
 
 
 class ForgottenLightDetector:
@@ -108,6 +109,11 @@ class ForgottenLightDetector:
         # ML-Modell
         self.ml_model = None
         self._init_ml_model()
+
+        # Nutzungsprofile
+        self.profile_builder: Optional[LightProfileBuilder] = None
+        self._init_profile_builder()
+        self._last_profile_rebuild: Optional[datetime] = None
     
     def _load_rooms_config(self):
         """Lädt device_types und hidden_rooms aus rooms.json"""
@@ -167,6 +173,15 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.warning(f"Could not initialize ML model: {e}")
             self.ml_model = None
+
+    def _init_profile_builder(self):
+        """Initialisiert den ProfileBuilder fuer zeitliche Nutzungsprofile"""
+        try:
+            self.profile_builder = LightProfileBuilder(self.db)
+            logger.info("LightProfileBuilder initialized for forgotten light detection")
+        except Exception as e:
+            logger.warning(f"Could not initialize LightProfileBuilder: {e}")
+            self.profile_builder = None
         
     def _init_platform(self):
         """Initialisiert die Platform (Homey/HA)"""
@@ -217,6 +232,18 @@ class ForgottenLightDetector:
             try:
                 # Raum-Konfiguration neu laden (falls geändert in /rooms)
                 self._load_rooms_config()
+                # Profile einmal taeglich neu berechnen
+                if self.profile_builder:
+                    now_check = datetime.now()
+                    if (self._last_profile_rebuild is None or
+                        (now_check - self._last_profile_rebuild).total_seconds() > 86400):
+                        try:
+                            count = self.profile_builder.build_profiles()
+                            self._last_profile_rebuild = now_check
+                            if count > 0:
+                                logger.info(f"Rebuilt {count} light usage profiles (daily)")
+                        except Exception as e:
+                            logger.warning(f"Could not rebuild light profiles: {e}")
                 self._check_for_forgotten_lights()
                 self.stats['last_check'] = datetime.now().isoformat()
             except Exception as e:
@@ -361,6 +388,13 @@ class ForgottenLightDetector:
         except Exception as e:
             logger.error(f"Error checking forgotten lights: {e}")
     
+    def _check_against_profile(self, device_id: str, on_minutes: float,
+                                now: datetime) -> ProfileCheckResult:
+        """Prueft aktuelle Nutzung gegen gelerntes Profil."""
+        if not self.profile_builder:
+            return ProfileCheckResult.no_profile()
+        return self.profile_builder.check_against_profile(device_id, on_minutes, now)
+
     def _predict_forgotten(self, device_id: str, device_name: str, room_name: str,
                            on_minutes: float, minutes_since_motion: float,
                            presence_home: bool, outdoor_light: float, 
@@ -375,9 +409,15 @@ class ForgottenLightDetector:
         # Mindest-Einschaltdauer
         if on_minutes < self.min_on_duration_minutes:
             return False, 0.0, []
-        
-        # ML-Vorhersage wenn Modell verfügbar
-        # Regelbasierte Prüfung (immer ausführen)
+
+        # Profil-Check: Hat das Geraet ein gelerntes Nutzungsprofil?
+        profile_result = self._check_against_profile(device_id, on_minutes, now)
+
+        # Wenn Profil "normal" sagt -> nicht vergessen (override regelbasiert)
+        if profile_result.is_normal():
+            return False, 0.0, []
+
+        # Regelbasierte Pruefung (immer ausfuehren)
         rule_reasons = self._check_forgotten_reasons(
             device_id=device_id,
             device_name=device_name,
@@ -388,6 +428,9 @@ class ForgottenLightDetector:
             now=now
         )
         rule_confidence = self._calculate_confidence(rule_reasons) if rule_reasons else 0.0
+
+        # Profil-Anomalie-Gruende hinzufuegen
+        profile_reasons = profile_result.reasons if profile_result.is_anomaly else []
 
         if self.ml_model and self.ml_model.is_trained:
             conditions = {
@@ -400,25 +443,29 @@ class ForgottenLightDetector:
                 'outdoor_light': outdoor_light or 50,
                 'room_name': room_name
             }
-            
+
             ml_forgotten, ml_confidence = self.ml_model.predict(conditions)
-            
-            # ML-Modell bestätigt: kombiniere mit Regelgründen
+
             if ml_forgotten and ml_confidence >= 0.5:
-                reasons = ["🤖 ML-Vorhersage"] + rule_reasons
+                reasons = ["🤖 ML-Vorhersage"] + profile_reasons + rule_reasons
                 combined_confidence = min(1.0, ml_confidence * 0.6 + rule_confidence * 0.4)
                 return True, combined_confidence, reasons
-            
-            # Regelbasiert übernehmen wenn ML unsicher aber Regeln eindeutig
+
+            if profile_reasons and rule_confidence >= 0.3:
+                reasons = profile_reasons + rule_reasons
+                return True, max(rule_confidence, 0.5), reasons
+
             if rule_confidence >= 0.5:
-                return True, rule_confidence, rule_reasons
-            
+                return True, rule_confidence, profile_reasons + rule_reasons
+
             return False, 0.0, []
-        
-        # Kein ML-Modell: nur regelbasiert
-        if rule_reasons:
-            return True, rule_confidence, rule_reasons
-        
+
+        # Kein ML-Modell: profilbasiert + regelbasiert
+        all_reasons = profile_reasons + rule_reasons
+        if all_reasons:
+            combined = max(rule_confidence, 0.5 if profile_reasons else 0.0)
+            return True, min(combined, 1.0), all_reasons
+
         return False, 0.0, []
     
     def _get_last_motion_for_room(self, room_name: str) -> Optional[datetime]:
@@ -1286,7 +1333,19 @@ class ForgottenLightDetector:
                     is_forgotten = any(p['device_id'] == device_id for p in self.predictions)
                     if is_forgotten:
                         status = 'forgotten'
-                    
+
+                    # Profil-Status ermitteln
+                    profile_status = 'no_profile'
+                    profile_info = None
+                    if self.profile_builder:
+                        presult = self._check_against_profile(device_id, on_minutes, now)
+                        if presult.is_normal():
+                            profile_status = 'normal'
+                            profile_info = "Normalnutzung laut Profil"
+                        elif presult.is_anomaly:
+                            profile_status = 'anomaly'
+                            profile_info = '; '.join(presult.reasons)
+
                     watched.append({
                         'device_id': device_id,
                         'device_name': device_name,
@@ -1294,7 +1353,9 @@ class ForgottenLightDetector:
                         'on_minutes': int(on_minutes),
                         'minutes_since_motion': int(minutes_since_motion) if minutes_since_motion else None,
                         'status': status,
-                        'status_reasons': status_reasons
+                        'status_reasons': status_reasons,
+                        'profile_status': profile_status,
+                        'profile_info': profile_info,
                     })
             
             # Sortiere: vergessen > beobachtet > ok

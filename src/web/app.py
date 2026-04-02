@@ -1499,6 +1499,38 @@ class WebInterface:
                 logger.error(f"Error getting debug info: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/lighting/forgotten/profiles')
+        def api_lighting_forgotten_profiles():
+            """API: Gelernte Nutzungsprofile fuer Lampen"""
+            try:
+                from src.models.light_profile_builder import LightProfileBuilder
+                from src.utils.database import Database as APIDb
+                builder = LightProfileBuilder(db=self.db if hasattr(self, 'db') else APIDb())
+
+                device_id = request.args.get('device_id')
+                profiles = builder.get_all_profiles(device_id=device_id)
+
+                return jsonify({
+                    'profiles': profiles,
+                    'count': len(profiles)
+                })
+            except Exception as e:
+                logger.error(f"Error getting light profiles: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/lighting/forgotten/profiles/rebuild', methods=['POST'])
+        def api_lighting_forgotten_profiles_rebuild():
+            """API: Profile neu berechnen"""
+            try:
+                from src.models.light_profile_builder import LightProfileBuilder
+                from src.utils.database import Database as APIDb
+                builder = LightProfileBuilder(db=self.db if hasattr(self, 'db') else APIDb())
+                count = builder.build_profiles()
+                return jsonify({'success': True, 'profiles_built': count})
+            except Exception as e:
+                logger.error(f"Error rebuilding light profiles: {e}")
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/lighting/all-lights')
         def api_lighting_all_lights():
             """API: Alle Lampen mit aktuellem AN/AUS-Status"""
