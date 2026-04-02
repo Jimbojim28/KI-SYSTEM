@@ -1,145 +1,157 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - KI Smart Home{% endblock %}
+{% block title %}Dashboard — KI Smart Home{% endblock %}
 
 {% block content %}
 <div class="dashboard">
-    <h2>System Dashboard</h2>
+    <!-- Header Section -->
+    <header class="dashboard-header fade-in stagger-1">
+        <div class="dashboard-header-label">KI Smart Home</div>
+        <h2>System<br><span class="dashboard-header-accent">Dashboard</span></h2>
+        <p class="subtitle">Echtzeit-Übersicht aller Smart Home Komponenten</p>
+    </header>
 
-    <!-- Status-Karten -->
-    <div class="status-cards">
+    <!-- Status Cards -->
+    <section class="status-cards">
+        <!-- Temperature Card -->
         <div class="card" id="temperature-card">
-            <h3>Temperatur</h3>
+            <h3><span class="emoji">🌡️</span> Temperatur</h3>
             <div class="card-content">
                 <div class="metric">
-                    <span class="label">Innen:</span>
+                    <span class="label">Innen</span>
                     <span class="value" id="temp-indoor">--°C</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Außen:</span>
+                    <span class="label">Außen</span>
                     <span class="value" id="temp-outdoor">--°C</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Luftfeuchtigkeit:</span>
+                    <span class="label">Luftfeuchtigkeit</span>
                     <span class="value" id="humidity">--%</span>
                 </div>
             </div>
         </div>
 
+        <!-- Environment Card -->
         <div class="card" id="environment-card">
-            <h3>Umgebung</h3>
+            <h3><span class="emoji">🌍</span> Umgebung</h3>
             <div class="card-content">
                 <div class="metric">
-                    <span class="label">Helligkeit:</span>
+                    <span class="label">Helligkeit</span>
                     <span class="value" id="brightness">-- lux</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Bewegung:</span>
+                    <span class="label">Bewegung</span>
                     <span class="value" id="motion">--</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Wetter:</span>
+                    <span class="label">Wetter</span>
                     <span class="value" id="weather">--</span>
                 </div>
             </div>
         </div>
 
+        <!-- Weather Details Card -->
         <div class="card" id="weather-card">
-            <h3>Wetter Details</h3>
+            <h3><span class="emoji">☁️</span> Wetter Details</h3>
             <div class="card-content">
                 <div class="metric">
-                    <span class="label">Gefühlt:</span>
+                    <span class="label">Gefühlt</span>
                     <span class="value" id="feels-like">--°C</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Wind:</span>
+                    <span class="label">Wind</span>
                     <span class="value" id="wind-speed">-- m/s</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Luftdruck:</span>
+                    <span class="label">Luftdruck</span>
                     <span class="value" id="pressure">-- hPa</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Bewölkung:</span>
+                    <span class="label">Bewölkung</span>
                     <span class="value" id="clouds">--%</span>
                 </div>
             </div>
         </div>
 
+        <!-- Energy Card -->
         <div class="card" id="energy-card">
-            <h3>Energie</h3>
+            <h3><span class="emoji">⚡</span> Energie</h3>
             <div class="card-content">
                 <div class="metric">
-                    <span class="label">Strompreis:</span>
+                    <span class="label">Strompreis</span>
                     <span class="value" id="energy-price">-- EUR/kWh</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Verbrauch:</span>
+                    <span class="label">Verbrauch</span>
                     <span class="value" id="power-consumption">-- W</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Preis-Level:</span>
+                    <span class="label">Preis-Level</span>
                     <span class="value" id="price-level">--</span>
                 </div>
             </div>
         </div>
 
+        <!-- Presence Card -->
         <div class="card" id="presence-card">
-            <h3>Präsenz-Status</h3>
+            <h3><span class="emoji">📍</span> Anwesenheit</h3>
             <div class="card-content">
                 <div class="presence-status">
                     <span class="presence-dot" id="presence-dot-dash"></span>
                     <span class="value" id="presence-text-dash">--</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Personen:</span>
+                    <span class="label">Personen</span>
                     <span class="value" id="presence-count-dash">--</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Modus:</span>
+                    <span class="label">Modus</span>
                     <span class="value" id="presence-mode-dash">Automatisch</span>
                 </div>
             </div>
         </div>
 
+        <!-- Mold Prevention Card -->
         <div class="card" id="mold-prevention-card">
-            <h3>🛡️ Schimmelprävention</h3>
+            <h3><span class="emoji">🛡️</span> Schimmelprävention</h3>
             <div class="card-content">
                 <div class="metric">
-                    <span class="label">Risiko-Level:</span>
+                    <span class="label">Risiko-Level</span>
                     <span class="value" id="mold-risk-level">--</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Taupunkt:</span>
+                    <span class="label">Taupunkt</span>
                     <span class="value" id="mold-dewpoint">--°C</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Kondensation:</span>
+                    <span class="label">Kondensation</span>
                     <span class="value" id="mold-condensation">--</span>
                 </div>
                 <div class="metric">
-                    <span class="label">Luftentfeuchter:</span>
+                    <span class="label">Luftentfeuchter</span>
                     <span class="value" id="mold-dehumidifier">--</span>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Wettervorhersage -->
-    <div class="weather-forecast-section">
-        <h2>Wettervorhersage (24h)</h2>
+    <!-- Weather Forecast Section -->
+    <section class="weather-forecast-section">
+        <h2>Wettervorhersage <span style="color: var(--text-tertiary); font-weight: 400;">24h</span></h2>
         <div id="forecast-container" class="forecast-grid">
-            <!-- Vorhersage wird dynamisch geladen -->
+            <!-- Dynamically loaded -->
         </div>
-    </div>
+    </section>
 
-    <!-- KI-Vorhersagen -->
-    <div class="predictions-section">
-        <h2>KI-Vorhersagen & Empfehlungen</h2>
+    <!-- AI Predictions Section -->
+    <section class="predictions-section">
+        <h2>🧠 KI-Vorhersagen & Empfehlungen</h2>
 
         <div class="predictions-grid">
+            <!-- Lighting Prediction -->
             <div class="card prediction-card">
-                <h3>💡 Beleuchtung</h3>
+                <h3><span class="emoji">💡</span> Beleuchtung</h3>
                 <div class="prediction-content">
                     <div class="confidence-bar">
                         <div class="confidence-fill" id="lighting-confidence" style="width: 0%"></div>
@@ -150,8 +162,9 @@
                 </div>
             </div>
 
+            <!-- Heating Prediction -->
             <div class="card prediction-card">
-                <h3>🌡️ Heizung</h3>
+                <h3><span class="emoji">🔥</span> Heizung</h3>
                 <div class="prediction-content">
                     <div class="confidence-bar">
                         <div class="confidence-fill" id="heating-confidence" style="width: 0%"></div>
@@ -162,8 +175,9 @@
                 </div>
             </div>
 
+            <!-- Energy Optimization -->
             <div class="card prediction-card">
-                <h3>⚡ Energie-Optimierung</h3>
+                <h3><span class="emoji">⚡</span> Energie-Optimierung</h3>
                 <div class="prediction-content">
                     <div class="confidence-bar">
                         <div class="confidence-fill" id="energy-confidence" style="width: 0%"></div>
@@ -174,11 +188,11 @@
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Verbindungsstatus -->
-    <div class="connection-status">
-        <h3>Verbindungsstatus</h3>
+    <!-- Connection Status Section -->
+    <section class="connection-status">
+        <h3>System Status</h3>
         <div id="connection-indicators" class="indicators">
             <div class="indicator">
                 <span class="status-dot" id="status-platform"></span>
@@ -197,16 +211,15 @@
                 <span>Energie Preise</span>
             </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Data Collectors Status -->
-    <div class="collectors-status">
+    <!-- Data Collectors Section -->
+    <section class="collectors-status">
         <h3>Data Collectors</h3>
         <div id="collectors-list" class="collectors-grid">
-            <!-- Collector Status wird dynamisch geladen -->
             <div class="loading">Lade Collector Status...</div>
         </div>
-    </div>
+    </section>
 </div>
 
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
