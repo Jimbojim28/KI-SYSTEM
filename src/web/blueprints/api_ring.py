@@ -76,7 +76,12 @@ def get_health():
 def get_settings():
     """GET /ring/api/ring/settings — Current settings."""
     if not _ring_monitor:
-        return jsonify({})
+        return jsonify({
+            "auto_open_enabled": False,
+            "auto_open_delay": 5,
+            "auto_open_schedules": [],
+            "poll_interval": 15,
+        })
 
     return jsonify({
         "auto_open_enabled": _ring_monitor.auto_open_enabled,
@@ -89,16 +94,40 @@ def get_settings():
 @ring_bp.route('/api/ring/settings', methods=['POST'])
 def update_settings():
     """POST /ring/api/ring/settings — Update auto-open settings."""
-    if not _ring_monitor:
-        return jsonify({"error": "Ring monitor not configured"}), 503
-
     data = request.get_json()
-    _ring_monitor.update_settings(
-        auto_open_enabled=data.get("auto_open_enabled"),
-        auto_open_delay=data.get("auto_open_delay"),
-        auto_open_schedules=data.get("auto_open_schedules"),
-    )
+    if _ring_monitor:
+        _ring_monitor.update_settings(
+            auto_open_enabled=data.get("auto_open_enabled"),
+            auto_open_delay=data.get("auto_open_delay"),
+            auto_open_schedules=data.get("auto_open_schedules"),
+        )
+    # Persist to config file
+    _save_to_config(data)
     return jsonify({"success": True})
+
+
+def _save_to_config(data):
+    """Persist schedule settings to config.yaml so they survive restarts."""
+    try:
+        import yaml
+        config_path = _config.get("config_path", "config/config.yaml") if _config else "config/config.yaml"
+        with open(config_path, 'r') as f:
+            cfg = yaml.safe_load(f) or {}
+        if "ring" not in cfg:
+            cfg["ring"] = {}
+        if "auto_open" not in cfg["ring"]:
+            cfg["ring"]["auto_open"] = {}
+        if data.get("auto_open_schedules") is not None:
+            cfg["ring"]["auto_open"]["schedules"] = data["auto_open_schedules"]
+        if data.get("auto_open_enabled") is not None:
+            cfg["ring"]["auto_open"]["enabled"] = data["auto_open_enabled"]
+        if data.get("auto_open_delay") is not None:
+            cfg["ring"]["auto_open"]["delay"] = data["auto_open_delay"]
+        with open(config_path, 'w') as f:
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+        logger.info("Ring: Schedules saved to config")
+    except Exception as e:
+        logger.error(f"Ring: Failed to save config: {e}")
 
 
 @ring_bp.route('/api/ring/test-notification', methods=['POST'])
