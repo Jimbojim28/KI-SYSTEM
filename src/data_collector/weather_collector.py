@@ -75,7 +75,7 @@ class WeatherCollector:
             response.raise_for_status()
             data = response.json()
 
-            # Parse nur die relevanten Vorhersagen (nächste 24h)
+            # Parse 5-Tage Vorhersage (40 Eintraege a 3h)
             forecasts = []
             for item in data['list'][:40]:  # 40 * 3h = 5 Tage
                 forecasts.append({

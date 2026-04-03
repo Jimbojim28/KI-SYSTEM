@@ -654,7 +654,7 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     if (dailyList.length >= 5) {
         const first2 = dailyList.slice(0, 2).reduce((s, d) => s + d.avg_temp, 0) / 2;
         const last3  = dailyList.slice(-3).reduce((s, d) => s + d.avg_temp, 0) / 3;
-        const diff = last3 - first2;
+        const diff = first2 - last3;
         if (diff > 1) { trend = 'rising'; trendIcon = '↗️'; }
         else if (diff < -1) { trend = 'falling'; trendIcon = '↘️'; }
         else { trend = 'stable'; trendIcon = '→'; }
@@ -672,11 +672,11 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     // ── Giessen ─────────────────────────────────
     let gSt, gTx;
     if (!grassGrows) {
-        gSt = 'gray';   gTx = `Kein Giessen noetig (Wachstumspause, eff. ${effTempStr})`;
+        gSt = 'gray';   gTx = `Kein Giessen nötig (Wachstumspause, eff. ${effTempStr})`;
     } else if (rainProb >= 60) {
-        gSt = 'green';  gTx = 'Regen erwartet - kein Giessen noetig';
+        gSt = 'green';  gTx = 'Regen erwartet - kein Giessen nötig';
     } else if (moisture !== null && moisture > 60) {
-        gSt = 'green';  gTx = 'Boden feucht genug - kein Giessen noetig';
+        gSt = 'green';  gTx = 'Boden feucht genug - kein Giessen nötig';
     } else if (heatWave && moisture !== null && moisture < 50) {
         gSt = 'red';    gTx = `Hitzeperiode! Taeglich morgens giessen (6-9 Uhr)${trendHint}`;
     } else if (moisture !== null && moisture < 30 && rainProb < 30) {
@@ -688,41 +688,41 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     }
     items.push({ icon: '💧', label: 'Giessen', status: gSt, text: gTx });
 
-    // ── Maehen ───────────────────────────────────
+    // ── Mähen ───────────────────────────────────
     let mSt, mTx;
     if (month < 3 || month > 11) {
-        mSt = 'gray';   mTx = 'Maehpause (Winter)';
+        mSt = 'gray';   mTx = 'Mähpause (Winter)';
     } else if (!grassGrows) {
-        mSt = 'gray';   mTx = `Gras waechst noch nicht - zu kalt (eff. ${effTempStr})${trendHint}`;
+        mSt = 'gray';   mTx = `Gras wächst noch nicht - zu kalt (eff. ${effTempStr})${trendHint}`;
     } else if (moisture !== null && moisture > 75) {
-        mSt = 'red';    mTx = 'Boden zu nass - Maehen vermeiden (Bodenverdichtung)';
+        mSt = 'red';    mTx = 'Boden zu nass - Mähen vermeiden (Bodenverdichtung)';
     } else if (rainProb >= 60) {
-        mSt = 'orange'; mTx = 'Regen erwartet - Maehen besser verschieben';
+        mSt = 'orange'; mTx = 'Regen erwartet - Mähen besser verschieben';
     } else if (heatWave) {
-        mSt = 'orange'; mTx = `Hitzeperiode (eff. ${effTempStr}): Schnitthoehe 6-7 cm, frueh morgens maehen${trendHint}`;
+        mSt = 'orange'; mTx = `Hitzeperiode (eff. ${effTempStr}): Schnitthoehe 6-7 cm, frueh morgens mähen${trendHint}`;
     } else {
         const firstMow = effTemp !== null ? effTemp < 12 : month === 3;
         mSt = 'green';
-        mTx = firstMow ? 'Erstes Maehen moeglich - Schnitthoehe 4-5 cm' : 'Gute Bedingungen (Schnitthoehe 4-5 cm)';
+        mTx = firstMow ? 'Erstes Mähen moeglich - Schnitthoehe 4-5 cm' : 'Gute Bedingungen (Schnitthoehe 4-5 cm)';
     }
-    items.push({ icon: '🌾', label: 'Maehen', status: mSt, text: mTx });
+    items.push({ icon: '🌾', label: 'Mähen', status: mSt, text: mTx });
 
-    // ── Lueften / Standen ────────────────────────
+    // ── Lüften / Standen ────────────────────────
     let lSt, lTx;
     if ([4, 5].includes(month)) {
         if (moisture !== null && moisture > 70) {
             lSt = 'orange'; lTx = 'Boden noch zu nass - warten bis etwas trockener';
         } else {
-            lSt = 'green';  lTx = 'Ideale Zeit zum Belueften / Standen (April-Mai)';
+            lSt = 'green';  lTx = 'Ideale Zeit zum Belüften / Standen (April-Mai)';
         }
     } else if ([9, 10].includes(month)) {
         lSt = 'green';  lTx = 'Herbst-Belueftung moeglich (September-Oktober)';
     } else if (month >= 6 && month <= 8) {
-        lSt = 'gray';   lTx = 'Kein Lueften im Sommer (Hitzestress fuer Gras)';
+        lSt = 'gray';   lTx = 'Kein Lüften im Sommer (Hitzestress fuer Gras)';
     } else {
         lSt = 'gray';   lTx = 'Saison: April-Mai und September-Oktober';
     }
-    items.push({ icon: '🍃', label: 'Lueften / Standen', status: lSt, text: lTx });
+    items.push({ icon: '🍃', label: 'Lüften / Standen', status: lSt, text: lTx });
 
     // ── Vertikutieren ───────────────────────────
     let vSt, vTx;
@@ -732,18 +732,18 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
         } else if (moisture !== null && (moisture > 70 || moisture < 25)) {
             vSt = 'orange'; vTx = 'Boden zu nass/trocken - optimale Feuchte abwarten';
         } else {
-            vSt = 'green';  vTx = `Optimale Zeit zum Vertikutieren (Fruehjahr)!${trendHint}`;
+            vSt = 'green';  vTx = `Optimale Zeit zum Vertikutieren (Frühjahr)!${trendHint}`;
         }
     } else if (month === 9) {
         vSt = 'green';  vTx = 'Herbst-Vertikutierung moeglich (mind. 6 Wochen vor Frost)';
     } else if (month >= 5 && month <= 8) {
         vSt = 'gray';   vTx = 'Nicht im Sommer vertikutieren (zu viel Stress)';
     } else {
-        vSt = 'gray';   vTx = 'Saison: Maerz-April und September';
+        vSt = 'gray';   vTx = 'Saison: März-April und September';
     }
     items.push({ icon: '⚙️', label: 'Vertikutieren', status: vSt, text: vTx });
 
-    // ── Dueengen ──────────────────────────────────
+    // ── Düngen ──────────────────────────────────
     let dSt, dTx;
     if (month === 4 || month === 5) {
         dSt = 'green';  dTx = `Jetzt Langzeit-Fruejahrsduenger (NPK) ausbringen${trendHint}`;
@@ -753,7 +753,7 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
         dSt = 'green';  dTx = 'Herbstduenger ausbringen - kaliumreich, kein Stickstoff!';
     } else if (month === 3) {
         if (soilWarmEnough) {
-            dSt = 'orange'; dTx = `Fruehduenger moeglich - Boden warm genug (eff. ${effTempStr})${trendHint}`;
+            dSt = 'orange'; dTx = `Frühdünger moeglich - Boden warm genug (eff. ${effTempStr})${trendHint}`;
         } else {
             dSt = 'gray';   dTx = `Noch zu frueh - warten bis eff. Temp. mind. 10 °C (aktuell ${effTempStr})${trendHint}`;
         }
@@ -764,15 +764,15 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
     } else if (month === 10) {
         dSt = 'orange'; dTx = 'Kein Duenger mehr - Gras geht in Ruhephase';
     } else {
-        dSt = 'gray';   dTx = 'Ausserhalb der Dueengesaison';
+        dSt = 'gray';   dTx = 'Ausserhalb der Düngesaison';
     }
-    items.push({ icon: '🌿', label: 'Dueengen', status: dSt, text: dTx });
+    items.push({ icon: '🌿', label: 'Düngen', status: dSt, text: dTx });
 
-    // ── Nachsaeen ────────────────────────────────
+    // ── Nachsäen ────────────────────────────────
     let nSt, nTx;
     if (month === 4 || month === 5) {
         const trendGood = trend === 'rising' ? ' - Temperaturen steigen, gutes Zeitfenster!' : '';
-        nSt = 'green';  nTx = `Ideale Zeit zum Nachsaeen (warm + Niederschlaege)${trendGood}`;
+        nSt = 'green';  nTx = `Ideale Zeit zum Nachsäen (warm + Niederschlaege)${trendGood}`;
     } else if (month === 9) {
         nSt = 'green';  nTx = 'Herbst-Nachsaat empfohlen (September)';
     } else if (month === 3) {
@@ -782,11 +782,11 @@ function _rasenEmpfehlungen(moisture, soilTemp, weather) {
             nSt = 'gray';   nTx = `Noch zu kalt fuer Rasensamen (eff. ${effTempStr})${trendHint}`;
         }
     } else if (month >= 6 && month <= 8) {
-        nSt = 'orange'; nTx = 'Saat im Sommer nur mit sehr regelmaszigem Giessen moeglich';
+        nSt = 'orange'; nTx = 'Saat im Sommer nur mit sehr regelmäßigem Giessen moeglich';
     } else {
         nSt = 'gray';   nTx = 'Ausserhalb der Rasensaat-Saison';
     }
-    items.push({ icon: '🌱', label: 'Nachsaeen', status: nSt, text: nTx });
+    items.push({ icon: '🌱', label: 'Nachsäen', status: nSt, text: nTx });
 
     // Trend-Daten fuer Info-Zeile speichern
     items._effTemp = effTemp;
@@ -893,21 +893,21 @@ function _tomatenEmpfehlungen(soilTemp, weather) {
     } else if (allMet) {
         overallStatus = 'green';
         overallIcon = '✅';
-        overallText = 'Alle Bedingungen erfuellt - Tomaten koennen ins Hochbeet!';
+        overallText = 'Alle Bedingungen erfüllt - Tomaten koennen ins Hochbeet!';
     } else if (anyRed) {
         overallStatus = 'red';
         overallIcon = '🔴';
-        overallText = 'Noch nicht pflanzen - Bedingungen nicht erfuellt';
+        overallText = 'Noch nicht pflanzen - Bedingungen nicht erfüllt';
     } else {
         overallStatus = 'orange';
         overallIcon = '⚠️';
-        overallText = 'Fast bereit - einzelne Kriterien noch nicht erfuellt';
+        overallText = 'Fast bereit - einzelne Kriterien noch nicht erfüllt';
     }
 
     // Tipps (nur in der Saison anzeigen)
     const tipps = [];
     if (inSeason) {
-        tipps.push({ icon: '🌤️', text: 'Abhaerten: Pflanzen 1-2 Wochen vorher schrittweise an Aussenbedingungen gewoehnen' });
+        tipps.push({ icon: '🌤️', text: 'Abhärten: Pflanzen 1-2 Wochen vorher schrittweise an Außenbedingungen gewöhnen' });
         tipps.push({ icon: '☀️', text: 'Standort: Sonnig und windgeschuetzt - Tomaten brauchen 6+ Stunden Sonne' });
         tipps.push({ icon: '🪴', text: 'Boden: Kompost einarbeiten, leicht feucht halten beim Pflanzen' });
         if (!eisheiligePassed && daysUntilEisheilige <= 14) {
@@ -1000,7 +1000,7 @@ function renderRasenEmpfehlungen(moisture, soilTemp) {
             <div style="font-size: 0.81em; color: ${s.col}; line-height: 1.4;">${item.text}</div>
         </div>`;
     }).join('');
-    const months = ['','Januar','Februar','Maerz','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    const months = ['','Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
     const m = new Date().getMonth() + 1;
     const mStr = moisture !== null ? moisture.toFixed(1) + ' %' : '–';
     const tStr = soilTemp !== null ? soilTemp.toFixed(1) + ' °C' : '–';
