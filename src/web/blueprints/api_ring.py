@@ -17,7 +17,7 @@ def init_ring_blueprint(ring_monitor, db, config):
     _config = config
 
 
-@ring_bp.route('')
+@ring_bp.route('/')
 def ring_dashboard():
     """Render Ring Intercom dashboard page."""
     return render_template('ring.html')
