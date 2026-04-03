@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}Ring Intercom — KI Smart Home{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <div class="dashboard-header">
+        <div class="dashboard-header-label">Intercom</div>
+        <h2>Ring <span class="dashboard-header-accent">Intercom</span></h2>
+        <p class="subtitle">Tuersprechanlage — Events, Tueroeffner, Automatisierung</p>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="status-cards" id="statusCards">
+        <div class="card" id="statusCard">
+            <h3>📡 Verbindungsstatus</h3>
+            <div class="card-content">
+                <div class="metric">
+                    <span class="label">Status</span>
+                    <span class="value" id="connectionStatus">Pruefe...</span>
+                </div>
+                <div class="metric">
+                    <span class="label">Letztes Event</span>
+                    <span class="value" id="lastEvent">—</span>
+                </div>
+                <div class="metric">
+                    <span class="label">Poll Intervall</span>
+                    <span class="value" id="pollInterval">—</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="autoOpenCard">
+            <h3>🚪 Auto-Oeffnung</h3>
+            <div class="card-content">
+                <div class="metric">
+                    <span class="label">Status</span>
+                    <span class="value" id="autoOpenStatus">—</span>
+                </div>
+                <div class="metric">
+                    <span class="label">Verzoegerung</span>
+                    <span class="value" id="autoOpenDelay">—</span>
+                </div>
+                <div class="metric">
+                    <span class="label">Zeitfenster</span>
+                    <span class="value" id="autoOpenSchedule">—</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="doorControlCard">
+            <h3>🔓 Tueroeffner</h3>
+            <div class="card-content" style="align-items: center; padding-top: 12px;">
+                <button class="btn btn-primary" id="openDoorBtn"
+                        style="font-size: 1.1rem; padding: 16px 40px;"
+                        onclick="openDoor()">
+                    🔓 Tuer oeffnen
+                </button>
+                <span id="doorResult" style="font-size: 0.85rem; color: var(--text-tertiary); margin-top: 8px;"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>⚙️ Einstellungen</h3>
+        <div class="card-content">
+            <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="autoOpenToggle" onchange="toggleAutoOpen()">
+                    <span class="label">Auto-Oeffnung bei Klingel</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="label">Verzoegerung:</span>
+                    <input type="number" id="delayInput" min="1" max="30" value="5"
+                           style="width: 60px; padding: 6px 10px; border: 1px solid var(--border-default);
+                                  border-radius: 8px; font-family: var(--font-mono); text-align: center;">
+                    <span class="label">Sek.</span>
+                    <button class="btn btn-secondary btn-small" onclick="saveDelay()">Speichern</button>
+                </div>
+                <button class="btn btn-secondary btn-small" onclick="sendTestNotification()">
+                    🔔 Pushover Test
+                </button>
+                <button class="btn btn-secondary btn-small" onclick="reconnect()">
+                    🔄 Neu verbinden
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Event History -->
+    <div class="card">
+        <h3>📋 Klingel-Historie</h3>
+        <div class="card-content">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border-subtle);">
+                        <th style="text-align: left; padding: 8px;">Zeit</th>
+                        <th style="text-align: left; padding: 8px;">Typ</th>
+                        <th style="text-align: left; padding: 8px;">Beantwortet</th>
+                        <th style="text-align: left; padding: 8px;">Auto-Open</th>
+                        <th style="text-align: left; padding: 8px;">Dauer</th>
+                    </tr>
+                </thead>
+                <tbody id="eventTable">
+                    <tr><td colspan="5" style="padding: 16px; text-align: center; color: var(--text-tertiary);">Lade Events...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const REFRESH_INTERVAL = 10000;
+
+async function fetchStatus() {
+    try {
+        const res = await fetch('/ring/api/ring/status');
+        const data = await res.json();
+
+        const statusEl = document.getElementById('connectionStatus');
+        if (data.connected) {
+            statusEl.textContent = 'Verbunden';
+            statusEl.style.color = '#27ae60';
+        } else if (data.error) {
+            statusEl.textContent = data.error === 'not configured' ? 'Nicht konfiguriert' : 'Getrennt';
+            statusEl.style.color = '#e17055';
+        } else {
+            statusEl.textContent = 'Getrennt';
+            statusEl.style.color = '#e17055';
+        }
+
+        document.getElementById('pollInterval').textContent = (data.poll_interval || '—') + 's';
+
+        if (data.last_event) {
+            const d = new Date(data.last_event.timestamp);
+            const diff = Math.floor((Date.now() - d.getTime()) / 60000);
+            document.getElementById('lastEvent').textContent = diff < 1 ? 'Gerade eben' : 'vor ' + diff + ' Min.';
+        }
+
+        document.getElementById('autoOpenStatus').textContent = data.auto_open_enabled ? 'Aktiv' : 'Aus';
+        document.getElementById('autoOpenStatus').style.color = data.auto_open_enabled ? '#27ae60' : '#636e72';
+        document.getElementById('autoOpenDelay').textContent = (data.auto_open_delay || '—') + 's';
+
+        const schedules = data.auto_open_schedules || [];
+        if (schedules.length > 0) {
+            const parts = schedules.map(s => s.start + '-' + s.end + ' ' + s.days.map(d => ['So','Mo','Di','Mi','Do','Fr','Sa'][d]).join(','));
+            document.getElementById('autoOpenSchedule').textContent = parts.join(' | ');
+        } else {
+            document.getElementById('autoOpenSchedule').textContent = 'Keine Zeiten';
+        }
+
+        document.getElementById('autoOpenToggle').checked = data.auto_open_enabled;
+        document.getElementById('delayInput').value = data.auto_open_delay || 5;
+
+    } catch (e) {
+        console.error('Status fetch failed:', e);
+    }
+}
+
+async function fetchEvents() {
+    try {
+        const res = await fetch('/ring/api/ring/events?limit=20');
+        const data = await res.json();
+        const tbody = document.getElementById('eventTable');
+
+        if (!data.events || data.events.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding: 16px; text-align: center; color: var(--text-tertiary);">Keine Events</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.events.map(e => {
+            const d = new Date(e.timestamp);
+            const time = d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            const answered = e.answered ? '<span style="color:#27ae60">Ja</span>' : '<span style="color:#b2bec3">Nein</span>';
+            const auto = e.auto_opened ? '<span style="color:#00b894">Ja</span>' : '<span style="color:#b2bec3">—</span>';
+            const dur = e.duration ? e.duration + 's' : '—';
+            return '<tr style="border-bottom: 1px solid var(--border-subtle);">' +
+                '<td style="padding: 8px;">' + time + '</td>' +
+                '<td style="padding: 8px;">' + e.event_type + '</td>' +
+                '<td style="padding: 8px;">' + answered + '</td>' +
+                '<td style="padding: 8px;">' + auto + '</td>' +
+                '<td style="padding: 8px;">' + dur + '</td></tr>';
+        }).join('');
+    } catch (e) {
+        console.error('Events fetch failed:', e);
+    }
+}
+
+async function openDoor() {
+    const btn = document.getElementById('openDoorBtn');
+    const result = document.getElementById('doorResult');
+    btn.disabled = true;
+    btn.textContent = 'Oeffne...';
+    result.textContent = '';
+
+    try {
+        const res = await fetch('/ring/api/ring/open', { method: 'POST' });
+        const data = await res.json();
+        result.textContent = data.success ? 'Tuer geoeffnet' : data.error || 'Fehler';
+        result.style.color = data.success ? '#27ae60' : '#e17055';
+    } catch (e) {
+        result.textContent = 'Verbindungsfehler';
+        result.style.color = '#e17055';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🔓 Tuer oeffnen';
+}
+
+async function toggleAutoOpen() {
+    const enabled = document.getElementById('autoOpenToggle').checked;
+    await fetch('/ring/api/ring/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_open_enabled: enabled }),
+    });
+    fetchStatus();
+}
+
+async function saveDelay() {
+    const delay = parseInt(document.getElementById('delayInput').value) || 5;
+    await fetch('/ring/api/ring/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_open_delay: delay }),
+    });
+    fetchStatus();
+}
+
+async function sendTestNotification() {
+    const res = await fetch('/ring/api/ring/test-notification', { method: 'POST' });
+    const data = await res.json();
+    alert(data.success ? 'Test-Nachricht gesendet!' : 'Fehler: ' + (data.error || 'Pushover nicht konfiguriert'));
+}
+
+async function reconnect() {
+    const res = await fetch('/ring/api/ring/reconnect', { method: 'POST' });
+    const data = await res.json();
+    alert(data.success ? 'Verbindung hergestellt!' : 'Verbindung fehlgeschlagen');
+    fetchStatus();
+}
+
+fetchStatus();
+fetchEvents();
+setInterval(() => { fetchStatus(); fetchEvents(); }, REFRESH_INTERVAL);
+</script>
+{% endblock %}
