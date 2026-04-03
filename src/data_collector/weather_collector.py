@@ -77,7 +77,7 @@ class WeatherCollector:
 
             # Parse nur die relevanten Vorhersagen (nächste 24h)
             forecasts = []
-            for item in data['list'][:8]:  # 8 * 3h = 24h
+            for item in data['list'][:40]:  # 40 * 3h = 5 Tage
                 forecasts.append({
                     'timestamp': item['dt_txt'],
                     'temperature': item['main']['temp'],
