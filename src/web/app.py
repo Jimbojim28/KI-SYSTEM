@@ -367,16 +367,18 @@ class WebInterface:
             self.app.register_blueprint(absence_bp)
             self.app.register_blueprint(ha_entities_bp)
             
-            # Ring Intercom Blueprint
+            # Ring Intercom Blueprint (always register, even when disabled)
             try:
                 from src.background.ring_monitor import RingMonitor
                 self.ring_monitor = RingMonitor.from_config(self.config, db_path=self.config.get('database', {}).get('path', 'data/ki_system.db'))
-                if self.ring_monitor:
-                    init_ring_blueprint(self.ring_monitor, self.db, self.config)
-                    self.app.register_blueprint(ring_bp)
-                    logger.info("Ring Intercom blueprint registered")
             except Exception as e:
-                logger.warning(f"Ring Intercom not available: {e}")
+                logger.warning(f"Ring Monitor init failed: {e}")
+                self.ring_monitor = None
+
+            # Always register blueprint so Ring page/API is available
+            init_ring_blueprint(self.ring_monitor, self.db, self.config)
+            self.app.register_blueprint(ring_bp)
+            logger.info("Ring Intercom blueprint registered")
 
             # Christmas Blueprint - optional
             if CHRISTMAS_BP_AVAILABLE and christmas_bp and init_christmas_blueprint:
