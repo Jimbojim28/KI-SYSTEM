@@ -335,6 +335,22 @@ class Database:
             )
         """)
 
+        # Ring Events
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ring_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                ring_event_id TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                duration INTEGER,
+                answered BOOLEAN DEFAULT FALSE,
+                auto_opened BOOLEAN DEFAULT FALSE,
+                metadata TEXT
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ring_events_timestamp ON ring_events(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ring_events_ring_id ON ring_events(ring_event_id)')
+
         # Erstelle Indizes für bessere Performance
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_sensor_timestamp
