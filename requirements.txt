@@ -37,3 +37,6 @@ gevent==23.9.1
 # Optional Dependencies (nicht standardmäßig nötig):
 # tensorflow==2.15.0  # Nur für advanced ML models
 # homeassistant-api==4.1.4  # Nur als Alternative zu REST API
+
+# Ring Intercom Integration
+ring_doorbell==0.9.10
