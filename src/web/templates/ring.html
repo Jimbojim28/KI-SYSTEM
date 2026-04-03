@@ -65,7 +65,7 @@
     <div class="card" style="margin-bottom: 20px;">
         <h3>⚙️ Einstellungen</h3>
         <div class="card-content">
-            <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+            <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 16px;">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="autoOpenToggle" onchange="toggleAutoOpen()">
                     <span class="label">Auto-Oeffnung bei Klingel</span>
@@ -84,6 +84,47 @@
                 <button class="btn btn-secondary btn-small" onclick="reconnect()">
                     🔄 Neu verbinden
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zeitfenster -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>🕐 Zeitfenster fuer Auto-Oeffnung</h3>
+        <div class="card-content">
+            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+                Lege fest, in welchen Zeitraeumen die Tuer automatisch geoeffnet werden soll. Nur innerhalb dieser Fenster wird geoeffnet.
+            </p>
+            <div id="schedulesList"></div>
+            <style>
+                .day-btn { min-width: 32px; padding: 2px 8px; text-align: center; }
+                .day-btn.active { background: #d4edda !important; color: #155724 !important; border-color: #27ae60 !important; }
+            .btn-small { padding: 4px 12px; font-size: 0.8rem; }
+            #schedulesList { margin-bottom: 8px; }
+            .schedule-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-tertiary); border-radius: var(--radius-md); margin-bottom: 6px; border: 1px solid var(--border-subtle); }
+                .schedule-item:hover { background: var(--surface-glass-hover); }
+            .schedule-time { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 600; }
+                .schedule-days { font-size: 0.85rem; color: var(--text-secondary); }
+                .schedule-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; }
+                .schedule-badge.active { background: #d4edda; color: #155724; }
+                .schedule-badge.inactive { background: #f0f0f0; color: #636e72; }
+            </style>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle);">
+                <input type="time" id="newScheduleStart" value="08:00"
+                       style="padding: 6px 10px; border: 1px solid var(--border-default); border-radius: 8px; font-family: var(--font-mono);">
+                <span style="color: var(--text-tertiary);">bis</span>
+                <input type="time" id="newScheduleEnd" value="18:00"
+                       style="padding: 6px 10px; border: 1px solid var(--border-default); border-radius: 8px; font-family: var(--font-mono);">
+                <div style="display: flex; gap: 4px;" id="dayButtons">
+                    <button class="btn btn-secondary btn-small day-btn" data-day="0" onclick="toggleDay(this)" title="Sonntag">So</button>
+                    <button class="btn btn-secondary btn-small day-btn active" data-day="1" onclick="toggleDay(this)" title="Montag">Mo</button>
+                    <button class="btn btn-secondary btn-small day-btn active" data-day="2" onclick="toggleDay(this)" title="Dienstag">Di</button>
+                    <button class="btn btn-secondary btn-small day-btn active" data-day="3" onclick="toggleDay(this)" title="Mittwoch">Mi</button>
+                    <button class="btn btn-secondary btn-small day-btn active" data-day="4" onclick="toggleDay(this)" title="Donnerstag">Do</button>
+                    <button class="btn btn-secondary btn-small day-btn active" data-day="5" onclick="toggleDay(this)" title="Freitag">Fr</button>
+                    <button class="btn btn-secondary btn-small day-btn" data-day="6" onclick="toggleDay(this)" title="Samstag">Sa</button>
+                </div>
+                <button class="btn btn-primary btn-small" onclick="addSchedule()">+ Hinzufuegen</button>
             </div>
         </div>
     </div>
@@ -152,6 +193,9 @@ async function fetchStatus() {
 
         document.getElementById('autoOpenToggle').checked = data.auto_open_enabled;
         document.getElementById('delayInput').value = data.auto_open_delay || 5;
+
+        currentSchedules = data.auto_open_schedules || [];
+        renderSchedules();
 
     } catch (e) {
         console.error('Status fetch failed:', e);
@@ -239,6 +283,78 @@ async function reconnect() {
     const data = await res.json();
     alert(data.success ? 'Verbindung hergestellt!' : 'Verbindung fehlgeschlagen');
     fetchStatus();
+}
+
+    // --- Schedule Management ---
+let currentSchedules = [];
+const DAY_NAMES = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+function toggleDay(btn) {
+    btn.classList.toggle('active');
+}
+
+function renderSchedules() {
+    const container = document.getElementById('schedulesList');
+    if (!currentSchedules || currentSchedules.length === 0) {
+        container.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--text-tertiary); font-size: 0.85rem;">Keine Zeitfenster definiert — Tuer wird Jederzeit geoeffnet (wenn Auto-Open aktiv)</div>';
+        return;
+    }
+    container.innerHTML = currentSchedules.map((s, idx) => {
+        const days = s.days.map(d => DAY_NAMES[d]).join(', ');
+        const isActive = isCurrentActiveWindow(s);
+        return '<div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-tertiary); border-radius: var(--radius-md); margin-bottom: 6px; border: 1px solid var(--border-subtle);">' +
+            '<div style="display: flex; align-items: center; gap: 12px;">' +
+                '<span style="font-family: var(--font-mono); font-size: 1.1rem; font-weight: 600;">' + s.start + ' — ' + s.end + '</span>' +
+                '<span style="font-size: 0.85rem; color: var(--text-secondary);">' + days + '</span>' +
+            '</div>' +
+            '<div style="display: flex; align-items: center; gap: 8px;">' +
+                '<span style="font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: ' + (isActive ? '#d4edda; color: #155724;' : '#f0f0f0; color: #636e72;') + '">' + (isActive ? 'AKTIV' : 'INAKTIV') + '</span>' +
+                '<button class="btn btn-secondary btn-small" onclick="removeSchedule(' + idx + ')" style="font-size: 0.75rem; padding: 2px 10px;">Entfernen</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+}
+
+function isCurrentActiveWindow(schedule) {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    if (!schedule.days.includes(currentDay)) return false;
+    const [sh, sm] = schedule.start.split(':').map(Number);
+    const [eh, em] = schedule.end.split(':').map(Number);
+    const startMin = sh * 60 + sm;
+    const endMin = eh * 60 + em;
+    return currentMinutes >= startMin && currentMinutes <= endMin;
+}
+
+async function addSchedule() {
+    const start = document.getElementById('newScheduleStart').value;
+    const end = document.getElementById('newScheduleEnd').value;
+    const dayBtns = document.querySelectorAll('.day-btn.active');
+    const days = Array.from(dayBtns).map(b => parseInt(b.dataset.day));
+
+    if (!start || !end) { alert('Bitte Start- und Endzeit eingeben'); return; }
+    if (days.length === 0) { alert('Bitte mindestens einen Tag auswaehlen'); return; }
+
+    currentSchedules.push({ start, end, days });
+    await saveSchedules();
+    renderSchedules();
+    fetchStatus();
+}
+
+async function removeSchedule(index) {
+    currentSchedules.splice(index, 1);
+    await saveSchedules();
+    renderSchedules();
+    fetchStatus();
+}
+
+async function saveSchedules() {
+    await fetch('/ring/api/ring/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_open_schedules: currentSchedules }),
+    });
 }
 
 fetchStatus();
