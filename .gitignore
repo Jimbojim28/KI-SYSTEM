@@ -94,3 +94,6 @@ debug_*.py
 *.cache
 *_backup.*
 *_old.*
+
+# Ring token cache
+data/ring_token.cache
