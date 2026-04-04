@@ -12,6 +12,7 @@
         <button class="tab-button" data-tab="connection">🔌 Verbindung</button>
         <button class="tab-button" data-tab="ha-devices">🏡 HA Geräte</button>
         <button class="tab-button" data-tab="notifications">📲 Benachrichtigungen</button>
+        <button class="tab-button" data-tab="ring">🔔 Ring Verbindung</button>
         <button class="tab-button" data-tab="sensors">📡 Sensoren</button>
         <button class="tab-button" data-tab="heating">🔥 Heizung</button>
         <button class="tab-button" data-tab="database">💾 Datenbank</button>
@@ -545,6 +546,69 @@
         </div>
     </div>
     <!-- Ende Tab: HA Geräte -->
+
+    <!-- Tab: Ring Verbindung -->
+    <div class="tab-content" id="tab-ring">
+        <div class="settings-sections">
+        <div class="card settings-card">
+            <h3>🔔 Ring Intercom Verbindung</h3>
+            <p class="card-description">
+                Verbinde dein Ring Intercom mit dem KI-System, um die Tuer automatisch zu oeffnen.
+                <a href="https://ring.com" target="_blank">Ring Account</a>
+            </p>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="ring-enabled">
+                    <strong>Ring Integration aktivieren</strong>
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label for="ring-email">Ring E-Mail:</label>
+                <input type="email" id="ring-email" class="form-control" placeholder="deine@email.de" style="width: 100%;">
+                <small class="help-text">Die E-Mail-Adresse deines Ring-Kontos</small>
+            </div>
+
+            <div class="form-group">
+                <label for="ring-password">Ring Passwort:</label>
+                <input type="password" id="ring-password" class="form-control" placeholder="Ring Passwort" style="width: 100%;">
+                <small class="help-text">Das Passwort deines Ring-Kontos</small>
+            </div>
+
+            <div class="form-group">
+                <label for="ring-poll-interval">Poll-Intervall (Sekunden):</label>
+                <input type="number" id="ring-poll-interval" min="5" max="120" step="5" value="15" style="width: 120px;">
+                <small class="help-text">Wie oft nach neuen Events gesucht wird (Standard: 15 Sek.)</small>
+            </div>
+
+            <div class="form-group">
+                <button class="btn btn-secondary" id="test-ring-connection">Verbindung testen</button>
+                <div id="ring-test-result" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <!-- Pushover for Ring -->
+        <div class="card settings-card">
+            <h3>📲 Ring Benachrichtigungen (Pushover)</h3>
+            <p class="card-description">
+                Die Pushover-Konfiguration wird auch fuer Ring-Benachrichtigungen verwendet.
+                Stelle sicher, dass Pushover unter "Benachrichtigungen" konfiguriert ist.
+            </p>
+            <div class="form-group">
+                <button class="btn btn-secondary" id="test-ring-notification">Test-Benachrichtigung senden</button>
+                <div id="ring-notification-result" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <!-- Save Button -->
+        <div class="action-buttons" style="margin-top: 20px;">
+            <button class="btn btn-primary" id="save-ring-config">💾 Ring Einstellungen speichern</button>
+        </div>
+        <div id="ring-save-result" class="action-result"></div>
+        </div>
+    </div>
+    <!-- Ende Tab: Ring Verbindung -->
 
     <!-- Tab: Sensoren -->
     <div class="tab-content" id="tab-sensors">

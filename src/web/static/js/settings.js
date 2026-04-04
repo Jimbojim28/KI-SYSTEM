@@ -24,6 +24,8 @@ function initTabs() {
             // Lade Daten für den Tab wenn nötig
             if (targetTab === 'connection') {
                 loadConnectionConfig();
+            } else if (targetTab === 'ring') {
+                loadRingConfig();
             } else if (targetTab === 'database') {
                 loadDatabaseStatus();
             } else if (targetTab === 'backup') {
@@ -1522,6 +1524,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Allgemein-Tab ist aktiv - keine Extra-Daten nötig
     } else if (savedTab === 'connection') {
         loadConnectionConfig();
+    } else if (savedTab === 'ring') {
+        loadRingConfig();
     } else if (savedTab === 'database') {
         loadDatabaseStatus();
     } else if (savedTab === 'ml') {
@@ -3761,8 +3765,164 @@ function initBackupTab() {
     }
 }
 
+// ===== RING VERBINDUNG TAB FUNCTIONS =====
+
+function initRingTab() {
+    document.getElementById('test-ring-connection')?.addEventListener('click', testRingConnection);
+    document.getElementById('test-ring-notification')?.addEventListener('click', testRingNotification);
+    document.getElementById('save-ring-config')?.addEventListener('click', saveRingConfig);
+}
+
+async function loadRingConfig() {
+    try {
+        const response = await fetch('/api/config/ring');
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('ring-enabled').checked = data.enabled || false;
+            document.getElementById('ring-email').value = data.email || '';
+            document.getElementById('ring-poll-interval').value = data.poll_interval || 15;
+
+            // Mask saved password
+            if (data.has_password) {
+                document.getElementById('ring-password').value = '***';
+            } else {
+                document.getElementById('ring-password').value = '';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading Ring config:', error);
+    }
+}
+
+async function testRingConnection() {
+    const resultEl = document.getElementById('ring-test-result');
+    const btn = document.getElementById('test-ring-connection');
+
+    btn.disabled = true;
+    resultEl.innerHTML = '<span style="color: #3b82f6;">Teste Verbindung...</span>';
+
+    try {
+        const email = document.getElementById('ring-email').value;
+        const password = document.getElementById('ring-password').value;
+
+        if (!email || !password || password === '***') {
+            resultEl.innerHTML = '<span style="color: #ef4444;">Bitte E-Mail und Passwort eingeben</span>';
+            btn.disabled = false;
+            return;
+        }
+
+        // Save first
+        await fetch('/api/config/ring', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: document.getElementById('ring-enabled').checked,
+                email: email,
+                password: password,
+                poll_interval: parseInt(document.getElementById('ring-poll-interval').value) || 15
+            })
+        });
+
+        // Then test
+        const response = await fetch('/api/config/ring/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            resultEl.innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
+        } else {
+            resultEl.innerHTML = `<span style="color: #ef4444;">❌ ${data.error}</span>`;
+        }
+    } catch (error) {
+        resultEl.innerHTML = `<span style="color: #ef4444;">❌ Fehler: ${error.message}</span>`;
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function testRingNotification() {
+    const resultEl = document.getElementById('ring-notification-result');
+    resultEl.innerHTML = '<span style="color: #3b82f6;">Sende Test-Benachrichtigung...</span>';
+
+    try {
+        const response = await fetch('/ring/api/ring/test-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            resultEl.innerHTML = '<span style="color: #10b981;">✅ Test-Benachrichtigung gesendet!</span>';
+        } else {
+            resultEl.innerHTML = `<span style="color: #ef4444;">❌ ${data.error || 'Pushover nicht konfiguriert'}</span>`;
+        }
+    } catch (error) {
+        resultEl.innerHTML = `<span style="color: #ef4444;">❌ Fehler: ${error.message}</span>`;
+    }
+}
+
+async function saveRingConfig() {
+    const resultEl = document.getElementById('ring-save-result');
+    const btn = document.getElementById('save-ring-config');
+
+    btn.disabled = true;
+    resultEl.textContent = 'Speichere...';
+    resultEl.className = 'action-result loading';
+    resultEl.style.display = 'block';
+
+    try {
+        const email = document.getElementById('ring-email').value;
+        const password = document.getElementById('ring-password').value;
+
+        const config = {
+            enabled: document.getElementById('ring-enabled').checked,
+            email: email,
+            poll_interval: parseInt(document.getElementById('ring-poll-interval').value) || 15
+        };
+
+        // Only send password if changed (not ***)
+        if (password && password !== '***') {
+            config.password = password;
+        }
+
+        const response = await fetch('/api/config/ring', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            resultEl.textContent = '✅ Ring Einstellungen gespeichert! Server wird neu gestartet...';
+            resultEl.className = 'action-result success';
+
+            setTimeout(async () => {
+                try {
+                    await fetch('/api/system/restart', { method: 'POST' });
+                } catch (e) { /* expected */ }
+                setTimeout(() => window.location.reload(), 5000);
+            }, 2000);
+        } else {
+            resultEl.textContent = `❌ Fehler: ${data.error}`;
+            resultEl.className = 'action-result error';
+        }
+    } catch (error) {
+        resultEl.textContent = `❌ Fehler: ${error.message}`;
+        resultEl.className = 'action-result error';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 // Initialisiere beim Laden
 document.addEventListener('DOMContentLoaded', () => {
     initHAEntitiesTab();
     initBackupTab();
+    initRingTab();
 });
