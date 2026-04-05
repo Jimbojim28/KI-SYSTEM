@@ -9,7 +9,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         KI_API_URL: "http://localhost:8080",
-        MCP_PORT: "3002",
+        MCP_PORT: "3003",
       },
       watch: false,
       autorestart: true,
