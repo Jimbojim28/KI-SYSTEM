@@ -9,7 +9,7 @@ import { registerGardenTools } from "./tools/garden.js";
 import { registerLightingTools } from "./tools/lighting.js";
 import { registerMlTools } from "./tools/ml.js";
 
-const PORT = parseInt(process.env.MCP_PORT ?? "3001", 10);
+const PORT = parseInt(process.env.MCP_PORT ?? "3002", 10);
 const MCP_PATH = "/mcp";
 
 const server = new McpServer({
