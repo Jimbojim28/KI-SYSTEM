@@ -350,11 +350,6 @@ class Database:
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ring_events_timestamp ON ring_events(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ring_events_ring_id ON ring_events(ring_event_id)')
-        cursor.execute(
-            """CREATE UNIQUE INDEX IF NOT EXISTS idx_ring_events_ring_id_unique
-               ON ring_events(ring_event_id)
-               WHERE ring_event_id IS NOT NULL AND ring_event_id != ''"""
-        )
 
         # Erstelle Indizes für bessere Performance
         cursor.execute("""
