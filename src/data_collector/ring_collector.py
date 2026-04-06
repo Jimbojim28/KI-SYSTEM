@@ -1,5 +1,7 @@
 """Ring Intercom collector — auth, events, door control, health monitoring."""
+import asyncio
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -7,10 +9,14 @@ from typing import Dict, List, Optional, Any
 from loguru import logger
 
 try:
-    from ring_doorbell import Ring, Auth
+    from ring_doorbell import Ring, Auth, AuthenticationError, Requires2FAError
     RING_AVAILABLE = True
 except ImportError:
     RING_AVAILABLE = False
+    Ring = None
+    Auth = None
+    AuthenticationError = Exception
+    Requires2FAError = Exception
     logger.warning("ring_doorbell not installed, Ring integration disabled")
 
 from src.utils.pushover import PushoverNotifier
@@ -29,52 +35,122 @@ class RingCollector:
         self.intercom = None
         self.connected = False
         self.last_event_id: Optional[str] = None
+        self._seen_event_ids: set = set()  # all IDs seen in this session
+        self.last_error: Optional[str] = None
+        self.requires_2fa = False
         self._consecutive_failures = 0
         self._max_failures = 3
+        self._auth_failed = False  # True after credentials are rejected — blocks auto-reconnect
 
-    def connect(self) -> bool:
+        # Persistent event loop in its own thread so aiohttp sessions stay alive across calls.
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=self._loop.run_forever, daemon=True, name="RingEventLoop"
+        )
+        self._loop_thread.start()
+
+    def _run_async(self, coro, timeout: int = 30):
+        """Run an async coroutine on the persistent Ring event loop (thread-safe)."""
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=timeout)
+
+    def connect(self, otp_code: Optional[str] = None) -> bool:
         """Authenticate with Ring API and find the Intercom device."""
         if not RING_AVAILABLE:
+            self.last_error = "Ring-Bibliothek nicht verfuegbar"
+            self.requires_2fa = False
             logger.error("ring_doorbell library not available")
             return False
 
+        self.last_error = None
+        self.requires_2fa = False
+
         try:
-            auth = Auth("KI-SYSTEM/1.0")
+            token_data = self._load_token()
+            auth = Auth("KI-SYSTEM/1.0", token_data, self._save_token)
 
-            # Try loading cached token first
-            if self.token_cache.exists():
+            if token_data:
+                logger.info("Ring: Loaded cached token")
+                self.ring = Ring(auth)
                 try:
-                    token_data = json.loads(self.token_cache.read_text())
-                    auth.token = token_data
-                    logger.info("Ring: Loaded cached token")
-                except Exception as e:
-                    logger.warning(f"Ring: Failed to load cached token: {e}")
-
-            # If no valid token, authenticate with credentials
-            if not auth.token:
-                logger.info("Ring: Authenticating with email/password...")
-                auth.fetch_token(username=self.email, password=self.password)
-                self._save_token(auth.token)
-
-            self.ring = Ring(auth)
-            self.ring.update_data()
+                    self._run_async(self.ring.async_update_data())
+                except AuthenticationError:
+                    logger.info("Ring: Cached token invalid, retrying with credentials")
+                    auth = self._authenticate_with_credentials(otp_code=otp_code)
+                    self.ring = Ring(auth)
+                    self._run_async(self.ring.async_update_data())
+            else:
+                auth = self._authenticate_with_credentials(otp_code=otp_code)
+                self.ring = Ring(auth)
+                self._run_async(self.ring.async_update_data())
 
             # Find intercom device
-            intercoms = list(self.ring.intercoms)
+            intercoms = list(self.ring.devices().other)
             if intercoms:
                 self.intercom = intercoms[0]
                 self.connected = True
+                self.last_error = None
+                self.requires_2fa = False
+                self._auth_failed = False
                 self._consecutive_failures = 0
                 logger.info(f"Ring: Connected to intercom '{self.intercom.name}'")
                 return True
             else:
+                self.connected = False
+                self.last_error = "Kein Ring Intercom gefunden"
                 logger.error("Ring: No intercom device found")
                 return False
 
+        except Requires2FAError:
+            self.connected = False
+            self.requires_2fa = True
+            self._auth_failed = True
+            self.last_error = "2FA-Code erforderlich"
+            logger.warning("Ring: 2FA code required for authentication")
+            return False
+        except AuthenticationError as e:
+            self.connected = False
+            self._auth_failed = True
+            self.last_error = "Authentifizierung fehlgeschlagen"
+            logger.error(f"Ring: Authentication failed: {e}")
+            self._handle_connection_failure()
+            return False
         except Exception as e:
+            self.connected = False
+            self.last_error = str(e) or "Verbindung fehlgeschlagen"
             logger.error(f"Ring: Connection failed: {e}")
             self._handle_connection_failure()
             return False
+
+    def _authenticate_with_credentials(self, otp_code: Optional[str] = None):
+        """Authenticate with Ring credentials and optional OTP (ring_doorbell 0.9.x async API)."""
+        logger.info("Ring: Authenticating with email/password...")
+        auth = Auth("KI-SYSTEM/1.0", None, self._save_token)
+        self._run_async(auth.async_fetch_token(
+            username=self.email, password=self.password, otp_code=otp_code
+        ))
+        if auth._token:
+            self._save_token(auth._token)
+        return auth
+
+    def test_connection(self, otp_code: Optional[str] = None) -> Dict[str, Any]:
+        """Run a connection test and return a user-facing result payload."""
+        # Manual test always gets a fresh attempt regardless of prior auth failures.
+        self._auth_failed = False
+        success = self.connect(otp_code=otp_code)
+        if success:
+            return {
+                "success": True,
+                "message": "Verbindung erfolgreich! Ring-Token gespeichert.",
+            }
+
+        result = {
+            "success": False,
+            "error": self.last_error or "Authentifizierung fehlgeschlagen",
+        }
+        if self.requires_2fa:
+            result["requires_2fa"] = True
+        return result
 
     def _save_token(self, token: dict):
         """Persist auth token to cache file."""
@@ -93,22 +169,33 @@ class RingCollector:
 
     def get_health(self) -> Dict[str, Any]:
         """Return connection health status."""
+        battery = None
+        if self.intercom is not None:
+            try:
+                battery = self.intercom.battery_life
+            except Exception:
+                pass
         return {
             "connected": self.connected,
             "token_valid": self.ring is not None,
             "intercom_found": self.intercom is not None,
+            "requires_2fa": self.requires_2fa,
+            "error": self.last_error,
             "consecutive_failures": self._consecutive_failures,
             "last_poll": getattr(self, "_last_poll_time", None),
+            "battery_life": battery,
         }
 
-    def open_door(self) -> bool:
+    def open_door(self, notify: bool = True) -> bool:
         """Trigger the intercom door unlock."""
         if not self.connected or not self.intercom:
             logger.error("Ring: Cannot open door — not connected")
             return False
         try:
-            self.intercom.open_door()
+            self._run_async(self.intercom.async_open_door())
             logger.info("Ring: Door opened")
+            if notify:
+                self.pushover.send_ring_event("manual_open")
             return True
         except Exception as e:
             logger.error(f"Ring: Failed to open door: {e}")
@@ -120,7 +207,7 @@ class RingCollector:
             return []
         try:
             events = []
-            history = self.intercom.history(limit=limit)
+            history = self._run_async(self.intercom.async_history(limit=limit))
             for event in history:
                 events.append({
                     "event_id": str(event.get("id", "")),
@@ -137,6 +224,8 @@ class RingCollector:
     def check_for_new_events(self) -> List[Dict]:
         """Poll for new events since last check. Returns list of new events."""
         if not self.connected:
+            if self._auth_failed:
+                return []
             if not self.connect():
                 return []
         try:
@@ -145,10 +234,12 @@ class RingCollector:
             new_events = []
             for event in events:
                 eid = event["event_id"]
-                if eid and eid != self.last_event_id:
+                if eid and eid not in self._seen_event_ids:
                     new_events.append(event)
-                    self.last_event_id = eid
-                    self._consecutive_failures = 0
+                self._seen_event_ids.add(eid)
+                self.last_event_id = eid
+            if new_events:
+                self._consecutive_failures = 0
             return new_events
         except Exception as e:
             logger.error(f"Ring: Poll failed: {e}")

@@ -42,6 +42,7 @@ class PushoverNotifier:
         messages = {
             "ding": "Jemand klingelt an der Tuer",
             "auto_open": "Tuer automatisch geoeffnet",
+            "manual_open": "Tuer manuell geoeffnet",
             "token_expired": "Ring Token abgelaufen - 2FA noetig!",
             "connection_lost": "Ring API nicht erreichbar",
             "connection_restored": "Ring Verbindung wiederhergestellt",
@@ -49,6 +50,7 @@ class PushoverNotifier:
         priorities = {
             "ding": 0,
             "auto_open": 0,
+            "manual_open": 0,
             "token_expired": 1,
             "connection_lost": 1,
             "connection_restored": -1,
@@ -60,8 +62,9 @@ class PushoverNotifier:
     @staticmethod
     def from_config(config: dict) -> "PushoverNotifier":
         """Create notifier from config dict."""
-        pushover_cfg = config.get("pushover", {})
+        # Pushover can live at top level or under notifications.pushover
+        pushover_cfg = config.get("pushover") or config.get("notifications", {}).get("pushover", {})
         return PushoverNotifier(
             user_key=pushover_cfg.get("user_key", ""),
-            app_key=pushover_cfg.get("app_key", ""),
+            app_key=pushover_cfg.get("api_token", pushover_cfg.get("app_key", "")),
         )

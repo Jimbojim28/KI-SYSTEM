@@ -3771,6 +3771,7 @@ function initRingTab() {
     document.getElementById('test-ring-connection')?.addEventListener('click', testRingConnection);
     document.getElementById('test-ring-notification')?.addEventListener('click', testRingNotification);
     document.getElementById('save-ring-config')?.addEventListener('click', saveRingConfig);
+    document.getElementById('reset-ring-config')?.addEventListener('click', resetRingConfig);
 }
 
 async function loadRingConfig() {
@@ -3806,31 +3807,51 @@ async function testRingConnection() {
         const email = document.getElementById('ring-email').value;
         const password = document.getElementById('ring-password').value;
 
-        if (!email || !password || password === '***') {
+        if (!email || !password) {
             resultEl.innerHTML = '<span style="color: #ef4444;">Bitte E-Mail und Passwort eingeben</span>';
             btn.disabled = false;
             return;
         }
 
-        // Save first
+        const savePayload = {
+            enabled: document.getElementById('ring-enabled').checked,
+            email: email,
+            poll_interval: parseInt(document.getElementById('ring-poll-interval').value) || 15
+        };
+
+        if (password !== '***') {
+            savePayload.password = password;
+        }
+
         await fetch('/api/config/ring', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                enabled: document.getElementById('ring-enabled').checked,
-                email: email,
-                password: password,
-                poll_interval: parseInt(document.getElementById('ring-poll-interval').value) || 15
-            })
+            body: JSON.stringify(savePayload)
         });
 
-        // Then test
-        const response = await fetch('/api/config/ring/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
+        const runTest = async (otpCode = null) => {
+            const response = await fetch('/api/config/ring/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(otpCode ? { otp_code: otpCode } : {})
+            });
 
-        const data = await response.json();
+            return response.json();
+        };
+
+        let data = await runTest();
+
+        if (data.requires_2fa) {
+            const otpCode = window.prompt('Ring verlangt einen 2FA-Code. Bitte Code aus App, SMS oder E-Mail eingeben:');
+
+            if (!otpCode) {
+                resultEl.innerHTML = '<span style="color: #f59e0b;">⚠️ 2FA-Code wurde nicht eingegeben</span>';
+                return;
+            }
+
+            resultEl.innerHTML = '<span style="color: #3b82f6;">2FA-Code wird geprueft...</span>';
+            data = await runTest(otpCode.trim());
+        }
 
         if (data.success) {
             resultEl.innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
@@ -3908,6 +3929,45 @@ async function saveRingConfig() {
                 } catch (e) { /* expected */ }
                 setTimeout(() => window.location.reload(), 5000);
             }, 2000);
+        } else {
+            resultEl.textContent = `❌ Fehler: ${data.error}`;
+            resultEl.className = 'action-result error';
+        }
+    } catch (error) {
+        resultEl.textContent = `❌ Fehler: ${error.message}`;
+        resultEl.className = 'action-result error';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function resetRingConfig() {
+    const resultEl = document.getElementById('ring-save-result');
+    const btn = document.getElementById('reset-ring-config');
+
+    if (!window.confirm('Gespeicherte Ring-E-Mail, Passwort und Token-Cache wirklich zuruecksetzen?')) {
+        return;
+    }
+
+    btn.disabled = true;
+    resultEl.textContent = 'Setze Ring Zugangsdaten zurueck...';
+    resultEl.className = 'action-result loading';
+    resultEl.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/config/ring/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('ring-enabled').checked = false;
+            document.getElementById('ring-email').value = '';
+            document.getElementById('ring-password').value = '';
+            resultEl.textContent = '✅ Ring Zugangsdaten zurueckgesetzt';
+            resultEl.className = 'action-result success';
         } else {
             resultEl.textContent = `❌ Fehler: ${data.error}`;
             resultEl.className = 'action-result error';

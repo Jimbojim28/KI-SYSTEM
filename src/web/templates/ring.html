@@ -27,6 +27,10 @@
                     <span class="label">Poll Intervall</span>
                     <span class="value" id="pollInterval">—</span>
                 </div>
+                <div class="metric">
+                    <span class="label">Akku</span>
+                    <span class="value" id="batteryLife">—</span>
+                </div>
             </div>
         </div>
 
@@ -172,6 +176,16 @@ async function fetchStatus() {
         }
 
         document.getElementById('pollInterval').textContent = (data.poll_interval || '—') + 's';
+
+        const batt = data.battery_life;
+        const battEl = document.getElementById('batteryLife');
+        if (batt !== null && batt !== undefined) {
+            const icon = batt >= 60 ? '🔋' : batt >= 20 ? '🪫' : '🪫';
+            battEl.textContent = icon + ' ' + batt + '%';
+            battEl.style.color = batt >= 40 ? '#27ae60' : '#e17055';
+        } else {
+            battEl.textContent = '—';
+        }
 
         if (data.last_event) {
             const d = new Date(data.last_event.timestamp);

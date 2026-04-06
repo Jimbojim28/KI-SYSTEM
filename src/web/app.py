@@ -13,6 +13,7 @@ import subprocess
 import os
 import json
 import yaml
+import re
 
 # Füge src zum Python-Path hinzu
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -2407,6 +2408,21 @@ class WebInterface:
             """API: Lese/Speichere Ring Intercom Konfiguration"""
             config_path = Path('config/config.yaml')
 
+            def normalize_ring_email(value):
+                """Normalize and validate Ring email input."""
+                if value is None:
+                    return None
+
+                email = str(value).strip()
+                if not email:
+                    return ""
+
+                email_pattern = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                if not email_pattern.match(email):
+                    raise ValueError('Ungueltige Ring-E-Mail-Adresse')
+
+                return email
+
             if request.method == 'GET':
                 try:
                     if config_path.exists():
@@ -2446,10 +2462,12 @@ class WebInterface:
                     if 'ring' not in cfg:
                         cfg['ring'] = {}
 
+                    normalized_email = normalize_ring_email(data.get('email'))
+
                     if data.get('enabled') is not None:
                         cfg['ring']['enabled'] = data['enabled']
-                    if data.get('email'):
-                        cfg['ring']['email'] = data['email']
+                    if normalized_email is not None:
+                        cfg['ring']['email'] = normalized_email
                     if data.get('password') and data['password'] != '***':
                         cfg['ring']['password'] = data['password']
                     if data.get('poll_interval'):
@@ -2464,14 +2482,51 @@ class WebInterface:
 
                     logger.info("Ring: Konfiguration gespeichert")
                     return jsonify({'success': True, 'message': 'Ring Konfiguration gespeichert'})
+                except ValueError as e:
+                    return jsonify({'success': False, 'error': str(e)}), 400
                 except Exception as e:
                     logger.error(f"Error saving Ring config: {e}")
                     return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/config/ring/reset', methods=['POST'])
+        def api_ring_reset():
+            """API: Setzt Ring Zugangsdaten und Token-Cache zurueck"""
+            try:
+                config_path = Path('config/config.yaml')
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        cfg = yaml.safe_load(f) or {}
+                else:
+                    cfg = {}
+
+                ring_cfg = cfg.setdefault('ring', {})
+                token_cache_path = Path(ring_cfg.get('token_cache', 'data/ring_token.cache'))
+
+                ring_cfg['enabled'] = False
+                ring_cfg['email'] = ''
+                ring_cfg['password'] = ''
+                if 'token_cache' not in ring_cfg:
+                    ring_cfg['token_cache'] = 'data/ring_token.cache'
+                if 'auto_open' not in ring_cfg:
+                    ring_cfg['auto_open'] = {'enabled': False, 'delay': 5, 'schedules': []}
+
+                with open(config_path, 'w') as f:
+                    yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+                if token_cache_path.exists():
+                    token_cache_path.unlink()
+
+                logger.info('Ring: Zugangsdaten und Token-Cache zurueckgesetzt')
+                return jsonify({'success': True, 'message': 'Ring Zugangsdaten zurueckgesetzt'})
+            except Exception as e:
+                logger.error(f"Error resetting Ring config: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
 
         @self.app.route('/api/config/ring/test', methods=['POST'])
         def api_ring_test():
             """API: Teste Ring Verbindung"""
             try:
+                data = request.get_json(silent=True) or {}
                 config_path = Path('config/config.yaml')
                 if config_path.exists():
                     with open(config_path, 'r') as f:
@@ -2488,12 +2543,13 @@ class WebInterface:
 
                 # Try to create Ring collector and test auth
                 from src.data_collector.ring_collector import RingCollector
-                collector = RingCollector(email=email, password=password)
-
-                if collector.connect():
-                    return jsonify({'success': True, 'message': 'Verbindung erfolgreich! Ring-Token gespeichert.'})
-                else:
-                    return jsonify({'success': False, 'error': 'Authentifizierung fehlgeschlagen. Pruefe E-Mail und Passwort.'})
+                collector = RingCollector(
+                    email=email,
+                    password=password,
+                    token_cache=ring_cfg.get('token_cache', 'data/ring_token.cache')
+                )
+                result = collector.test_connection(otp_code=data.get('otp_code'))
+                return jsonify(result)
             except Exception as e:
                 logger.error(f"Ring test error: {e}")
                 return jsonify({'success': False, 'error': str(e)}), 500
