@@ -69,7 +69,7 @@ class RingMonitor:
             return
 
         if not self.collector.connect():
-            if self.collector._auth_failed:
+            if getattr(self.collector, "_auth_failed", False):
                 logger.error("Ring: Credentials rejected — monitor will not auto-retry. Use the UI to re-test.")
             else:
                 logger.error("Ring: Initial connection failed, will retry in background")
