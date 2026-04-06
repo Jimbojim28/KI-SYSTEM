@@ -18,7 +18,7 @@ class RingMonitor:
     def __init__(self, ring_collector: RingCollector, db_path: str = "data/ki_system.db",
                  poll_interval: int = 15, auto_open_enabled: bool = False,
                  auto_open_delay: int = 5, auto_open_schedules: list = None,
-                 daily_reload: bool = True):
+                 daily_reload: bool = True, ding_cooldown_seconds: int = 20):
         self.collector = ring_collector
         self.db_path = db_path
         self.poll_interval = poll_interval
@@ -26,10 +26,38 @@ class RingMonitor:
         self.auto_open_delay = auto_open_delay
         self.auto_open_schedules = auto_open_schedules or []
         self.daily_reload = daily_reload
+        self.ding_cooldown_seconds = max(0, int(ding_cooldown_seconds or 0))
 
         self.running = False
         self.thread = None
         self._last_reload_date = None
+        self._last_ding_ts: Optional[datetime] = None
+
+    def _preload_known_event_ids(self):
+        """Mark all currently available Ring events as seen so no false notifications fire on startup."""
+        # Step 1: load IDs already persisted in DB
+        try:
+            conn = sqlite3.connect(self.db_path, timeout=10)
+            rows = conn.execute(
+                "SELECT ring_event_id FROM ring_events ORDER BY timestamp DESC LIMIT 20"
+            ).fetchall()
+            conn.close()
+            known = {row[0] for row in rows if row[0]}
+            self.collector._seen_event_ids.update(known)
+        except Exception as e:
+            logger.warning(f"Ring: Could not preload event IDs from DB: {e}")
+
+        # Step 2: silent poll — add whatever Ring returns right now without sending notifications
+        if self.collector.connected:
+            try:
+                current = self.collector.get_latest_events(limit=10)
+                ids_from_api = {e["event_id"] for e in current if e.get("event_id")}
+                self.collector._seen_event_ids.update(ids_from_api)
+                logger.info(
+                    f"Ring: Startup silent poll — marked {len(ids_from_api)} current events as seen"
+                )
+            except Exception as e:
+                logger.warning(f"Ring: Startup silent poll failed: {e}")
 
     def start(self):
         """Start the monitoring thread."""
@@ -41,7 +69,12 @@ class RingMonitor:
             return
 
         if not self.collector.connect():
-            logger.error("Ring: Initial connection failed, will retry in background")
+            if self.collector._auth_failed:
+                logger.error("Ring: Credentials rejected — monitor will not auto-retry. Use the UI to re-test.")
+            else:
+                logger.error("Ring: Initial connection failed, will retry in background")
+
+        self._preload_known_event_ids()
 
         self.running = True
         self.thread = threading.Thread(target=self._run_loop, daemon=True, name="RingMonitor")
@@ -85,9 +118,21 @@ class RingMonitor:
     def _handle_event(self, event: dict):
         """Process a new Ring event: save to DB, notify, auto-open."""
         event_type = event.get("event_type", "ding")
-        self._save_event(event)
+        inserted = self._save_event(event)
+        if not inserted:
+            logger.debug(f"Ring: Duplicate event ignored: {event.get('event_id')}")
+            return
 
         if event_type == "ding":
+            event_ts = self._parse_event_timestamp(event.get("timestamp"))
+            if self._is_ding_in_cooldown(event_ts):
+                logger.info(
+                    "Ring: Ding suppressed by cooldown "
+                    f"({self.ding_cooldown_seconds}s) for event {event.get('event_id')}"
+                )
+                return
+
+            self._last_ding_ts = event_ts
             self.collector.pushover.send_ring_event("ding")
             if self.auto_open_enabled and self._is_auto_open_time():
                 threading.Timer(
@@ -95,6 +140,27 @@ class RingMonitor:
                     self._auto_open_door,
                     args=[event["event_id"]]
                 ).start()
+
+    def _parse_event_timestamp(self, timestamp_value) -> datetime:
+        """Convert Ring timestamp value to datetime, fallback to current time."""
+        if isinstance(timestamp_value, datetime):
+            return timestamp_value
+
+        if isinstance(timestamp_value, str) and timestamp_value:
+            try:
+                return datetime.fromisoformat(timestamp_value)
+            except ValueError:
+                pass
+
+        return datetime.now()
+
+    def _is_ding_in_cooldown(self, event_ts: datetime) -> bool:
+        """Return True when a ding happened recently and should be suppressed."""
+        if self.ding_cooldown_seconds <= 0 or self._last_ding_ts is None:
+            return False
+
+        delta = (event_ts - self._last_ding_ts).total_seconds()
+        return 0 <= delta < self.ding_cooldown_seconds
 
     def _auto_open_door(self, event_id: str):
         """Open the door and log it."""
@@ -106,7 +172,7 @@ class RingMonitor:
     def _is_auto_open_time(self) -> bool:
         """Check if current time falls within any auto-open schedule."""
         if not self.auto_open_schedules:
-            return False
+            return True  # no schedule restriction = always allowed when enabled
         now = datetime.now()
         current_day = now.weekday()
         current_time = now.time()
@@ -126,28 +192,37 @@ class RingMonitor:
         parts = time_str.split(":")
         return dt_time(int(parts[0]), int(parts[1]))
 
-    def _save_event(self, event: dict):
-        """Persist event to ring_events table."""
+    def _save_event(self, event: dict) -> bool:
+        """Persist event to ring_events table and return True on new insert."""
         try:
+            # Timestamps from ring_doorbell 0.9.x may be datetime objects — normalise to str.
+            def _to_str(v):
+                return v.isoformat() if hasattr(v, "isoformat") else v
+
+            serialisable = {k: _to_str(v) for k, v in event.items()}
+            timestamp = _to_str(event.get("timestamp", datetime.now().isoformat()))
+
             conn = sqlite3.connect(self.db_path, timeout=10)
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT OR IGNORE INTO ring_events
                    (event_type, ring_event_id, timestamp, duration, answered, auto_opened, metadata)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     event.get("event_type", "ding"),
                     event.get("event_id"),
-                    event.get("timestamp", datetime.now().isoformat()),
+                    timestamp,
                     event.get("duration"),
                     event.get("answered", False),
                     False,
-                    json.dumps(event),
+                    json.dumps(serialisable),
                 )
             )
             conn.commit()
             conn.close()
+            return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Ring: Failed to save event: {e}")
+            return False
 
     def _update_event_auto_opened(self, event_id: str):
         """Mark an event as auto-opened."""
@@ -223,4 +298,5 @@ class RingMonitor:
             auto_open_delay=auto_open.get("delay", 5),
             auto_open_schedules=auto_open.get("schedules", []),
             daily_reload=True,
+            ding_cooldown_seconds=ring_cfg.get("ding_cooldown_seconds", 20),
         )
