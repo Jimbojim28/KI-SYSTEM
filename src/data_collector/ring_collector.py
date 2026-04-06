@@ -10,6 +10,7 @@ from loguru import logger
 
 try:
     from ring_doorbell import Ring, Auth, AuthenticationError, Requires2FAError
+    from ring_doorbell import RingEventListener
     RING_AVAILABLE = True
 except ImportError:
     RING_AVAILABLE = False
@@ -17,6 +18,7 @@ except ImportError:
     Auth = None
     AuthenticationError = Exception
     Requires2FAError = Exception
+    RingEventListener = None
     logger.warning("ring_doorbell not installed, Ring integration disabled")
 
 from src.utils.pushover import PushoverNotifier
@@ -41,6 +43,8 @@ class RingCollector:
         self._consecutive_failures = 0
         self._max_failures = 3
         self._auth_failed = False  # True after credentials are rejected — blocks auto-reconnect
+        self._event_listener: Optional[Any] = None  # RingEventListener instance
+        self._on_ding_callback = None  # callable set by RingMonitor
 
         # Persistent event loop in its own thread so aiohttp sessions stay alive across calls.
         self._loop = asyncio.new_event_loop()
@@ -258,6 +262,7 @@ class RingCollector:
     def refresh_connection(self) -> bool:
         """Force reconnection attempt."""
         logger.info("Ring: Refreshing connection...")
+        self.stop_event_listener()
         self.connected = False
         self.ring = None
         self.intercom = None
@@ -265,3 +270,68 @@ class RingCollector:
         if success:
             self.pushover.send_ring_event("connection_restored")
         return success
+
+    def start_event_listener(self, callback) -> bool:
+        """Start the FCM push listener for real-time Ring events.
+
+        *callback* receives a ``RingEvent`` dataclass on each push notification.
+        Returns True when the listener was started successfully.
+        """
+        if not RING_AVAILABLE or RingEventListener is None:
+            logger.warning("Ring: RingEventListener not available")
+            return False
+        if not self.ring:
+            logger.warning("Ring: Cannot start listener — not connected")
+            return False
+
+        self._on_ding_callback = callback
+
+        try:
+            credentials_path = self.token_cache.with_suffix(".listener")
+            creds = None
+            if credentials_path.exists():
+                try:
+                    creds = json.loads(credentials_path.read_text())
+                except Exception:
+                    pass
+
+            def _save_listener_creds(new_creds):
+                credentials_path.parent.mkdir(parents=True, exist_ok=True)
+                credentials_path.write_text(json.dumps(new_creds))
+
+            self._event_listener = RingEventListener(
+                self.ring,
+                credentials=creds,
+                credentials_updated_callback=_save_listener_creds,
+            )
+            self._event_listener.add_notification_callback(self._on_push_notification)
+
+            started = self._run_async(self._event_listener.start(timeout=15))
+            if started:
+                logger.info("Ring: Push event listener started (FCM)")
+            else:
+                logger.warning("Ring: Push event listener failed to start")
+            return started
+        except Exception as e:
+            logger.error(f"Ring: Failed to start event listener: {e}")
+            self._event_listener = None
+            return False
+
+    def _on_push_notification(self, event):
+        """Internal callback — forwards push events to the registered handler."""
+        logger.info(f"Ring: Push event received — kind={event.kind}, id={event.id}")
+        if self._on_ding_callback:
+            try:
+                self._on_ding_callback(event)
+            except Exception as e:
+                logger.error(f"Ring: Error in push event callback: {e}")
+
+    def stop_event_listener(self):
+        """Stop the FCM push listener if running."""
+        if self._event_listener:
+            try:
+                self._run_async(self._event_listener.stop())
+                logger.info("Ring: Push event listener stopped")
+            except Exception as e:
+                logger.warning(f"Ring: Error stopping event listener: {e}")
+            self._event_listener = None

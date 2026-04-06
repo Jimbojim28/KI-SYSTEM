@@ -32,6 +32,7 @@ class RingMonitor:
         self.thread = None
         self._last_reload_date = None
         self._last_ding_ts: Optional[datetime] = None
+        self._listener_active = False
 
     def _preload_known_event_ids(self):
         """Mark all currently available Ring events as seen so no false notifications fire on startup."""
@@ -76,14 +77,25 @@ class RingMonitor:
 
         self._preload_known_event_ids()
 
+        # Try push-based listener first (real-time, <2s latency)
+        if self.collector.connected:
+            self._listener_active = self.collector.start_event_listener(self._on_push_event)
+            if self._listener_active:
+                logger.info("Ring: Using push-based event listener (real-time)")
+            else:
+                logger.warning("Ring: Push listener unavailable, falling back to polling")
+
         self.running = True
         self.thread = threading.Thread(target=self._run_loop, daemon=True, name="RingMonitor")
         self.thread.start()
-        logger.info(f"Ring: Monitor started (poll every {self.poll_interval}s)")
+        logger.info(f"Ring: Monitor started (poll every {self.poll_interval}s, push={'active' if self._listener_active else 'inactive'})")
 
     def stop(self):
         """Stop the monitoring thread."""
         self.running = False
+        if self._listener_active:
+            self.collector.stop_event_listener()
+            self._listener_active = False
         if self.thread:
             self.thread.join(timeout=10)
         logger.info("Ring: Monitor stopped")
@@ -140,6 +152,32 @@ class RingMonitor:
                     self._auto_open_door,
                     args=[event["event_id"]]
                 ).start()
+
+    def _on_push_event(self, ring_event):
+        """Handle a real-time push event from RingEventListener.
+
+        *ring_event* is a ``ring_doorbell.RingEvent`` dataclass with fields
+        like ``id``, ``kind``, ``device_name``, ``now``.
+        """
+        event_id = str(ring_event.id)
+        event_type = getattr(ring_event, "kind", "ding")
+
+        # Convert to the dict format _handle_event expects
+        event = {
+            "event_id": event_id,
+            "event_type": event_type,
+            "timestamp": datetime.now(),
+            "answered": False,
+            "duration": 0,
+            "source": "push",
+        }
+
+        # Mark as seen so the polling loop won't re-process it
+        if hasattr(self.collector, "_seen_event_ids"):
+            self.collector._seen_event_ids.add(event_id)
+
+        logger.info(f"Ring: Push event — {event_type} (id={event_id})")
+        self._handle_event(event)
 
     def _parse_event_timestamp(self, timestamp_value) -> datetime:
         """Convert Ring timestamp value to datetime, fallback to current time."""
@@ -242,8 +280,10 @@ class RingMonitor:
         health = self.collector.get_health()
         health["poll_interval"] = self.poll_interval
         health["auto_open_enabled"] = self.auto_open_enabled
+        health["auto_open_delay"] = self.auto_open_delay
         health["auto_open_schedules"] = self.auto_open_schedules
         health["monitor_running"] = self.running
+        health["push_listener_active"] = self._listener_active
         return health
 
     def get_recent_events(self, limit: int = 20) -> list:
