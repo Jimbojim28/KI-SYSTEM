@@ -13,6 +13,7 @@ let countdownSeconds = 0;
 const PollingManager = {
     statusInterval: null,
     liveStatusInterval: null,
+    moldInterval: null,
     isPageVisible: true,
     
     init() {
@@ -40,6 +41,10 @@ const PollingManager = {
             clearInterval(this.liveStatusInterval);
             this.liveStatusInterval = null;
         }
+        if (this.moldInterval) {
+            clearInterval(this.moldInterval);
+            this.moldInterval = null;
+        }
     },
     
     restartPolling() {
@@ -49,16 +54,19 @@ const PollingManager = {
         // Sofort Daten laden
         loadStatus();
         loadLiveSensorStatus();
+        loadMoldPreventionStatusBathroom();
         
         // Intervals neu starten
         this.statusInterval = setInterval(loadStatus, 10000);
         this.liveStatusInterval = setInterval(loadLiveSensorStatus, 5000);
+        this.moldInterval = setInterval(loadMoldPreventionStatusBathroom, 30000);
     },
     
     // Starte initiales Polling
     startInitialPolling() {
         this.statusInterval = setInterval(loadStatus, 10000);
         this.liveStatusInterval = setInterval(loadLiveSensorStatus, 5000);
+        this.moldInterval = setInterval(loadMoldPreventionStatusBathroom, 30000);
     }
 };
 

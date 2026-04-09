@@ -1,0 +1,76 @@
+<h2>Welche Farbrichtung gefaellt dir?</h2>
+<p class="subtitle">Klicke auf eine Option um sie auszuwaehlen. Das aktuelle Theme ist "Tech-Noir Dunkel".</p>
+
+<div class="cards">
+  <div class="card" data-choice="warm-natural" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: linear-gradient(135deg, #faf7f2 0%, #f0ebe3 50%, #e8e0d4 100%); padding: 24px; min-height: 180px;">
+      <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+        <div style="font-weight: 700; color: #2d3436; font-size: 14px;">Dashboard</div>
+        <div style="color: #636e72; font-size: 11px; margin-top: 4px;">Warme, natuerliche Farben</div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <div style="flex:1; background: #dfe6e9; border-radius: 8px; height: 40px;"></div>
+        <div style="flex:1; background: #ffeaa7; border-radius: 8px; height: 40px;"></div>
+        <div style="flex:1; background: #55efc4; border-radius: 8px; height: 40px;"></div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #00b894;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #fdcb6e;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #e17055;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #6c5ce7;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Warm & Natuerlich</h3>
+      <p>Creme-Weiss Hintergrund, erdige Akzente (Gruen, Orange, Violett). Freundlich, organisch, gemuetlich. Perfekt fuer ein Smart-Home das "Zuhause" fuehlen soll.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="bright-modern" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #ffffff; padding: 24px; min-height: 180px; border: 1px solid #e2e8f0;">
+      <div style="background: #f8fafc; border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid #e2e8f0;">
+        <div style="font-weight: 700; color: #1e293b; font-size: 14px;">Dashboard</div>
+        <div style="color: #64748b; font-size: 11px; margin-top: 4px;">Klares Weiss mit blauen Akzenten</div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <div style="flex:1; background: #eff6ff; border-radius: 8px; height: 40px; border: 1px solid #dbeafe;"></div>
+        <div style="flex:1; background: #f0fdf4; border-radius: 8px; height: 40px; border: 1px solid #bbf7d0;"></div>
+        <div style="flex:1; background: #fef2f2; border-radius: 8px; height: 40px; border: 1px solid #fecaca;"></div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #3b82f6;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #10b981;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #f59e0b;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #ef4444;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Hell & Modern</h3>
+      <p>Reines Weiss, klares Blau als Hauptakzent. Clean, professionell, aufgeraeumt. Aehnlich wie moderne SaaS-Dashboards (Linear, Notion).</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="soft-scandinavian" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: linear-gradient(180deg, #f5f3ef 0%, #ebe7e0 100%); padding: 24px; min-height: 180px;">
+      <div style="background: #ffffff; border-radius: 12px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.04);">
+        <div style="font-weight: 700; color: #1a1a2e; font-size: 14px;">Dashboard</div>
+        <div style="color: #7c7c8a; font-size: 11px; margin-top: 4px;">Skandinavisches Design, weich und einladend</div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <div style="flex:1; background: #e8f5e9; border-radius: 8px; height: 40px;"></div>
+        <div style="flex:1; background: #e3f2fd; border-radius: 8px; height: 40px;"></div>
+        <div style="flex:1; background: #fff3e0; border-radius: 8px; height: 40px;"></div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #4a7c59;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #5c7c9a;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #c8956c;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 50%; background: #8b6f9a;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Soft Skandinavisch</h3>
+      <p>Warmer Weiss-Ton, gedämpfte Pastell-Akzente (Salbeigrün, Stahlblau, Terracotta). Ruhig, elegant, weniger verspielt. Aehnlich IKEA/Muji Aesthetic.</p>
+    </div>
+  </div>
+</div>

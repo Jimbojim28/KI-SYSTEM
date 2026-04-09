@@ -1,0 +1,86 @@
+<h2>Wie sollen die Karten aussehen?</h2>
+<p class="subtitle">Waehle den Stil der Inhaltskarten (Sensorwerte, Empfehlungen, etc.)</p>
+
+<div class="cards">
+  <div class="card" data-choice="organic" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #faf7f2; padding: 20px; min-height: 200px;">
+      <div style="background: white; border-radius: 16px; padding: 16px; margin-bottom: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.04);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="font-weight: 700; color: #2d3436; font-size: 13px;">🪴 Hochbeet 1</div>
+          <span style="background: #d4edda; color: #155724; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;">Optimal</span>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <div style="flex:1; text-align: center; padding: 10px; background: #f0fdf4; border-radius: 12px;">
+            <div style="font-size: 22px; font-weight: 700; color: #00b894;">45%</div>
+            <div style="font-size: 10px; color: #636e72;">Feuchte</div>
+          </div>
+          <div style="flex:1; text-align: center; padding: 10px; background: #fff8f0; border-radius: 12px;">
+            <div style="font-size: 22px; font-weight: 700; color: #e17055;">14.2°C</div>
+            <div style="font-size: 10px; color: #636e72;">Bodentemp</div>
+          </div>
+        </div>
+      </div>
+      <div style="background: white; border-radius: 16px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.04);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="font-weight: 700; color: #2d3436; font-size: 13px;">🌾 Rasen</div>
+          <span style="background: #fff3cd; color: #856404; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;">Trocken</span>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <div style="flex:1; text-align: center; padding: 10px; background: #fef2f2; border-radius: 12px;">
+            <div style="font-size: 22px; font-weight: 700; color: #d63031;">22%</div>
+            <div style="font-size: 10px; color: #636e72;">Feuchte</div>
+          </div>
+          <div style="flex:1; text-align: center; padding: 10px; background: #f0fdf4; border-radius: 12px;">
+            <div style="font-size: 22px; font-weight: 700; color: #00b894;">11.8°C</div>
+            <div style="font-size: 10px; color: #636e72;">Bodentemp</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Organisch & Weich</h3>
+      <p>Grosse Rundungen (16px), sanfte Schatten, farbige Wert-Kacheln. Warm, einladend, leicht verspielt. Vergangene Farben sanft getoent.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="clean-minimal" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #faf7f2; padding: 20px; min-height: 200px;">
+      <div style="background: white; border-radius: 8px; padding: 16px; margin-bottom: 10px; border: 1px solid #e8e0d4;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f0ebe3; padding-bottom: 8px;">
+          <div style="font-weight: 600; color: #2d3436; font-size: 13px;">🪴 Hochbeet 1</div>
+          <span style="color: #00b894; font-size: 11px; font-weight: 600;">● Optimal</span>
+        </div>
+        <div style="display: flex; gap: 20px;">
+          <div>
+            <div style="font-size: 20px; font-weight: 700; color: #2d3436;">45%</div>
+            <div style="font-size: 10px; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.5px;">Feuchte</div>
+          </div>
+          <div>
+            <div style="font-size: 20px; font-weight: 700; color: #2d3436;">14.2°C</div>
+            <div style="font-size: 10px; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.5px;">Bodentemp</div>
+          </div>
+        </div>
+      </div>
+      <div style="background: white; border-radius: 8px; padding: 16px; border: 1px solid #e8e0d4;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f0ebe3; padding-bottom: 8px;">
+          <div style="font-weight: 600; color: #2d3436; font-size: 13px;">🌾 Rasen</div>
+          <span style="color: #fdcb6e; font-size: 11px; font-weight: 600;">● Trocken</span>
+        </div>
+        <div style="display: flex; gap: 20px;">
+          <div>
+            <div style="font-size: 20px; font-weight: 700; color: #2d3436;">22%</div>
+            <div style="font-size: 10px; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.5px;">Feuchte</div>
+          </div>
+          <div>
+            <div style="font-size: 20px; font-weight: 700; color: #2d3436;">11.8°C</div>
+            <div style="font-size: 10px; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.5px;">Bodentemp</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Clean & Minimal</h3>
+      <p>Kleinere Radii (8px), dezente Rahmen, Status als Punkt statt Badge. Schlicht, strukturiert, weniger Farben. Aehnlich Apple Health.</p>
+    </div>
+  </div>
+</div>

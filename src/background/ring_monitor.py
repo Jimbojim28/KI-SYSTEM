@@ -33,6 +33,11 @@ class RingMonitor:
         self._last_reload_date = None
         self._last_ding_ts: Optional[datetime] = None
         self._listener_active = False
+        self._reconnect_failures = 0
+        self._max_backoff = 300  # max 5 Minuten zwischen Reconnect-Versuchen
+        self._last_push_event_ts: Optional[datetime] = None
+        self._push_listener_check_interval = 600  # Push-Listener alle 10 Min prüfen
+        self._last_listener_check_ts: Optional[datetime] = None
 
     def _preload_known_event_ids(self):
         """Mark all currently available Ring events as seen so no false notifications fire on startup."""
@@ -77,6 +82,9 @@ class RingMonitor:
 
         self._preload_known_event_ids()
 
+        # Prevent daily reload from firing immediately when the server starts during hour 4
+        self._last_reload_date = datetime.now().date()
+
         # Try push-based listener first (real-time, <2s latency)
         if self.collector.connected:
             self._listener_active = self.collector.start_event_listener(self._on_push_event)
@@ -107,17 +115,66 @@ class RingMonitor:
                 if self.daily_reload:
                     self._check_daily_reload()
 
+                was_connected = self.collector.connected
                 new_events = self.collector.check_for_new_events()
+                just_reconnected = not was_connected and self.collector.connected
+
                 for event in new_events:
                     self._handle_event(event)
 
+                if self.collector.connected:
+                    self._reconnect_failures = 0
+                    # Push-Listener nach Reconnect neu starten
+                    if just_reconnected and not self._listener_active:
+                        logger.info("Ring: Reconnected — restarting push listener")
+                        self._listener_active = self.collector.start_event_listener(self._on_push_event)
+                        if self._listener_active:
+                            logger.info("Ring: Push listener restarted after reconnect")
+                        else:
+                            logger.warning("Ring: Push listener restart failed, staying on polling")
+                    # Periodischer Health-Check des Push-Listeners
+                    self._check_push_listener_health()
+                else:
+                    self._reconnect_failures += 1
+
             except Exception as e:
                 logger.error(f"Ring: Monitor loop error: {e}")
+                self._reconnect_failures += 1
 
-            for _ in range(self.poll_interval):
+            sleep_seconds = self._get_sleep_interval()
+            for _ in range(sleep_seconds):
                 if not self.running:
                     break
                 time.sleep(1)
+
+    def _get_sleep_interval(self) -> int:
+        """Exponentieller Backoff wenn nicht verbunden, sonst normales Poll-Intervall."""
+        if self._reconnect_failures == 0:
+            return self.poll_interval
+        backoff = min(self.poll_interval * (2 ** min(self._reconnect_failures - 1, 5)), self._max_backoff)
+        logger.debug(f"Ring: Backoff nach {self._reconnect_failures} Fehlern: {backoff}s")
+        return int(backoff)
+
+    def _check_push_listener_health(self):
+        """Prüft ob der Push-Listener noch lebt — startet ihn neu wenn er zu lange schweigt."""
+        if not self._listener_active:
+            return
+        now = datetime.now()
+        if self._last_listener_check_ts and \
+                (now - self._last_listener_check_ts).total_seconds() < self._push_listener_check_interval:
+            return
+        self._last_listener_check_ts = now
+        # Wenn seit >10 Min kein Push-Event und Verbindung eigentlich aktiv → Listener neu starten
+        if self._last_push_event_ts is not None:
+            silence = (now - self._last_push_event_ts).total_seconds()
+            if silence > self._push_listener_check_interval:
+                logger.warning(f"Ring: Push-Listener seit {silence:.0f}s ohne Event — neustart")
+                self.collector.stop_event_listener()
+                self._listener_active = self.collector.start_event_listener(self._on_push_event)
+                if self._listener_active:
+                    logger.info("Ring: Push-Listener erfolgreich neugestartet")
+                else:
+                    logger.warning("Ring: Push-Listener Neustart fehlgeschlagen, falle auf Polling zurück")
 
     def _check_daily_reload(self):
         """Force reconnection once per day at the ~4:00 AM hour."""
@@ -125,7 +182,17 @@ class RingMonitor:
         if self._last_reload_date != today and datetime.now().hour == 4:
             self._last_reload_date = today
             logger.info("Ring: Daily reload triggered")
-            self.collector.refresh_connection()
+            success = self.collector.refresh_connection()
+            # refresh_connection stops the push listener — restart it
+            if success:
+                self._listener_active = self.collector.start_event_listener(self._on_push_event)
+                if self._listener_active:
+                    logger.info("Ring: Push listener restarted after daily reload")
+                else:
+                    self._listener_active = False
+                    logger.warning("Ring: Push listener restart failed after daily reload, falling back to polling")
+            else:
+                self._listener_active = False
 
     def _handle_event(self, event: dict):
         """Process a new Ring event: save to DB, notify, auto-open."""
@@ -176,6 +243,7 @@ class RingMonitor:
         if hasattr(self.collector, "_seen_event_ids"):
             self.collector._seen_event_ids.add(event_id)
 
+        self._last_push_event_ts = datetime.now()
         logger.info(f"Ring: Push event — {event_type} (id={event_id})")
         self._handle_event(event)
 

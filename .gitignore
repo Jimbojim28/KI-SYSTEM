@@ -59,6 +59,7 @@ data/ha_entities.json
 data/presence_history.json
 data/automations.json
 data/ventilation_stats.json
+data/ventilation_sensor_mapping.json
 models/*.pkl
 models/*.h5
 models/*.joblib
