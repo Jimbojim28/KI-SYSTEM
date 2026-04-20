@@ -1,140 +1,7 @@
 {
   "lighting_model": {
-    "current_version": "20251227_020208",
+    "current_version": "20260420_020014",
     "versions": [
-      {
-        "version": "20251128_082436",
-        "timestamp": "2025-11-28T08:24:36.584967",
-        "metrics": {
-          "accuracy": 0.9300699300699301,
-          "cv_accuracy_mean": 0.9015758888998325,
-          "cv_accuracy_std": 0.14191580625608083,
-          "samples_train": 570,
-          "samples_test": 143,
-          "feature_importance": {
-            "hour_of_day": 0.05997361125847598,
-            "day_of_week": 0.045221650386793176,
-            "brightness": 0.0,
-            "motion_detected": 0.0067755307878694495,
-            "presence_home": 0.006187797426100956,
-            "weather_condition_clear": 0.2776551882450335,
-            "weather_condition_cloudy": 0.0,
-            "weather_condition_rainy": 0.0,
-            "is_weekend": 0.006301523592891415,
-            "is_evening": 0.0,
-            "is_night": 0.0
-          },
-          "model_type": "random_forest",
-          "version": "1.0.0"
-        },
-        "notes": "Accuracy: 0.930, Samples: 713",
-        "model_path": "lighting_model.pkl"
-      },
-      {
-        "version": "20251202_210051",
-        "timestamp": "2025-12-02T21:00:51.640690",
-        "metrics": {
-          "accuracy": 0.9365994236311239,
-          "cv_accuracy_mean": 0.6039555705261757,
-          "cv_accuracy_std": 0.04982140499261408,
-          "samples_train": 2773,
-          "samples_test": 694,
-          "feature_importance": {
-            "hour_of_day": 0.06614904467312006,
-            "day_of_week": 0.058003802288356984,
-            "is_weekend": 0.009685885473098451,
-            "is_evening": 0.013635292812521233,
-            "is_night": 0.004736814378640217,
-            "brightness": 0.2680584955378166,
-            "motion_detected": 0.0,
-            "presence_home": 0.0,
-            "outdoor_light": 0.006460988454723557,
-            "weather_condition_clear": 0.0,
-            "weather_condition_cloudy": 0.0,
-            "weather_condition_rainy": 0.0,
-            "brightness_rolling_3": 0.2847484422668098,
-            "motion_rolling_3": 0.0,
-            "brightness_trend": 0.2354205868024585,
-            "month": 0.025332455903517827,
-            "is_winter": 0.027768191408936715,
-            "is_summer": 0.0
-          },
-          "model_type": "random_forest",
-          "version": "1.0.0"
-        },
-        "notes": "Accuracy: 0.937, Samples: 3467",
-        "model_path": "lighting_model.pkl"
-      },
-      {
-        "version": "20251202_210103",
-        "timestamp": "2025-12-02T21:01:03.100103",
-        "metrics": {
-          "accuracy": 0.9365994236311239,
-          "cv_accuracy_mean": 0.6039555705261757,
-          "cv_accuracy_std": 0.04982140499261408,
-          "samples_train": 2773,
-          "samples_test": 694,
-          "feature_importance": {
-            "hour_of_day": 0.06614904467312006,
-            "day_of_week": 0.058003802288356984,
-            "is_weekend": 0.009685885473098451,
-            "is_evening": 0.013635292812521233,
-            "is_night": 0.004736814378640217,
-            "brightness": 0.2680584955378166,
-            "motion_detected": 0.0,
-            "presence_home": 0.0,
-            "outdoor_light": 0.006460988454723557,
-            "weather_condition_clear": 0.0,
-            "weather_condition_cloudy": 0.0,
-            "weather_condition_rainy": 0.0,
-            "brightness_rolling_3": 0.2847484422668098,
-            "motion_rolling_3": 0.0,
-            "brightness_trend": 0.2354205868024585,
-            "month": 0.025332455903517827,
-            "is_winter": 0.027768191408936715,
-            "is_summer": 0.0
-          },
-          "model_type": "random_forest",
-          "version": "1.0.0"
-        },
-        "notes": "Accuracy: 0.937, Samples: 3467",
-        "model_path": "lighting_model.pkl"
-      },
-      {
-        "version": "20251204_020425",
-        "timestamp": "2025-12-04T02:04:25.161295",
-        "metrics": {
-          "accuracy": 0.9274092615769712,
-          "cv_accuracy_mean": 0.49206244647915154,
-          "cv_accuracy_std": 0.14913968845632408,
-          "samples_train": 3192,
-          "samples_test": 799,
-          "feature_importance": {
-            "hour_of_day": 0.06387779464748257,
-            "day_of_week": 0.07666888280327008,
-            "is_weekend": 0.0069165935845571435,
-            "is_evening": 0.013110038538668921,
-            "is_night": 0.004933068547197851,
-            "brightness": 0.23808935120575334,
-            "motion_detected": 0.0,
-            "presence_home": 0.0,
-            "outdoor_light": 0.006691716905198408,
-            "weather_condition_clear": 0.0,
-            "weather_condition_cloudy": 0.0,
-            "weather_condition_rainy": 0.0,
-            "brightness_rolling_3": 0.29468206034917416,
-            "motion_rolling_3": 0.0,
-            "brightness_trend": 0.2460193711600803,
-            "month": 0.02404602695929558,
-            "is_winter": 0.024965095299321817,
-            "is_summer": 0.0
-          },
-          "model_type": "random_forest",
-          "version": "1.0.0"
-        },
-        "notes": "Accuracy: 0.927, Samples: 3991",
-        "model_path": "lighting_model.pkl"
-      },
       {
         "version": "20251227_020208",
         "timestamp": "2025-12-27T02:02:08.347791",
@@ -168,6 +35,321 @@
           "version": "1.0.0"
         },
         "notes": "Accuracy: 0.886, Samples: 3595 [Performance-Warnung]",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260406_023346",
+        "timestamp": "2026-04-06T02:33:46.871848",
+        "metrics": {
+          "accuracy": 0.7188498402555911,
+          "cv_accuracy_mean": 0.6707188881482673,
+          "cv_accuracy_std": 0.019448741484705965,
+          "samples_train": 5007,
+          "samples_test": 1252,
+          "feature_importance": {
+            "hour_of_day": 0.17984280822997004,
+            "day_of_week": 0.09867255885321487,
+            "is_weekend": 0.017623633512722274,
+            "is_evening": 0.015631049304176928,
+            "is_night": 0.009524052144235417,
+            "brightness": 0.20651313817840214,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.011326409454985774,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2286265239148026,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.21739376804253335,
+            "month": 0.01484605836495663,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.719, Samples: 6259 [Performance-Warnung]",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260408_022443",
+        "timestamp": "2026-04-08T02:24:43.498860",
+        "metrics": {
+          "accuracy": 0.7053097345132744,
+          "cv_accuracy_mean": 0.6762922783887377,
+          "cv_accuracy_std": 0.010891563473401908,
+          "samples_train": 4517,
+          "samples_test": 1130,
+          "feature_importance": {
+            "hour_of_day": 0.16829300427331348,
+            "day_of_week": 0.09715355213587605,
+            "is_weekend": 0.014721168195576171,
+            "is_evening": 0.016296214689303767,
+            "is_night": 0.0105023874763544,
+            "brightness": 0.22161370790137877,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.013677435659024476,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2321714082797785,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.20558632740702143,
+            "month": 0.01998479398237298,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.705, Samples: 5647 [Performance-Warnung]",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260409_022813",
+        "timestamp": "2026-04-09T02:28:13.386929",
+        "metrics": {
+          "accuracy": 0.719815668202765,
+          "cv_accuracy_mean": 0.6953694288094955,
+          "cv_accuracy_std": 0.012616980766506625,
+          "samples_train": 4338,
+          "samples_test": 1085,
+          "feature_importance": {
+            "hour_of_day": 0.15827295247273218,
+            "day_of_week": 0.10164944012535562,
+            "is_weekend": 0.018096261315539302,
+            "is_evening": 0.015596339586552066,
+            "is_night": 0.00784040606286954,
+            "brightness": 0.20999559667504003,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.013252554814058695,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2316835808927346,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.22357248051736256,
+            "month": 0.020040387537755448,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.720, Samples: 5423",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260411_020014",
+        "timestamp": "2026-04-11T02:00:14.302243",
+        "metrics": {
+          "accuracy": 0.7114026236125126,
+          "cv_accuracy_mean": 0.6814691822360843,
+          "cv_accuracy_std": 0.008200036717910886,
+          "samples_train": 3963,
+          "samples_test": 991,
+          "feature_importance": {
+            "hour_of_day": 0.15499774685655887,
+            "day_of_week": 0.09456393290392534,
+            "is_weekend": 0.01759869701565189,
+            "is_evening": 0.018895509599703316,
+            "is_night": 0.007229388102342877,
+            "brightness": 0.21035668757714668,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.010548582876459456,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2337231598508318,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.22987769609068212,
+            "month": 0.022208599126697735,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.711, Samples: 4954",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260413_020014",
+        "timestamp": "2026-04-13T02:00:14.394788",
+        "metrics": {
+          "accuracy": 0.6744186046511628,
+          "cv_accuracy_mean": 0.6887643825973956,
+          "cv_accuracy_std": 0.02212455085992439,
+          "samples_train": 3439,
+          "samples_test": 860,
+          "feature_importance": {
+            "hour_of_day": 0.15555388216041147,
+            "day_of_week": 0.07886217214404866,
+            "is_weekend": 0.017284675704752204,
+            "is_evening": 0.011185569441424435,
+            "is_night": 0.008949560299918426,
+            "brightness": 0.18081197842452568,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.014735364468400625,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.24181686482394749,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2654212009768156,
+            "month": 0.025378731555755565,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.674, Samples: 4299 [Performance-Warnung]",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260414_023723",
+        "timestamp": "2026-04-14T02:37:23.016061",
+        "metrics": {
+          "accuracy": 0.6852976913730255,
+          "cv_accuracy_mean": 0.6928311057108142,
+          "cv_accuracy_std": 0.011120351094675626,
+          "samples_train": 3292,
+          "samples_test": 823,
+          "feature_importance": {
+            "hour_of_day": 0.1503666585683251,
+            "day_of_week": 0.0807021918075077,
+            "is_weekend": 0.01664638141349396,
+            "is_evening": 0.012751221278827338,
+            "is_night": 0.008746632747488664,
+            "brightness": 0.18642193299371634,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.012681676277344449,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.23747324822354834,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2688115812631328,
+            "month": 0.025398475426615406,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.685, Samples: 4115",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260416_020014",
+        "timestamp": "2026-04-16T02:00:14.217299",
+        "metrics": {
+          "accuracy": 0.6706666666666666,
+          "cv_accuracy_mean": 0.6869518469069871,
+          "cv_accuracy_std": 0.004507853152250375,
+          "samples_train": 2997,
+          "samples_test": 750,
+          "feature_importance": {
+            "hour_of_day": 0.14298191410100358,
+            "day_of_week": 0.08280025660962459,
+            "is_weekend": 0.018455577909303664,
+            "is_evening": 0.009511956182742805,
+            "is_night": 0.008392310709971427,
+            "brightness": 0.16639978077773468,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.01164108798980439,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.24616436463499752,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.287836504847032,
+            "month": 0.02581624623778535,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.671, Samples: 3747 [Performance-Warnung]",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260418_020014",
+        "timestamp": "2026-04-18T02:00:14.265142",
+        "metrics": {
+          "accuracy": 0.7187928669410151,
+          "cv_accuracy_mean": 0.6949475421697644,
+          "cv_accuracy_std": 0.009607661434012748,
+          "samples_train": 2913,
+          "samples_test": 729,
+          "feature_importance": {
+            "hour_of_day": 0.13723216873600955,
+            "day_of_week": 0.0837154396980911,
+            "is_weekend": 0.01807756721638777,
+            "is_evening": 0.012505259801950356,
+            "is_night": 0.008739073184215441,
+            "brightness": 0.1683357300135292,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.009029281429253211,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.24339705759631514,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.2927754163697542,
+            "month": 0.02619300595449395,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.719, Samples: 3642",
+        "model_path": "lighting_model.pkl"
+      },
+      {
+        "version": "20260420_020014",
+        "timestamp": "2026-04-20T02:00:14.386251",
+        "metrics": {
+          "accuracy": 0.680327868852459,
+          "cv_accuracy_mean": 0.6805151263707924,
+          "cv_accuracy_std": 0.009630671858316111,
+          "samples_train": 2927,
+          "samples_test": 732,
+          "feature_importance": {
+            "hour_of_day": 0.14057192910602315,
+            "day_of_week": 0.08079613957064069,
+            "is_weekend": 0.01665815371863945,
+            "is_evening": 0.0132940356831496,
+            "is_night": 0.008618944079497785,
+            "brightness": 0.16274356061513168,
+            "motion_detected": 0.0,
+            "presence_home": 0.0,
+            "outdoor_light": 0.011234979103898764,
+            "weather_condition_clear": 0.0,
+            "weather_condition_cloudy": 0.0,
+            "weather_condition_rainy": 0.0,
+            "brightness_rolling_3": 0.2514730667990148,
+            "motion_rolling_3": 0.0,
+            "brightness_trend": 0.28497744142132314,
+            "month": 0.029631749902680967,
+            "is_winter": 0.0,
+            "is_summer": 0.0
+          },
+          "model_type": "random_forest",
+          "version": "1.0.0"
+        },
+        "notes": "Accuracy: 0.680, Samples: 3659 [Performance-Warnung]",
         "model_path": "lighting_model.pkl"
       }
     ]
@@ -294,36 +476,8 @@
     ]
   },
   "forgotten_light_model": {
-    "current_version": "20251227_020208",
+    "current_version": "20260420_020015",
     "versions": [
-      {
-        "version": "20251205_061314",
-        "timestamp": "2025-12-05T06:13:14.816042",
-        "metrics": {
-          "success": true,
-          "samples": 319,
-          "forgotten_samples": 46,
-          "accuracy": 1.0,
-          "precision": 1.0,
-          "recall": 1.0,
-          "feature_importance": {
-            "hour_of_day": 7.66246197767028e-16,
-            "day_of_week": 1.7473725863754357e-16,
-            "is_weekend": 0.0,
-            "is_evening": 0.0,
-            "is_night": 0.0,
-            "is_morning": 0.0,
-            "on_duration_minutes": 0.1375176222048819,
-            "minutes_since_motion": 0.8624823777951172,
-            "presence_home": 0.0,
-            "outdoor_light": 0.0,
-            "room_encoded": 5.090873486870812e-17,
-            "typical_duration_exceeded": 0.0
-          }
-        },
-        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 319",
-        "model_path": "forgotten_light_model.pkl"
-      },
       {
         "version": "20251227_020208",
         "timestamp": "2025-12-27T02:02:08.749023",
@@ -350,6 +504,258 @@
           }
         },
         "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 325",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260406_023348",
+        "timestamp": "2026-04-06T02:33:48.407065",
+        "metrics": {
+          "success": true,
+          "samples": 1803,
+          "forgotten_samples": 206,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 0.0,
+            "day_of_week": 7.705304682707462e-16,
+            "is_weekend": 2.6200513511135504e-16,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.13615722656140974,
+            "minutes_since_motion": 0.863842773438589,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 1.1469983225370217e-16,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1803",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260408_022444",
+        "timestamp": "2026-04-08T02:24:44.896346",
+        "metrics": {
+          "success": true,
+          "samples": 1614,
+          "forgotten_samples": 198,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 4.876426340705826e-16,
+            "day_of_week": 0.0,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 1.0810023944176054e-17,
+            "on_duration_minutes": 0.13654513175641622,
+            "minutes_since_motion": 0.8634548682435833,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 0.0,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1614",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260409_022814",
+        "timestamp": "2026-04-09T02:28:14.733524",
+        "metrics": {
+          "success": true,
+          "samples": 1551,
+          "forgotten_samples": 182,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 2.410080687875245e-15,
+            "day_of_week": -4.2016061677430665e-18,
+            "is_weekend": 0.0,
+            "is_evening": 4.04798494223496e-16,
+            "is_night": 0.0,
+            "is_morning": -1.0504015419357666e-18,
+            "on_duration_minutes": 0.1363224439568332,
+            "minutes_since_motion": 0.8636775560431639,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 6.950156869141656e-17,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1551",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260411_020015",
+        "timestamp": "2026-04-11T02:00:15.530160",
+        "metrics": {
+          "success": true,
+          "samples": 1424,
+          "forgotten_samples": 167,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 8.974408993692808e-17,
+            "day_of_week": 0.0,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.1363177926754299,
+            "minutes_since_motion": 0.8636822073245696,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 2.7729111741936063e-16,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1424",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260413_020015",
+        "timestamp": "2026-04-13T02:00:15.513080",
+        "metrics": {
+          "success": true,
+          "samples": 1316,
+          "forgotten_samples": 173,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 0.0,
+            "day_of_week": 1.218057637535552e-15,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.13694261550282769,
+            "minutes_since_motion": 0.8630573844971712,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 0.0,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1316",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260414_023724",
+        "timestamp": "2026-04-14T02:37:24.095029",
+        "metrics": {
+          "success": true,
+          "samples": 1263,
+          "forgotten_samples": 160,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 1.8727694289495474e-16,
+            "day_of_week": 2.977223194740306e-16,
+            "is_weekend": 0.0,
+            "is_evening": 1.0944496555933788e-16,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.13674533826148044,
+            "minutes_since_motion": 0.863254661738519,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 3.674009469987827e-17,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1263",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260416_020015",
+        "timestamp": "2026-04-16T02:00:15.206005",
+        "metrics": {
+          "success": true,
+          "samples": 1180,
+          "forgotten_samples": 147,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": -1.75173979525587e-17,
+            "day_of_week": 8.784731022772318e-16,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 3.384166044085644e-17,
+            "on_duration_minutes": 0.1366664418513831,
+            "minutes_since_motion": 0.863333558148616,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 0.0,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1180",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260418_020015",
+        "timestamp": "2026-04-18T02:00:15.226025",
+        "metrics": {
+          "success": true,
+          "samples": 1124,
+          "forgotten_samples": 153,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 2.810272562833297e-16,
+            "day_of_week": 0.0,
+            "is_weekend": 5.433123426084606e-17,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.13713637142415758,
+            "minutes_since_motion": 0.8628636285758421,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 0.0,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1124",
+        "model_path": "forgotten_light_model.pkl"
+      },
+      {
+        "version": "20260420_020015",
+        "timestamp": "2026-04-20T02:00:15.356958",
+        "metrics": {
+          "success": true,
+          "samples": 1131,
+          "forgotten_samples": 157,
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "feature_importance": {
+            "hour_of_day": 3.961573163326067e-16,
+            "day_of_week": 4.3620256346172883e-16,
+            "is_weekend": 0.0,
+            "is_evening": 0.0,
+            "is_night": 0.0,
+            "is_morning": 0.0,
+            "on_duration_minutes": 0.13724327888049292,
+            "minutes_since_motion": 0.8627567211195061,
+            "presence_home": 0.0,
+            "outdoor_light": 0.0,
+            "room_encoded": 2.0889370403515103e-16,
+            "typical_duration_exceeded": 0.0
+          }
+        },
+        "notes": "Accuracy: 1.000, Precision: 1.000, Samples: 1131",
         "model_path": "forgotten_light_model.pkl"
       }
     ]

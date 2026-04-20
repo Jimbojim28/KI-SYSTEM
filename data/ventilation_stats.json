@@ -26,6 +26,100 @@
         "score": 50,
         "energy_saved": null,
         "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-06T09:01:04.423944",
+        "duration": 54,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-06T12:28:24.041394",
+        "duration": 22,
+        "score": 60,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-10T12:16:30.009032",
+        "duration": 65,
+        "score": 62,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.1999999999999993,
+          "humidity": 3
+        }
+      },
+      {
+        "timestamp": "2026-04-12T08:48:00.906143",
+        "duration": 23,
+        "score": 37,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.3999999999999986,
+          "humidity": 10
+        }
+      },
+      {
+        "timestamp": "2026-04-12T11:57:30.551119",
+        "duration": 40,
+        "score": 37,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.0,
+          "humidity": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-16T11:52:55.792465",
+        "duration": 115,
+        "score": 62,
+        "energy_saved": 0.003,
+        "climate_change": {
+          "temp": -0.09999999999999787,
+          "humidity": -4
+        }
+      },
+      {
+        "timestamp": "2026-04-17T09:54:54.963589",
+        "duration": 20,
+        "score": 57,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.0,
+          "humidity": -9
+        }
+      },
+      {
+        "timestamp": "2026-04-17T11:24:08.914837",
+        "duration": 41,
+        "score": 90,
+        "energy_saved": 0.048,
+        "climate_change": {
+          "temp": -1.9000000000000021,
+          "humidity": -16
+        }
+      },
+      {
+        "timestamp": "2026-04-18T15:32:03.810977",
+        "duration": 174,
+        "score": 57,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.5,
+          "humidity": -10
+        }
+      },
+      {
+        "timestamp": "2026-04-19T14:07:30.047925",
+        "duration": 52,
+        "score": 47,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.10000000000000142,
+          "humidity": -1
+        }
       }
     ],
     "Wohnzimmer": [
@@ -60,6 +154,404 @@
         "score": 30,
         "energy_saved": null,
         "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-06T05:57:20.673098",
+        "duration": 117,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-06T06:30:39.417172",
+        "duration": 20,
+        "score": 60,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-06T11:23:23.967766",
+        "duration": 28,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-06T13:00:42.556762",
+        "duration": 34,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-07T02:53:40.585895",
+        "duration": 598,
+        "score": 50,
+        "energy_saved": null,
+        "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-08T04:52:21.148731",
+        "duration": 52,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 1,
+          "humidity": 4,
+          "co2": 591
+        }
+      },
+      {
+        "timestamp": "2026-04-08T15:38:14.793657",
+        "duration": 10,
+        "score": 53,
+        "energy_saved": 0.017,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -1,
+          "co2": -113
+        }
+      },
+      {
+        "timestamp": "2026-04-09T03:29:31.715138",
+        "duration": 58,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 1,
+          "co2": 94
+        }
+      },
+      {
+        "timestamp": "2026-04-09T16:29:14.683213",
+        "duration": 91,
+        "score": 83,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -8,
+          "co2": -692
+        }
+      },
+      {
+        "timestamp": "2026-04-10T04:41:19.301975",
+        "duration": 3,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-10T05:47:30.818098",
+        "duration": 22,
+        "score": 86,
+        "energy_saved": 0.05,
+        "climate_change": {
+          "temp": -2,
+          "humidity": -7,
+          "co2": -1441
+        }
+      },
+      {
+        "timestamp": "2026-04-10T15:29:00.104707",
+        "duration": 10,
+        "score": 59,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -1,
+          "co2": -231
+        }
+      },
+      {
+        "timestamp": "2026-04-11T06:55:41.811925",
+        "duration": 49,
+        "score": 88,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -4,
+          "co2": -1396
+        }
+      },
+      {
+        "timestamp": "2026-04-11T07:19:45.555815",
+        "duration": 1,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-11T16:33:09.495446",
+        "duration": 71,
+        "score": 83,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -9,
+          "co2": -996
+        }
+      },
+      {
+        "timestamp": "2026-04-12T05:42:30.318182",
+        "duration": 102,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 23
+        }
+      },
+      {
+        "timestamp": "2026-04-12T07:20:47.408086",
+        "duration": 26,
+        "score": 19,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": 0,
+          "co2": 63
+        }
+      },
+      {
+        "timestamp": "2026-04-12T12:33:36.478110",
+        "duration": 73,
+        "score": 73,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -2,
+          "co2": -1625
+        }
+      },
+      {
+        "timestamp": "2026-04-12T15:37:05.922228",
+        "duration": 36,
+        "score": 87,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -5,
+          "co2": -1343
+        }
+      },
+      {
+        "timestamp": "2026-04-13T05:00:23.570851",
+        "duration": 8,
+        "score": 68,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 1,
+          "co2": -166
+        }
+      },
+      {
+        "timestamp": "2026-04-13T06:15:35.433976",
+        "duration": 38,
+        "score": 87,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -4,
+          "co2": -1429
+        }
+      },
+      {
+        "timestamp": "2026-04-13T17:34:28.948301",
+        "duration": 28,
+        "score": 73,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -4,
+          "co2": -840
+        }
+      },
+      {
+        "timestamp": "2026-04-14T11:31:26.881015",
+        "duration": 30,
+        "score": 73,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -4,
+          "co2": -854
+        }
+      },
+      {
+        "timestamp": "2026-04-14T15:40:04.829223",
+        "duration": 73,
+        "score": 68,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -1,
+          "co2": -631
+        }
+      },
+      {
+        "timestamp": "2026-04-15T12:41:19.539793",
+        "duration": 60,
+        "score": 83,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -8,
+          "co2": -760
+        }
+      },
+      {
+        "timestamp": "2026-04-15T18:17:11.518217",
+        "duration": 45,
+        "score": 79,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -8,
+          "co2": -1214
+        }
+      },
+      {
+        "timestamp": "2026-04-16T11:35:52.910188",
+        "duration": 116,
+        "score": 68,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -5,
+          "co2": -1002
+        }
+      },
+      {
+        "timestamp": "2026-04-17T06:10:20.550167",
+        "duration": 56,
+        "score": 82,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -3,
+          "co2": -906
+        }
+      },
+      {
+        "timestamp": "2026-04-17T11:50:12.874084",
+        "duration": 57,
+        "score": 68,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -10,
+          "co2": -292
+        }
+      },
+      {
+        "timestamp": "2026-04-18T15:54:07.364887",
+        "duration": 61,
+        "score": 83,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -8,
+          "co2": -723
+        }
+      },
+      {
+        "timestamp": "2026-04-18T16:20:11.327387",
+        "duration": 4,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-19T04:04:14.486650",
+        "duration": 4,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 55
+        }
+      },
+      {
+        "timestamp": "2026-04-19T07:12:22.445564",
+        "duration": 75,
+        "score": 56,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 1,
+          "humidity": 1,
+          "co2": -379
+        }
+      },
+      {
+        "timestamp": "2026-04-19T10:35:55.621659",
+        "duration": 18,
+        "score": 56,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": -269
+        }
+      },
+      {
+        "timestamp": "2026-04-19T12:08:10.388559",
+        "duration": 33,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 98
+        }
+      },
+      {
+        "timestamp": "2026-04-19T13:41:25.941749",
+        "duration": 20,
+        "score": 76,
+        "energy_saved": 0.05,
+        "climate_change": {
+          "temp": -2,
+          "humidity": 0,
+          "co2": -504
+        }
+      },
+      {
+        "timestamp": "2026-04-19T17:58:08.699158",
+        "duration": 6,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-20T04:27:07.747664",
+        "duration": 27,
+        "score": 59,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -1,
+          "co2": -93
+        }
       }
     ],
     "Schlafzimmer (Doppelbett)": [
@@ -137,11 +629,419 @@
         "score": 75,
         "energy_saved": null,
         "climate_change": {}
+      },
+      {
+        "timestamp": "2026-04-09T15:36:07.102841",
+        "duration": 25,
+        "score": 82,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1.0,
+          "humidity": -14.399999999999999
+        }
+      },
+      {
+        "timestamp": "2026-04-10T05:54:31.867524",
+        "duration": 38,
+        "score": 92,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.0,
+          "humidity": -12.299999999999997
+        }
+      },
+      {
+        "timestamp": "2026-04-12T11:30:25.989167",
+        "duration": 12,
+        "score": 72,
+        "energy_saved": 0.004,
+        "climate_change": {
+          "temp": -0.20000000000000284,
+          "humidity": -8.0
+        }
+      },
+      {
+        "timestamp": "2026-04-13T06:29:37.590580",
+        "duration": 52,
+        "score": 72,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.5999999999999979,
+          "humidity": -0.5
+        }
+      },
+      {
+        "timestamp": "2026-04-13T17:16:26.017840",
+        "duration": 311,
+        "score": 47,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.1999999999999993,
+          "humidity": -4.399999999999999
+        }
+      },
+      {
+        "timestamp": "2026-04-14T11:31:26.869561",
+        "duration": 22,
+        "score": 72,
+        "energy_saved": 0.01,
+        "climate_change": {
+          "temp": -0.3999999999999986,
+          "humidity": -5.100000000000001
+        }
+      },
+      {
+        "timestamp": "2026-04-14T15:05:59.671711",
+        "duration": 36,
+        "score": 72,
+        "energy_saved": 0.015,
+        "climate_change": {
+          "temp": -0.5999999999999979,
+          "humidity": -9.100000000000001
+        }
+      },
+      {
+        "timestamp": "2026-04-15T13:26:26.507642",
+        "duration": 97,
+        "score": 62,
+        "energy_saved": 0.005,
+        "climate_change": {
+          "temp": -0.1999999999999993,
+          "humidity": -4.399999999999999
+        }
+      },
+      {
+        "timestamp": "2026-04-17T10:24:59.571929",
+        "duration": 339,
+        "score": 62,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0.1999999999999993,
+          "humidity": 0.30000000000000426
+        }
+      },
+      {
+        "timestamp": "2026-04-17T12:04:15.136884",
+        "duration": 83,
+        "score": 82,
+        "energy_saved": 0.02,
+        "climate_change": {
+          "temp": -0.8000000000000007,
+          "humidity": -10.400000000000006
+        }
+      },
+      {
+        "timestamp": "2026-04-19T14:51:36.788812",
+        "duration": 103,
+        "score": 52,
+        "energy_saved": 0.02,
+        "climate_change": {
+          "temp": -0.8000000000000007,
+          "humidity": 0
+        }
+      }
+    ],
+    "Schlafzimmer (Einzelbett)": [
+      {
+        "timestamp": "2026-04-06T09:11:09.975263",
+        "duration": 310,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 1,
+          "humidity": 7,
+          "co2": 368
+        }
+      },
+      {
+        "timestamp": "2026-04-06T12:43:32.723662",
+        "duration": 5,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 2,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-07T05:18:58.663095",
+        "duration": 78,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 2,
+          "co2": 6
+        }
+      },
+      {
+        "timestamp": "2026-04-07T13:59:09.115203",
+        "duration": 43,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 20
+        }
+      },
+      {
+        "timestamp": "2026-04-08T05:10:24.041571",
+        "duration": 70,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 2,
+          "humidity": 7,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-08T16:49:25.755456",
+        "duration": 75,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 2,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-09T04:10:14.837691",
+        "duration": 10,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 4,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-10T04:15:15.467074",
+        "duration": 15,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 11,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-10T05:44:30.393862",
+        "duration": 16,
+        "score": 19,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": 2,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-11T07:01:42.760889",
+        "duration": 181,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 2,
+          "humidity": 8,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-11T15:45:02.136803",
+        "duration": 25,
+        "score": 60,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -17,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-12T07:04:45.015660",
+        "duration": 184,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 3,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-12T12:20:34.354601",
+        "duration": 171,
+        "score": 43,
+        "energy_saved": 0.05,
+        "climate_change": {
+          "temp": -2,
+          "humidity": -1,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-13T03:59:46.471307",
+        "duration": 116,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-13T12:11:33.698511",
+        "duration": 18,
+        "score": 34,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -4,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-14T05:18:25.108722",
+        "duration": 78,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 1,
+          "humidity": 3,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-14T11:30:26.677617",
+        "duration": 4,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 1,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-14T15:16:01.261245",
+        "duration": 38,
+        "score": 43,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": -1,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-15T05:46:31.019397",
+        "duration": 106,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 0,
+          "co2": 51
+        }
+      },
+      {
+        "timestamp": "2026-04-16T05:45:21.471447",
+        "duration": 105,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 1,
+          "humidity": 6,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-16T10:43:44.709150",
+        "duration": 76,
+        "score": 34,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -2,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-17T05:38:36.287983",
+        "duration": 98,
+        "score": 37,
+        "energy_saved": 0.05,
+        "climate_change": {
+          "temp": -2,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-17T11:38:11.082456",
+        "duration": 16,
+        "score": 28,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": 2,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-18T12:54:38.605603",
+        "duration": 534,
+        "score": 19,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 2,
+          "humidity": 5,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-19T08:03:30.374458",
+        "duration": 243,
+        "score": 37,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-19T14:31:33.825176",
+        "duration": 275,
+        "score": 37,
+        "energy_saved": 0.025,
+        "climate_change": {
+          "temp": -1,
+          "humidity": 0,
+          "co2": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-19T16:25:52.894034",
+        "duration": 24,
+        "score": 25,
+        "energy_saved": 0,
+        "climate_change": {
+          "temp": 0,
+          "humidity": -1,
+          "co2": 0
+        }
       }
     ]
   },
   "last_ventilation": {
-    "Schlafzimmer (Doppelbett)": "2026-01-04T08:55:26.316475",
-    "Wohnzimmer": "2026-01-04T09:29:46.144314"
+    "Wohnzimmer": "2026-04-20T04:27:07.747669"
   }
 }
