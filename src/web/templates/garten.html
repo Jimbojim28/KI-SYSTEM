@@ -220,18 +220,46 @@
                 </div>
             </div>
             <!-- Stats -->
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
                 <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
                     <div id="mower-mowing-time" style="font-size: 1.3em; font-weight: bold;">–</div>
-                    <div style="font-size: 0.75em; color: #6b7280;">Mähzeit (min)</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Mähzeit Session (min)</div>
                 </div>
                 <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
-                    <div id="mower-mow-count" style="font-size: 1.3em; font-weight: bold;">–</div>
-                    <div style="font-size: 0.75em; color: #6b7280;">Mähgänge</div>
+                    <div id="mower-mowing-area" style="font-size: 1.3em; font-weight: bold;">–</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Fläche Session (m²)</div>
                 </div>
-                <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
+                <div style="padding: 10px; background: #f9fafb; border-radius: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;">
                     <div id="mower-cut-height" style="font-size: 1.3em; font-weight: bold;">–</div>
                     <div style="font-size: 0.75em; color: #6b7280;">Schnitthöhe (mm)</div>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="number" id="mower-height-quick" min="30" max="70" step="5"
+                            style="width: 58px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 0.85em; text-align: center;"
+                            placeholder="mm">
+                        <button onclick="quickSetHeight()" title="Setzen"
+                            style="padding: 4px 8px; background: #3b82f6; color: white; border: none; border-radius: 5px; font-size: 0.82em; cursor: pointer; font-weight: 600;">✓</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Lautstärke & Status-Zeile -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px;">
+                <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
+                    <div id="mower-voice-volume" style="font-size: 1.3em; font-weight: bold;">–</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Lautstärke</div>
+                </div>
+                <div style="text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px;">
+                    <div id="mower-status-text" style="font-size: 1.1em; font-weight: bold;">–</div>
+                    <div style="font-size: 0.75em; color: #6b7280;">Mäherstatus</div>
+                </div>
+            </div>
+            <!-- Mährichtung -->
+            <div id="mower-direction-row" style="margin-bottom: 16px; padding: 10px 14px; background: #eff6ff; border-radius: 8px; border-left: 3px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <div style="font-size: 0.8em; color: #1e40af; font-weight: 600;">Benutzerdefinierte Mährichtung</div>
+                    <div style="font-size: 0.8em; color: #6b7280;">Richtung: <span id="mower-direction-val" style="font-weight: 600;">–</span>° &nbsp;|&nbsp; Status: <span id="mower-direction-status">–</span></div>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                    <button id="mower-btn-direction-toggle" onclick="toggleMowerDirection()" style="padding: 6px 12px; font-size: 0.82em; border: none; border-radius: 6px; cursor: pointer; background: #dbeafe; color: #1e40af; font-weight: 600;">Aktivieren</button>
                 </div>
             </div>
             <!-- Steuerung -->
@@ -338,7 +366,20 @@
             <button onclick="saveMowerSettings()" style="padding: 10px 22px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer; font-weight: 600;">💾 Speichern</button>
             <button onclick="applyMowerHeight()" style="padding: 10px 18px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer;">✂️ Schnitthöhe setzen</button>
             <button onclick="applyMowerVolume()" style="padding: 10px 18px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer;">🔊 Lautstärke setzen</button>
+            <button onclick="applyMowerDirection()" style="padding: 10px 18px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 6px; font-size: 0.95em; cursor: pointer;">🧭 Richtung setzen</button>
             <span id="mower-settings-msg" style="font-size: 0.9em; display: none;"></span>
+        </div>
+
+        <!-- Custom Mowing Direction -->
+        <div style="margin-top: 16px; padding: 12px; background: #fffbeb; border-radius: 8px; border-left: 3px solid #f59e0b;">
+            <strong style="color: #92400e; font-size: 0.9em;">🧭 Benutzerdefinierte Mährichtung</strong>
+            <div style="margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                <div>
+                    <label for="mower-direction-input" style="font-size: 0.85em; color: #6b7280; display: block; margin-bottom: 4px;">Winkel (0–360°)</label>
+                    <input type="number" id="mower-direction-input" min="0" max="360" step="1" value="180"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;">
+                </div>
+            </div>
         </div>
 
         <div style="margin-top: 16px; padding: 12px; background: #eff6ff; border-radius: 8px; border-left: 4px solid #3b82f6;">
@@ -430,6 +471,12 @@ async function loadSettings() {
             }
             if (saved.thresholdDry !== undefined) thresholdDry = saved.thresholdDry;
             if (saved.thresholdWet !== undefined) thresholdWet = saved.thresholdWet;
+            // Mäher-Einstellungen aus Server laden
+            if (saved.mower) {
+                MOWER_PREFIX         = saved.mower.prefix        || null;
+                MOWER_DEFAULT_HEIGHT = saved.mower.defaultHeight || 50;
+                MOWER_DEFAULT_VOLUME = saved.mower.defaultVolume || 10;
+            }
         }
     } catch (e) {
         console.warn('Settings konnten nicht geladen werden:', e);
@@ -443,6 +490,15 @@ async function loadSettings() {
     document.getElementById('sensor-rasen1-temp').value    = SENSORS.rasen1_temp    || '';
     document.getElementById('threshold-dry').value         = thresholdDry;
     document.getElementById('threshold-wet').value         = thresholdWet;
+    // Mäher-Formularfelder befüllen
+    if (document.getElementById('mower-device-prefix'))
+        document.getElementById('mower-device-prefix').value  = MOWER_PREFIX || '';
+    if (document.getElementById('mower-default-height'))
+        document.getElementById('mower-default-height').value = MOWER_DEFAULT_HEIGHT;
+    if (document.getElementById('mower-default-volume'))
+        document.getElementById('mower-default-volume').value = MOWER_DEFAULT_VOLUME;
+    toggleMowerCard();
+    updateMowerPreview();
 }
 
 async function saveGartenSettings(event) {
@@ -462,7 +518,9 @@ async function saveGartenSettings(event) {
             hochbeet1_temp: SENSORS.hochbeet1_temp, hochbeet2_temp: SENSORS.hochbeet2_temp,
             rasen1_temp: SENSORS.rasen1_temp
         },
-        thresholdDry, thresholdWet
+        thresholdDry,
+        thresholdWet,
+        mower: { prefix: MOWER_PREFIX, defaultHeight: MOWER_DEFAULT_HEIGHT, defaultVolume: MOWER_DEFAULT_VOLUME }
     };
 
     const msg = document.getElementById('settings-save-msg');
@@ -1055,33 +1113,37 @@ let MOWER_DEFAULT_HEIGHT = 45;
 let MOWER_DEFAULT_VOLUME = 50;
 
 function loadMowerSettings() {
+    // Wird jetzt von loadSettings() (Server) übernommen – Legacy-Fallback via localStorage
     const saved = JSON.parse(localStorage.getItem('mower_settings') || '{}');
-    MOWER_PREFIX = saved.prefix || null;
-    MOWER_DEFAULT_HEIGHT = saved.defaultHeight || 45;
-    MOWER_DEFAULT_VOLUME  = saved.defaultVolume  || 50;
-    if (document.getElementById('mower-device-prefix'))
-        document.getElementById('mower-device-prefix').value = MOWER_PREFIX || '';
-    if (document.getElementById('mower-default-height'))
-        document.getElementById('mower-default-height').value = MOWER_DEFAULT_HEIGHT;
-    if (document.getElementById('mower-default-volume'))
-        document.getElementById('mower-default-volume').value = MOWER_DEFAULT_VOLUME;
+    if (!MOWER_PREFIX && saved.prefix) MOWER_PREFIX = saved.prefix;
+    if (MOWER_DEFAULT_HEIGHT === 50 && saved.defaultHeight) MOWER_DEFAULT_HEIGHT = saved.defaultHeight;
+    if (MOWER_DEFAULT_VOLUME  === 10  && saved.defaultVolume)  MOWER_DEFAULT_VOLUME  = saved.defaultVolume;
     toggleMowerCard();
     updateMowerPreview();
 }
 
-function saveMowerSettings() {
-    MOWER_PREFIX = document.getElementById('mower-device-prefix').value.trim() || null;
-    MOWER_DEFAULT_HEIGHT = parseInt(document.getElementById('mower-default-height').value) || 45;
-    MOWER_DEFAULT_VOLUME  = parseInt(document.getElementById('mower-default-volume').value)  || 50;
-    localStorage.setItem('mower_settings', JSON.stringify({
-        prefix: MOWER_PREFIX,
-        defaultHeight: MOWER_DEFAULT_HEIGHT,
-        defaultVolume: MOWER_DEFAULT_VOLUME
-    }));
+async function saveMowerSettings() {
+    MOWER_PREFIX         = document.getElementById('mower-device-prefix').value.trim()   || null;
+    MOWER_DEFAULT_HEIGHT = parseInt(document.getElementById('mower-default-height').value) || 50;
+    MOWER_DEFAULT_VOLUME = parseInt(document.getElementById('mower-default-volume').value) || 10;
     toggleMowerCard();
+    updateMowerPreview();
+    // Serverseitig speichern (zusammen mit aktuellen Sensor-Einstellungen)
     const msg = document.getElementById('mower-settings-msg');
-    msg.textContent = '✅ Gespeichert!';
-    msg.style.color = '#059669';
+    try {
+        const currentConf = { sensors: { ...SENSORS }, thresholdDry, thresholdWet,
+            mower: { prefix: MOWER_PREFIX, defaultHeight: MOWER_DEFAULT_HEIGHT, defaultVolume: MOWER_DEFAULT_VOLUME } };
+        const resp = await fetch('/api/garten/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentConf)
+        });
+        msg.textContent = resp.ok ? '✅ Gespeichert!' : '❌ Fehler beim Speichern';
+        msg.style.color = resp.ok ? '#059669' : '#dc2626';
+    } catch (e) {
+        msg.textContent = '❌ Verbindungsfehler';
+        msg.style.color = '#dc2626';
+    }
     msg.style.display = 'inline';
     setTimeout(() => { msg.style.display = 'none'; }, 2500);
     if (MOWER_PREFIX) refreshMowerStatus();
@@ -1111,14 +1173,20 @@ function updateMowerPreview() {
         `sensor.${prefix}_battery_level`,
         `binary_sensor.${prefix}_connection`,
         `binary_sensor.${prefix}_charging`,
-        `sensor.${prefix}_mowing_time`,
-        `sensor.${prefix}_mow_count`,
+        `sensor.${prefix}_mower_status`,
         `sensor.${prefix}_cutting_height`,
+        `sensor.${prefix}_mowing_time_session`,
+        `sensor.${prefix}_mowing_area_session`,
+        `sensor.${prefix}_voice_volume`,
+        `sensor.${prefix}_custom_mowing_direction`,
+        `sensor.${prefix}_custom_mowing_direction_enabled`,
         `button.${prefix}_start_full_mow`,
         `button.${prefix}_stop_mow`,
         `button.${prefix}_return_to_dock`,
         `number.${prefix}_mow_height`,
         `number.${prefix}_voice_volume`,
+        `number.${prefix}_custom_mowing_direction`,
+        `switch.${prefix}_custom_mowing_direction_enabled`,
     ].map(e => `<div>📌 ${e}</div>`).join('');
 }
 
@@ -1147,16 +1215,38 @@ async function refreshMowerStatus() {
         // Lade-Status / Mäh-Status
         const statBadge = document.getElementById('mower-badge-status');
         const charging  = e.charging && e.charging.state === 'on';
-        statBadge.textContent = charging ? '🔌 Lädt' : '🌿 Bereit';
-        statBadge.className   = 'badge ' + (charging ? 'badge-wet' : 'badge-optimal');
+        const statusMap = { charging: '🔌 Lädt', mowing: '🌿 Mäht', idle: '💤 Bereit', returning: '🏠 Fährt heim', error: '⚠️ Fehler' };
+        const mowerSt   = e.mower_status ? e.mower_status.state : null;
+        statBadge.textContent = statusMap[mowerSt] || (charging ? '🔌 Lädt' : '🌿 Bereit');
+        statBadge.className   = 'badge ' + (charging || mowerSt === 'charging' ? 'badge-wet' : mowerSt === 'mowing' ? 'badge-optimal' : 'badge-loading');
 
         // Stats
         const setStatEl = (id, val) => {
             document.getElementById(id).textContent = val && val.state ? val.state : '–';
         };
-        setStatEl('mower-mowing-time', e.mowing_time);
-        setStatEl('mower-mow-count',   e.mow_count);
-        setStatEl('mower-cut-height',  e.cut_height);
+        setStatEl('mower-mowing-time',  e.mowing_time_session);
+        setStatEl('mower-mowing-area',  e.mowing_area_session);
+        setStatEl('mower-cut-height',   e.cut_height);
+        // Quick-Input mit aktuellem Wert vorbelegen
+        const heightInput = document.getElementById('mower-height-quick');
+        if (heightInput && e.cut_height && e.cut_height.state) {
+            const h = parseInt(e.cut_height.state);
+            if (!isNaN(h)) heightInput.value = h;
+        }
+        setStatEl('mower-voice-volume', e.voice_volume);
+        setStatEl('mower-status-text',  e.mower_status);
+
+        // Mährichtung
+        const dirVal  = e.custom_direction       ? e.custom_direction.state       : null;
+        const dirEnab = e.custom_direction_enabled ? e.custom_direction_enabled.state : null;
+        const isEnabled = dirEnab === 'enabled' || dirEnab === 'on';
+        document.getElementById('mower-direction-val').textContent    = dirVal !== null ? dirVal : '–';
+        document.getElementById('mower-direction-status').textContent = isEnabled ? '✅ Aktiv' : '⬜ Inaktiv';
+        const toggleBtn = document.getElementById('mower-btn-direction-toggle');
+        toggleBtn.textContent = isEnabled ? 'Deaktivieren' : 'Aktivieren';
+        toggleBtn.style.background = isEnabled ? '#fee2e2' : '#dbeafe';
+        toggleBtn.style.color      = isEnabled ? '#991b1b' : '#1e40af';
+        toggleBtn._dirEnabled = isEnabled;
 
         document.getElementById('mower-last-update').textContent =
             'Zuletzt: ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
@@ -1165,9 +1255,9 @@ async function refreshMowerStatus() {
     }
 }
 
-async function mowerCommand(action, value) {
+async function mowerCommand(action, value, extra) {
     if (!MOWER_PREFIX) { showMowerFeedback('⚙️ Kein Gerät konfiguriert.', false); return; }
-    const body = { prefix: MOWER_PREFIX, action };
+    const body = { prefix: MOWER_PREFIX, action, ...(extra || {}) };
     if (value !== undefined) body.value = value;
     try {
         const resp = await fetch('/api/garten/mower/command', {
@@ -1178,9 +1268,10 @@ async function mowerCommand(action, value) {
         const data = await resp.json();
         if (resp.ok && data.success) {
             const labels = { start: 'Mähen gestartet ✅', stop: 'Gestoppt ✅', dock: 'Fährt zur Ladestation ✅',
-                             set_height: 'Schnitthöhe gesetzt ✅', set_volume: 'Lautstärke gesetzt ✅' };
+                             set_height: 'Schnitthöhe gesetzt ✅', set_volume: 'Lautstärke gesetzt ✅',
+                             set_direction: 'Richtung gesetzt ✅', toggle_direction: 'Richtungsmodus umgeschaltet ✅' };
             showMowerFeedback(labels[action] || '✅ Ausgeführt', true);
-            setTimeout(refreshMowerStatus, 3000);
+            setTimeout(refreshMowerStatus, 2000);
         } else {
             showMowerFeedback('❌ ' + (data.error || 'Fehler'), false);
         }
@@ -1199,13 +1290,31 @@ function showMowerFeedback(text, ok) {
 }
 
 function applyMowerHeight() {
-    const h = parseInt(document.getElementById('mower-default-height').value) || 45;
+    const h = parseInt(document.getElementById('mower-default-height').value) || 50;
     mowerCommand('set_height', h);
+}
+
+function quickSetHeight() {
+    const h = parseInt(document.getElementById('mower-height-quick').value);
+    if (isNaN(h) || h < 30 || h > 70) { showMowerFeedback('⚠️ Ungültige Höhe (30–70 mm, Schritte à 5)', false); return; }
+    mowerCommand('set_height', Math.round(h / 5) * 5);
 }
 
 function applyMowerVolume() {
     const v = parseInt(document.getElementById('mower-default-volume').value) || 50;
     mowerCommand('set_volume', v);
+}
+
+function applyMowerDirection() {
+    const d = parseInt(document.getElementById('mower-direction-input').value);
+    if (isNaN(d) || d < 0 || d > 360) { showMowerFeedback('⚠️ Ungültiger Winkel (0–360°)', false); return; }
+    mowerCommand('set_direction', d);
+}
+
+function toggleMowerDirection() {
+    const btn = document.getElementById('mower-btn-direction-toggle');
+    const nowEnabled = btn._dirEnabled || false;
+    mowerCommand('toggle_direction', undefined, { enabled: !nowEnabled });
 }
 
 // ─── Verlaufschart mit Zeitraum-Auswahl ──────────────────────────
@@ -1257,7 +1366,7 @@ async function loadHistoryChart(key) {
     const canvas   = document.getElementById('chart-' + key);
 
     function showMsg(txt) {
-        if (msgEl) { msgEl.textContent = txt; msgEl.style.display = 'block'; }
+        if (msgEl) { msgEl.textContent = txt; msgEl.style.display = 'block'; msgEl.style.whiteSpace = 'pre-line'; }
         if (canvas) canvas.style.display = 'none';
     }
     function hideMsg() {
@@ -1298,6 +1407,12 @@ async function loadHistoryChart(key) {
     if (CHART_INSTANCES[key]) {
         CHART_INSTANCES[key].destroy();
         delete CHART_INSTANCES[key];
+    }
+
+    if (moistureData.length === 0 && tempData.length === 0) {
+        const label = { '24': '24 Stunden', '168': '7 Tage', '720': '30 Tage' }[String(hours)] || hours + 'h';
+        showMsg(`Keine Verlaufsdaten für "${label}" verfügbar.\nHome Assistant speichert standardmäßig nur ~7–10 Tage.\n→ Tipp: In HA configuration.yaml unter "recorder:" den Wert "purge_keep_days: 30" setzen.`);
+        return;
     }
 
     const datasets = [];

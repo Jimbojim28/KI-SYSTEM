@@ -52,6 +52,7 @@ from src.background.temperature_data_collector import TemperatureDataCollector
 from src.background.database_maintenance import DatabaseMaintenanceJob
 from src.background.ventilation_notifier import VentilationNotifier
 from src.background.notification_scheduler import NotificationScheduler
+from src.background.garten_data_collector import GartenDataCollector
 # TEMP FIX: Circular import issue - imported on demand instead
 # from src.background.presence_leave_notifier import PresenceLeaveNotifier
 from src.utils.database import Database
@@ -219,6 +220,17 @@ class WebInterface:
             logger.info("Notification Scheduler initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Notification Scheduler: {e}")
+
+        # Garten Data Collector (Hochbeet-Sensoren + Mäher, alle 5 Minuten)
+        self.garten_collector = None
+        try:
+            self.garten_collector = GartenDataCollector(
+                engine=self.engine,
+                interval_seconds=300
+            )
+            logger.info("Garten Data Collector initialized (5min interval)")
+        except Exception as e:
+            logger.error(f"Failed to initialize Garten Data Collector: {e}")
 
         # Presence Leave Notifier - TEMPORARILY DISABLED due to import issues
         self.presence_leave_notifier = None
@@ -527,12 +539,20 @@ class WebInterface:
                 if not collector:
                     return jsonify({'error': 'No platform available'}), 500
                 entities = {
-                    'battery':    f'sensor.{prefix}_battery_level',
-                    'connection': f'binary_sensor.{prefix}_connection',
-                    'charging':   f'binary_sensor.{prefix}_charging',
-                    'mowing_time': f'sensor.{prefix}_mowing_time',
-                    'mow_count':  f'sensor.{prefix}_mow_count',
-                    'cut_height': f'sensor.{prefix}_cutting_height',
+                    'battery':             f'sensor.{prefix}_battery_level',
+                    'connection':          f'binary_sensor.{prefix}_connection',
+                    'charging':            f'binary_sensor.{prefix}_charging',
+                    'mower_status':        f'sensor.{prefix}_mower_status',
+                    'cut_height':          f'sensor.{prefix}_cutting_height',
+                    'mow_height_number':   f'number.{prefix}_mow_height',
+                    'mowing_area_session': f'sensor.{prefix}_mowing_area_session',
+                    'mowing_time_session': f'sensor.{prefix}_mowing_time_session',
+                    'voice_volume':        f'sensor.{prefix}_voice_volume',
+                    'voice_volume_number': f'number.{prefix}_voice_volume',
+                    'custom_direction':              f'sensor.{prefix}_custom_mowing_direction',
+                    'custom_direction_number':       f'number.{prefix}_custom_mowing_direction',
+                    'custom_direction_enabled':      f'sensor.{prefix}_custom_mowing_direction_enabled',
+                    'custom_direction_enabled_switch': f'switch.{prefix}_custom_mowing_direction_enabled',
                 }
                 result = {}
                 for key, entity_id in entities.items():
@@ -575,7 +595,7 @@ class WebInterface:
 
         @self.app.route('/api/garten/history')
         def api_garten_history():
-            """API: HA-Verlaufsdaten für einen Sensor abrufen (Zeitraum wählbar)"""
+            """API: Verlaufsdaten für einen Sensor abrufen (lokale DB, Fallback: HA)"""
             import re as _re
             from datetime import timedelta
             entity_id = request.args.get('entity_id', '').strip()
@@ -587,37 +607,49 @@ class WebInterface:
                 hours = int(request.args.get('hours', 24))
             except (ValueError, TypeError):
                 hours = 24
-            hours = max(1, min(hours, 720))  # 1h bis 30 Tage
+            hours = max(1, min(hours, 720))
             max_points = 200 if hours > 72 else 150 if hours > 24 else 100
-            if not self.engine:
-                return jsonify({'error': 'Engine not initialized'}), 500
             try:
-                if hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
-                    collector = self.engine.platforms['homeassistant']
-                else:
-                    collector = self.engine.platform
-                if not collector or not hasattr(collector, '_make_request'):
-                    return jsonify({'error': 'Home Assistant platform required'}), 400
-                from datetime import timezone
-                start_time = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime('%Y-%m-%dT%H:%M:%S+00:00')
-                raw = collector._make_request(
-                    f'history/period/{start_time}?filter_entity_id={entity_id}&minimal_response=true&no_attributes=true'
+                cutoff = (datetime.now() - timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT timestamp, value FROM garten_sensor_history "
+                    "WHERE entity_id = ? AND timestamp >= ? ORDER BY timestamp ASC",
+                    (entity_id, cutoff)
                 )
-                if not raw or not isinstance(raw, list) or len(raw) == 0:
-                    return jsonify({'points': []})
-                points = []
-                for item in raw[0]:
+                rows = cursor.fetchall()
+                points = [{'t': r['timestamp'], 'v': round(r['value'], 2)} for r in rows]
+
+                # Fallback: HA History wenn lokale DB noch keine Daten hat
+                if not points and self.engine:
                     try:
-                        val = float(item.get('state', ''))
-                        ts = item.get('last_changed') or item.get('last_updated', '')
-                        points.append({'t': ts, 'v': round(val, 2)})
-                    except (ValueError, TypeError):
-                        pass
+                        if hasattr(self.engine, 'platforms') and 'homeassistant' in self.engine.platforms:
+                            ha_collector = self.engine.platforms['homeassistant']
+                        else:
+                            ha_collector = getattr(self.engine, 'platform', None)
+                        if ha_collector and hasattr(ha_collector, '_make_request'):
+                            from datetime import timezone
+                            start_time = (datetime.now(timezone.utc) - timedelta(hours=min(hours, 168))).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+                            raw = ha_collector._make_request(
+                                f'history/period/{start_time}?filter_entity_id={entity_id}&minimal_response=true&no_attributes=true'
+                            )
+                            if raw and isinstance(raw, list) and raw[0]:
+                                for item in raw[0]:
+                                    try:
+                                        val = float(item.get('state', ''))
+                                        ts = item.get('last_changed') or item.get('last_updated', '')
+                                        points.append({'t': ts, 'v': round(val, 2)})
+                                    except (ValueError, TypeError):
+                                        pass
+                    except Exception as e:
+                        logger.warning(f"Garten history HA fallback error: {e}")
+
                 if len(points) > max_points:
-                    # Gleichmäßig verteilt, erster und letzter Punkt immer inklusive
                     indices = [int(i * (len(points) - 1) / (max_points - 1)) for i in range(max_points)]
                     points = [points[i] for i in indices]
-                return jsonify({'entity_id': entity_id, 'points': points, 'hours': hours})
+                return jsonify({'entity_id': entity_id, 'points': points, 'hours': hours,
+                                'source': 'db' if rows else 'ha'})
             except Exception as e:
                 logger.error(f"Garten history API error: {e}")
                 return jsonify({'error': str(e)}), 500
@@ -633,7 +665,7 @@ class WebInterface:
                 return jsonify({'error': 'prefix and action required'}), 400
             if not _re.match(r'^[a-zA-Z0-9_]+$', prefix):
                 return jsonify({'error': 'Invalid prefix'}), 400
-            allowed_actions = {'start', 'stop', 'dock', 'set_height', 'set_volume'}
+            allowed_actions = {'start', 'stop', 'dock', 'set_height', 'set_volume', 'set_direction', 'toggle_direction'}
             if action not in allowed_actions:
                 return jsonify({'error': f'Unknown action. Allowed: {", ".join(allowed_actions)}'}), 400
             if not self.engine:
@@ -661,6 +693,14 @@ class WebInterface:
                     value = int(data.get('value', 50))
                     value = max(0, min(100, value))
                     ok = collector.call_service('number', 'set_value', f'number.{prefix}_voice_volume', value=value)
+                elif action == 'set_direction':
+                    value = int(data.get('value', 180))
+                    value = max(0, min(360, value))
+                    ok = collector.call_service('number', 'set_value', f'number.{prefix}_custom_mowing_direction', value=value)
+                elif action == 'toggle_direction':
+                    enabled = data.get('enabled', True)
+                    svc = 'turn_on' if enabled else 'turn_off'
+                    ok = collector.call_service('switch', svc, f'switch.{prefix}_custom_mowing_direction_enabled')
                 else:
                     ok = False
                 if ok:
@@ -9530,6 +9570,11 @@ class WebInterface:
         if self.notification_scheduler:
             self.notification_scheduler.start()
             logger.info("Notification Scheduler started (scheduled notifications)")
+
+        # Starte Garten Data Collector (Hochbeet-Sensoren + Mäher)
+        if self.garten_collector:
+            self.garten_collector.start()
+            logger.info("Garten Data Collector started (collects every 5min)")
 
         # Starte Presence Leave Notifier (Benachrichtigung beim Verlassen)
         if self.presence_leave_notifier:
