@@ -98,3 +98,4 @@ debug_*.py
 
 # Ring token cache
 data/ring_token.cache
+data/ring_token.listener
