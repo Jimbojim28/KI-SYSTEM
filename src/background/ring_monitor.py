@@ -6,6 +6,12 @@ import json
 from datetime import datetime, time as dt_time
 from typing import Optional
 
+try:
+    from zoneinfo import ZoneInfo
+    _SCHEDULE_TZ = ZoneInfo("Europe/Berlin")
+except Exception:
+    _SCHEDULE_TZ = None
+
 from loguru import logger
 
 from src.data_collector.ring_collector import RingCollector, RING_AVAILABLE
@@ -276,10 +282,17 @@ class RingMonitor:
             logger.info(f"Ring: Auto-opened door for event {event_id}")
 
     def _is_auto_open_time(self) -> bool:
-        """Check if current time falls within any auto-open schedule."""
+        """Check if current time falls within any auto-open schedule.
+
+        Schedules werden in Europe/Berlin ausgewertet, damit die UI-Zeiten
+        unabhaengig von der Server-Zeitzone (z.B. UTC) korrekt greifen.
+        """
         if not self.auto_open_schedules:
             return True  # no schedule restriction = always allowed when enabled
-        now = datetime.now()
+        if _SCHEDULE_TZ is not None:
+            now = datetime.now(_SCHEDULE_TZ)
+        else:
+            now = datetime.now()
         current_day = now.weekday()
         current_time = now.time()
         for schedule in self.auto_open_schedules:
